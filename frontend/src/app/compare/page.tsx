@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { searchPlayers, simulateCurve, getPlayer } from '../../lib/api';
 import type { Player, PlayerSummary, SimulateCurveResponse } from '../../types/player';
@@ -11,6 +11,7 @@ import ComparisonHistoricalChart from '../../components/ComparisonHistoricalChar
 
 function CompareContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialPlayers = searchParams.get('players')?.split(',') || [];
 
   const [selectedIds, setSelectedIds] = useState<string[]>(initialPlayers);
@@ -57,6 +58,16 @@ function CompareContent() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Sync selected players to URL params for deep linking
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (selectedIds.length > 0) {
+      params.set('players', selectedIds.join(','));
+    }
+    const newUrl = selectedIds.length > 0 ? `?${params.toString()}` : '/compare';
+    router.replace(newUrl, { scroll: false });
+  }, [selectedIds, router]);
 
   // Filter players based on search query (local filtering)
   const filteredPlayers = allPlayers.filter(
