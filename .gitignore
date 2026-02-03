@@ -28,8 +28,9 @@ out/
 Thumbs.db
 
 # Project specific
-backend/trained_models/*.joblib
-backend/data/training-data.json
+# Note: Model files and training data are committed for Heroku deployment
+# backend/trained_models/*.joblib
+# backend/data/training-data.json
 
 # Claude
 .claude/

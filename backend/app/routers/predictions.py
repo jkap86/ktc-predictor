@@ -87,6 +87,21 @@ def get_feature_importance():
     return model_service.get_feature_importance()
 
 
+@router.get("/model/error-analysis")
+def get_error_analysis():
+    """Analyze prediction errors by segment (position, age bracket, KTC level).
+
+    Returns MAE and bias (mean error) for each segment:
+    - by_position: QB, RB, WR, TE
+    - by_age_bracket: young, prime, declining
+    - by_ktc_level: low (<2000), mid (2000-5000), high (>5000)
+
+    Positive bias means the model is over-predicting.
+    """
+    model_service = get_model_service()
+    return model_service.get_error_analysis()
+
+
 @router.post("/model/train")
 def train_model():
     """Retrain the model with current data."""
@@ -106,6 +121,70 @@ def train_model_with_prior_predictions():
     model_service = get_model_service()
     metrics = model_service.train_model_with_prior_predictions()
     return {"status": "trained_with_priors", "metrics": metrics}
+
+
+@router.post("/model/train-ensemble")
+def train_position_ensemble():
+    """Train position-specific ensemble models.
+
+    Trains separate GradientBoosting models for QB, RB, WR, and TE
+    with position-specific hyperparameters for better accuracy.
+
+    Returns metrics for each position and combined weighted average.
+    """
+    model_service = get_model_service()
+    metrics = model_service.train_position_ensemble()
+    return {"status": "trained_ensemble", "metrics": metrics}
+
+
+@router.get("/model/ensemble-metrics")
+def get_ensemble_metrics():
+    """Get ensemble model performance metrics by position."""
+    model_service = get_model_service()
+    model_service.initialize_ensemble()
+    return model_service.get_ensemble_metrics()
+
+
+@router.post("/model/train-xgboost")
+def train_xgboost_model():
+    """Train XGBoost model as alternative to GradientBoosting.
+
+    XGBoost offers better regularization (L1/L2) which may help
+    reduce overfitting on high-value players.
+
+    Requires xgboost package: pip install xgboost>=2.0.0
+    """
+    model_service = get_model_service()
+    metrics = model_service.train_xgboost()
+    if "error" in metrics:
+        raise HTTPException(status_code=500, detail=metrics["error"])
+    return {"status": "trained_xgboost", "metrics": metrics}
+
+
+@router.get("/model/xgboost-metrics")
+def get_xgboost_metrics():
+    """Get XGBoost model performance metrics."""
+    model_service = get_model_service()
+    model_service.initialize_xgboost()
+    return model_service.get_xgb_metrics()
+
+
+@router.get("/model/xgboost-importance")
+def get_xgboost_feature_importance():
+    """Get feature importance from XGBoost model."""
+    model_service = get_model_service()
+    model_service.initialize_xgboost()
+    return model_service.get_xgb_feature_importance()
+
+
+@router.get("/model/compare")
+def compare_models():
+    """Compare GradientBoosting vs XGBoost performance.
+
+    Returns metrics for both models and indicates which performs better.
+    """
+    model_service = get_model_service()
+    return model_service.compare_models()
 
 
 @router.get("/predictions/all", response_model=list[PredictionWithPPG])

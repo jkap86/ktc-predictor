@@ -7,6 +7,31 @@ from typing import Optional
 from app.config import TRAINING_DATA_PATH
 
 
+def get_age_bracket(age: int, position: str) -> str:
+    """Get age bracket based on position-specific aging curves."""
+    if position == "RB":
+        if age <= 24:
+            return "young"
+        elif age <= 27:
+            return "prime"
+        else:
+            return "declining"
+    elif position == "QB":
+        if age <= 26:
+            return "young"
+        elif age <= 33:
+            return "prime"
+        else:
+            return "declining"
+    else:  # WR, TE
+        if age <= 25:
+            return "young"
+        elif age <= 29:
+            return "prime"
+        else:
+            return "declining"
+
+
 def calculate_derived_features(season: dict) -> dict:
     """Calculate derived features from weekly data."""
     weekly_stats = season.get("weekly_stats", [])
@@ -36,6 +61,16 @@ def calculate_derived_features(season: dict) -> dict:
         ktc_season_trend = 0.0
         ktc_max_swing = 0.0
 
+    # Snap percentage features
+    weekly_snap_pct = [w.get("snap_pct", 0) for w in weekly_stats if w.get("snap_pct")]
+    if len(weekly_snap_pct) >= 2:
+        snap_pct_avg = float(np.mean(weekly_snap_pct))
+        # Trend: change from first to last (normalized by 100 since snap_pct is 0-100)
+        snap_pct_trend = (weekly_snap_pct[-1] - weekly_snap_pct[0]) / 100.0 if weekly_snap_pct[0] > 0 else 0.0
+    else:
+        snap_pct_avg = 0.0
+        snap_pct_trend = 0.0
+
     return {
         "fp_std_dev": fp_std_dev,
         "fp_consistency": fp_consistency,
@@ -44,6 +79,8 @@ def calculate_derived_features(season: dict) -> dict:
         "ktc_in_season_volatility": ktc_in_season_volatility,
         "ktc_season_trend": ktc_season_trend,
         "ktc_max_swing": ktc_max_swing,
+        "snap_pct_avg": snap_pct_avg,
+        "snap_pct_trend": snap_pct_trend,
     }
 
 
@@ -191,6 +228,10 @@ class DataLoader:
         # Sort by player and year
         df = df.sort_values(["player_id", "year"])
 
+        # Pre-compute position/age averages for normalization
+        position_age_fp_avg = df.groupby(["position", "age"])["fantasy_points"].mean()
+        global_fp_avg = df["fantasy_points"].mean()
+
         training_rows = []
 
         # Group by player to create year-over-year pairs
@@ -217,27 +258,57 @@ class DataLoader:
                     key = (player_id, current_season["year"])
                     prior_predicted_ktc = prior_predictions.get(key, 0.0)
 
+                # Calculate age for next season and age bracket
+                next_age = current_season["age"] + 1
+                age_bracket = get_age_bracket(next_age, current_season["position"])
+
+                # Calculate position-normalized fantasy points
+                pos = current_season["position"]
+                age = current_season["age"]
+                fp = current_season["fantasy_points"]
+                try:
+                    avg_fp = position_age_fp_avg.loc[(pos, age)]
+                except KeyError:
+                    avg_fp = global_fp_avg
+                fp_vs_position_avg = fp / avg_fp if avg_fp > 0 else 1.0
+
+                # Calculate feature interactions
+                games_played = current_season["games_played"]
+                fp_consistency = current_season.get("fp_consistency", 0)
+                current_ktc = current_season["end_ktc"]
+                ktc_volatility = current_season.get("ktc_in_season_volatility", 0)
+                ktc_trend = current_season.get("ktc_season_trend", 0)
+
                 row = {
                     # Features from current season (N)
-                    "current_ktc": current_season["end_ktc"],
-                    "age": current_season["age"] + 1,  # Age for next season
+                    "current_ktc": current_ktc,
+                    "age": next_age,
                     "years_exp": current_season["years_exp"] + 1,
                     "fantasy_points": current_season["fantasy_points"],
-                    "games_played": current_season["games_played"],
-                    "position": current_season["position"],
+                    "games_played": games_played,
+                    "games_missed": 17 - games_played,
+                    "fp_vs_position_avg": fp_vs_position_avg,
+                    "position": pos,
+                    "age_bracket": age_bracket,
                     # Derived features from current season
                     "fp_std_dev": current_season.get("fp_std_dev", 0),
-                    "fp_consistency": current_season.get("fp_consistency", 0),
+                    "fp_consistency": fp_consistency,
                     "fp_max_week": current_season.get("fp_max_week", 0),
                     "fp_second_half_ratio": current_season.get(
                         "fp_second_half_ratio", 1
                     ),
-                    "ktc_in_season_volatility": current_season.get(
-                        "ktc_in_season_volatility", 0
-                    ),
-                    "ktc_season_trend": current_season.get("ktc_season_trend", 0),
+                    "ktc_in_season_volatility": ktc_volatility,
+                    "ktc_season_trend": ktc_trend,
                     "ktc_max_swing": current_season.get("ktc_max_swing", 0),
+                    "snap_pct_avg": current_season.get("snap_pct_avg", 0),
+                    "snap_pct_trend": current_season.get("snap_pct_trend", 0),
                     "prior_predicted_ktc": prior_predicted_ktc,
+                    # Feature interactions
+                    "age_x_is_rb": next_age * (1 if pos == "RB" else 0),
+                    "age_x_is_qb": next_age * (1 if pos == "QB" else 0),
+                    "games_x_consistency": games_played * fp_consistency,
+                    "ktc_x_volatility": current_ktc * ktc_volatility / 10000,
+                    "ktc_x_trend": current_ktc * ktc_trend / 10000,
                     # Target: next season's end KTC
                     "target_ktc": next_season["end_ktc"],
                 }
@@ -249,6 +320,10 @@ class DataLoader:
         position_dummies = pd.get_dummies(train_df["position"], prefix="pos")
         train_df = pd.concat([train_df, position_dummies], axis=1)
 
+        # One-hot encode age bracket
+        age_bracket_dummies = pd.get_dummies(train_df["age_bracket"], prefix="age")
+        train_df = pd.concat([train_df, age_bracket_dummies], axis=1)
+
         # Feature columns
         feature_cols = [
             "current_ktc",
@@ -256,6 +331,8 @@ class DataLoader:
             "years_exp",
             "fantasy_points",
             "games_played",
+            "games_missed",
+            "fp_vs_position_avg",
             "fp_std_dev",
             "fp_consistency",
             "fp_max_week",
@@ -263,8 +340,19 @@ class DataLoader:
             "ktc_in_season_volatility",
             "ktc_season_trend",
             "ktc_max_swing",
+            "snap_pct_avg",
+            "snap_pct_trend",
             "prior_predicted_ktc",
-        ] + [c for c in train_df.columns if c.startswith("pos_")]
+            # Feature interactions
+            "age_x_is_rb",
+            "age_x_is_qb",
+            "games_x_consistency",
+            "ktc_x_volatility",
+            "ktc_x_trend",
+        ] + [c for c in train_df.columns if c.startswith("pos_")] + [
+            c for c in train_df.columns if c.startswith("age_") and c != "age_bracket"
+            and c not in ("age_x_is_rb", "age_x_is_qb")  # Already included above
+        ]
 
         X = train_df[feature_cols].fillna(0)
         y = train_df["target_ktc"]
