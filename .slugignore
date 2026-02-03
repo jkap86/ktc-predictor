@@ -1,0 +1,14 @@
+*.md
+*.txt
+!requirements.txt
+!runtime.txt
+.git
+.gitignore
+.env*
+__pycache__
+*.pyc
+.pytest_cache
+tests/
+*.log
+.vscode
+.idea
