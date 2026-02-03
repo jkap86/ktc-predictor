@@ -3,11 +3,11 @@
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { searchPlayers, simulateCurve, getPlayer } from '@/lib/api';
-import type { Player, PlayerSummary, SimulateCurveResponse } from '@/types/player';
-import ComparisonChart from '@/components/ComparisonChart';
-import ComparisonKTCChart from '@/components/ComparisonKTCChart';
-import ComparisonHistoricalChart from '@/components/ComparisonHistoricalChart';
+import { searchPlayers, simulateCurve, getPlayer } from '../../lib/api';
+import type { Player, PlayerSummary, SimulateCurveResponse } from '../../types/player';
+import ComparisonChart from '../../components/ComparisonChart';
+import ComparisonKTCChart from '../../components/ComparisonKTCChart';
+import ComparisonHistoricalChart from '../../components/ComparisonHistoricalChart';
 
 function CompareContent() {
   const searchParams = useSearchParams();

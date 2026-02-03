@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import './globals.css';
-import ModelMetrics from '@/components/ModelMetrics';
+import ModelMetrics from '../components/ModelMetrics';
 
 const inter = Inter({ subsets: ['latin'] });
 

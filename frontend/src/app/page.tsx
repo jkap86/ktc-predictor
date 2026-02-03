@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import PlayerSearch from '@/components/PlayerSearch';
-import PPGChart from '@/components/PPGChart';
-import { getAllPredictions } from '@/lib/api';
-import type { PredictionWithPPG } from '@/types/player';
+import PlayerSearch from '../components/PlayerSearch';
+import PPGChart from '../components/PPGChart';
+import { getAllPredictions } from '../lib/api';
+import type { PredictionWithPPG } from '../types/player';
 
 const POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE'];
 

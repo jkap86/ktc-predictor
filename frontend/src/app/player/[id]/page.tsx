@@ -3,11 +3,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getPlayer, simulateCurve } from '@/lib/api';
-import type { Player, SimulateCurveResponse } from '@/types/player';
-import PredictionChart from '@/components/PredictionChart';
-import HistoricalChart from '@/components/HistoricalChart';
-import PPGValueCurve from '@/components/PPGValueCurve';
+import { getPlayer, simulateCurve } from '../../../lib/api';
+import type { Player, SimulateCurveResponse } from '../../../types/player';
+import PredictionChart from '../../../components/PredictionChart';
+import HistoricalChart from '../../../components/HistoricalChart';
+import PPGValueCurve from '../../../components/PPGValueCurve';
 
 export default function PlayerPage() {
   const params = useParams();
