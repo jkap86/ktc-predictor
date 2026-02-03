@@ -1,7 +1,4 @@
 *.md
-*.txt
-!requirements.txt
-!runtime.txt
 .git
 .gitignore
 .env*
