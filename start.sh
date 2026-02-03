@@ -2,14 +2,14 @@
 set -e
 
 echo "=== KTC Predictor Startup ==="
-echo "Python version: $(python --version)"
+echo "Python version: $(python3 --version)"
 echo "Node version: $(node --version)"
 
 # Start backend
 echo ""
 echo "=== Starting Backend ==="
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 5000 &
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 5000 &
 BACKEND_PID=$!
 cd ..
 
