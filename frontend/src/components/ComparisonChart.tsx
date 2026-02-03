@@ -11,7 +11,7 @@ import {
   Legend,
   ReferenceDot,
 } from 'recharts';
-import type { SimulateCurveResponse } from '@/types/player';
+import type { SimulateCurveResponse } from '../types/player';
 
 interface ComparisonChartProps {
   curves: SimulateCurveResponse[];

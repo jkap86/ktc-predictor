@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import type { Player } from '@/types/player';
+import type { Player } from '../types/player';
 
 interface ComparisonHistoricalChartProps {
   players: Player[];

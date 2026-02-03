@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getModelMetricsByYear } from '@/lib/api';
-import type { MetricsByYearResponse } from '@/types/player';
+import { getModelMetricsByYear } from '../lib/api';
+import type { MetricsByYearResponse } from '../types/player';
 
 export default function ModelMetrics() {
   const [metrics, setMetrics] = useState<MetricsByYearResponse | null>(null);

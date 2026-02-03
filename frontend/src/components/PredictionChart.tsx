@@ -9,7 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import type { PlayerSeason } from '@/types/player';
+import type { PlayerSeason } from '../types/player';
 
 interface PredictionChartProps {
   seasons: PlayerSeason[];

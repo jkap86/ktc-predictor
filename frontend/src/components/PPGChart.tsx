@@ -11,7 +11,7 @@ import {
   Legend,
   Cell,
 } from 'recharts';
-import type { PredictionWithPPG } from '@/types/player';
+import type { PredictionWithPPG } from '../types/player';
 
 interface PPGChartProps {
   data: PredictionWithPPG[];

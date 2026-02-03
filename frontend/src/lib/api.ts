@@ -6,7 +6,7 @@ import type {
   PredictionWithPPG,
   SimulateCurveResponse,
   MetricsByYearResponse,
-} from '@/types/player';
+} from '../types/player';
 
 const API_BASE = '/api';
 

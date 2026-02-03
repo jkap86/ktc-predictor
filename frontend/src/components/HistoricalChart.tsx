@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import type { PlayerSeason } from '@/types/player';
+import type { PlayerSeason } from '../types/player';
 
 interface HistoricalChartProps {
   seasons: PlayerSeason[];

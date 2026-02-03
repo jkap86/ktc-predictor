@@ -11,7 +11,7 @@ import {
   ReferenceDot,
   ReferenceLine,
 } from 'recharts';
-import type { SimulateCurveResponse } from '@/types/player';
+import type { SimulateCurveResponse } from '../types/player';
 
 const MAX_KTC = 9999;
 

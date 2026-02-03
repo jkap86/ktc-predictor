@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { searchPlayers } from '@/lib/api';
-import type { PlayerSummary } from '@/types/player';
+import { searchPlayers } from '../lib/api';
+import type { PlayerSummary } from '../types/player';
 
 const POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE'];
 
