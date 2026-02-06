@@ -58,6 +58,8 @@ export interface EOSPrediction {
   predicted_end_ktc: number;
   predicted_delta_ktc: number;
   predicted_pct_change: number;
+  low_end_ktc?: number;
+  high_end_ktc?: number;
   model_version: string;
 }
 
@@ -80,6 +82,8 @@ export interface PlayerComparison {
   predicted_end_ktc: number;
   predicted_delta_ktc: number;
   predicted_pct_change: number;
+  low_end_ktc?: number;
+  high_end_ktc?: number;
   model_version: string;
   seasons: PlayerSeason[];
 }

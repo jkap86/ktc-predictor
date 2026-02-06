@@ -100,10 +100,17 @@ def load_bundle(model_dir: str) -> dict:
         with open(sentinel_path) as f:
             sentinel_impute = json.load(f)
 
+    residual_bands = {}
+    bands_path = d / "residual_bands.json"
+    if bands_path.exists():
+        with open(bands_path) as f:
+            residual_bands = json.load(f)
+
     return {
         "models": models,
         "clip_bounds": clip_bounds,
         "calibrators": calibrators,
         "metrics": metrics,
         "sentinel_impute": sentinel_impute,
+        "residual_bands": residual_bands,
     }

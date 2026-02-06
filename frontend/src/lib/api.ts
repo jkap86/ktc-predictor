@@ -8,6 +8,14 @@ import type {
 
 const API_BASE = '/api';
 
+// Simple client-side response cache for slider interactions
+const eosCache = new Map<string, { data: EOSPrediction; ts: number }>();
+const CACHE_TTL = 60_000; // 1 minute
+
+function eosKey(payload: EOSPredictRequest): string {
+  return JSON.stringify(payload);
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
@@ -55,6 +63,13 @@ export async function getPrediction(playerId: string): Promise<EOSPrediction | n
 }
 
 export async function predictEos(payload: EOSPredictRequest): Promise<EOSPrediction | null> {
+  // Check cache first
+  const key = eosKey(payload);
+  const cached = eosCache.get(key);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) {
+    return cached.data;
+  }
+
   const response = await fetch(`${API_BASE}/predict/eos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -62,7 +77,20 @@ export async function predictEos(payload: EOSPredictRequest): Promise<EOSPredict
   });
 
   if (!response.ok) return null;
-  return response.json();
+  const data: EOSPrediction = await response.json();
+
+  // Store in cache
+  eosCache.set(key, { data, ts: Date.now() });
+
+  // Evict old entries if cache grows too large
+  if (eosCache.size > 500) {
+    const cutoff = Date.now() - CACHE_TTL;
+    eosCache.forEach((v, k) => {
+      if (v.ts < cutoff) eosCache.delete(k);
+    });
+  }
+
+  return data;
 }
 
 export async function comparePlayers(playerIds: string[]): Promise<CompareResponse> {

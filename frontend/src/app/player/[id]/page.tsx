@@ -3,10 +3,42 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { getPlayer, getPrediction, predictEos } from '../../../lib/api';
 import type { Player, EOSPrediction } from '../../../types/player';
-import PredictionChart from '../../../components/PredictionChart';
-import HistoricalChart from '../../../components/HistoricalChart';
+
+// Lazy-load charts so initial render is fast
+const PredictionChart = dynamic(() => import('../../../components/PredictionChart'), {
+  loading: () => <div className="h-64 flex items-center justify-center"><div className="w-6 h-6 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" /></div>,
+});
+const HistoricalChart = dynamic(() => import('../../../components/HistoricalChart'), {
+  loading: () => <div className="h-64 flex items-center justify-center"><div className="w-6 h-6 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" /></div>,
+});
+
+function ConfidenceBand({ prediction }: { prediction: EOSPrediction }) {
+  if (!prediction.low_end_ktc || !prediction.high_end_ktc) return null;
+  return (
+    <div className="mt-3 px-4 py-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+      <div className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">
+        Confidence Range (p20 – p80)
+      </div>
+      <div className="flex items-center gap-3 text-sm">
+        <span className="text-gray-600 dark:text-gray-400">{prediction.low_end_ktc.toLocaleString()}</span>
+        <div className="flex-1 h-2 bg-blue-100 dark:bg-blue-800 rounded-full relative">
+          <div
+            className="absolute h-2 bg-blue-500 dark:bg-blue-400 rounded-full"
+            style={{
+              left: `${Math.max(0, Math.min(100, ((prediction.predicted_end_ktc - prediction.low_end_ktc) / (prediction.high_end_ktc - prediction.low_end_ktc)) * 100))}%`,
+              width: '4px',
+              transform: 'translateX(-50%)',
+            }}
+          />
+        </div>
+        <span className="text-gray-600 dark:text-gray-400">{prediction.high_end_ktc.toLocaleString()}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function PlayerPage() {
   const params = useParams();
@@ -23,6 +55,13 @@ export default function PlayerPage() {
   const [whatIfResult, setWhatIfResult] = useState<EOSPrediction | null>(null);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Advanced inputs
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [advAge, setAdvAge] = useState<number | undefined>(undefined);
+  const [advDraftPick, setAdvDraftPick] = useState<number | undefined>(undefined);
+  const [advYearsLeft, setAdvYearsLeft] = useState<number | undefined>(undefined);
+  const [advWeeksMissed, setAdvWeeksMissed] = useState<number | undefined>(undefined);
 
   // Charts collapsed by default
   const [chartsOpen, setChartsOpen] = useState(false);
@@ -42,6 +81,7 @@ export default function PlayerPage() {
             ? latest.fantasy_points / latest.games_played
             : 15;
           setWhatIfPpg(Math.round(ppg * 2) / 2);
+          setAdvAge(latest.age);
         }
 
         // Prediction may return null if player has no valid seasons
@@ -70,6 +110,10 @@ export default function PlayerPage() {
         start_ktc: prediction.start_ktc,
         games_played: whatIfGames,
         ppg: whatIfPpg,
+        age: advAge,
+        draft_pick: advDraftPick,
+        years_remaining: advYearsLeft,
+        weeks_missed: advWeeksMissed,
       });
       setWhatIfResult(result);
     } catch (err) {
@@ -77,12 +121,12 @@ export default function PlayerPage() {
     } finally {
       setWhatIfLoading(false);
     }
-  }, [prediction, whatIfGames, whatIfPpg]);
+  }, [prediction, whatIfGames, whatIfPpg, advAge, advDraftPick, advYearsLeft, advWeeksMissed]);
 
   useEffect(() => {
     if (!prediction) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(fetchWhatIf, 300);
+    debounceRef.current = setTimeout(fetchWhatIf, 200);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -170,6 +214,7 @@ export default function PlayerPage() {
               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">% Change</div>
             </div>
           </div>
+          <ConfidenceBand prediction={prediction} />
         </div>
       )}
 
@@ -215,64 +260,101 @@ export default function PlayerPage() {
           </h3>
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">
-                Games:
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="17"
-                value={whatIfGames}
-                onChange={(e) => setWhatIfGames(parseInt(e.target.value))}
-                className="flex-1"
-              />
-              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">
-                {whatIfGames}
-              </span>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">Games:</label>
+              <input type="range" min="0" max="17" value={whatIfGames} onChange={(e) => setWhatIfGames(parseInt(e.target.value))} className="flex-1" />
+              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">{whatIfGames}</span>
             </div>
             <div className="flex items-center gap-4">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">
-                PPG:
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="40"
-                step="0.5"
-                value={whatIfPpg}
-                onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))}
-                className="flex-1"
-              />
-              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">
-                {whatIfPpg}
-              </span>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">PPG:</label>
+              <input type="range" min="0" max="40" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" />
+              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">{whatIfPpg}</span>
             </div>
           </div>
 
+          {/* Advanced Inputs Toggle */}
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1"
+          >
+            <svg className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+            Advanced inputs
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Age</label>
+                <input
+                  type="number" min="18" max="45" step="1"
+                  value={advAge ?? ''}
+                  onChange={(e) => setAdvAge(e.target.value ? Number(e.target.value) : undefined)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                  placeholder="—"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Draft Pick</label>
+                <input
+                  type="number" min="1" max="260" step="1"
+                  value={advDraftPick ?? ''}
+                  onChange={(e) => setAdvDraftPick(e.target.value ? Number(e.target.value) : undefined)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                  placeholder="—"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Contract Yrs</label>
+                <input
+                  type="number" min="0" max="6" step="1"
+                  value={advYearsLeft ?? ''}
+                  onChange={(e) => setAdvYearsLeft(e.target.value ? Number(e.target.value) : undefined)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                  placeholder="—"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Weeks Missed</label>
+                <input
+                  type="number" min="0" max="17" step="1"
+                  value={advWeeksMissed ?? ''}
+                  onChange={(e) => setAdvWeeksMissed(e.target.value ? Number(e.target.value) : undefined)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                  placeholder="—"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* What-If Result */}
           {whatIfLoading ? (
             <div className="flex justify-center items-center py-6">
               <div className="w-6 h-6 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
             </div>
           ) : whatIfResult ? (
-            <div className="grid grid-cols-3 gap-4 mt-4">
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div className="text-xl font-bold text-gray-900 dark:text-white">
-                  {whatIfResult.predicted_end_ktc.toLocaleString()}
+            <div className="mt-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div className="text-xl font-bold text-gray-900 dark:text-white">
+                    {whatIfResult.predicted_end_ktc.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
-              </div>
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div className={`text-xl font-bold ${whatIfResult.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                  {whatIfResult.predicted_delta_ktc >= 0 ? '+' : ''}{whatIfResult.predicted_delta_ktc.toLocaleString()}
+                <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div className={`text-xl font-bold ${whatIfResult.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {whatIfResult.predicted_delta_ktc >= 0 ? '+' : ''}{whatIfResult.predicted_delta_ktc.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Delta</div>
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Delta</div>
-              </div>
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div className={`text-xl font-bold ${whatIfResult.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                  {whatIfResult.predicted_pct_change >= 0 ? '+' : ''}{whatIfResult.predicted_pct_change.toFixed(1)}%
+                <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div className={`text-xl font-bold ${whatIfResult.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {whatIfResult.predicted_pct_change >= 0 ? '+' : ''}{whatIfResult.predicted_pct_change.toFixed(1)}%
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">% Change</div>
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">% Change</div>
               </div>
+              <ConfidenceBand prediction={whatIfResult} />
             </div>
           ) : null}
         </div>

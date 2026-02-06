@@ -4,6 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 EOS_MODELS_DIR = BASE_DIR / "models"
+EOS_MODEL_VERSION = "eos_hgb_v1"
 
 TRAINING_DATA_PATH = DATA_DIR / "training-data.json"
 

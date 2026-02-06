@@ -64,6 +64,8 @@ class EOSPredictionResponse(BaseModel):
     predicted_end_ktc: float
     predicted_delta_ktc: float
     predicted_pct_change: float
+    low_end_ktc: float | None = None
+    high_end_ktc: float | None = None
     model_version: str = "eos_hgb_v1"
 
 
@@ -92,6 +94,8 @@ class PlayerComparison(BaseModel):
     predicted_end_ktc: float
     predicted_delta_ktc: float
     predicted_pct_change: float
+    low_end_ktc: float | None = None
+    high_end_ktc: float | None = None
     model_version: str = "eos_hgb_v1"
     seasons: list[PlayerSeason] = []
 
