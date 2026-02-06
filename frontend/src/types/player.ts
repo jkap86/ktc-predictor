@@ -28,6 +28,7 @@ export interface PlayerSeason {
   start_position_rank: number;
   weekly_stats: WeeklyStat[];
   weekly_ktc: WeeklyKTC[];
+  ml_predicted_ktc?: number;  // ML model's prediction for this season's end_ktc
 }
 
 export interface Player {
@@ -59,6 +60,16 @@ export interface PredictionResponse {
   ktc_change: number;
   ktc_change_pct: number;
   confidence?: number;
+  // XGBCalibratedBreakoutPredictor fields
+  tier?: 'low' | 'mid' | 'high' | 'elite';
+  breakout_boost_applied?: boolean;
+  bust_penalty_applied?: boolean;
+  model?: string;
+  // Legacy hybrid ensemble fields (deprecated)
+  absolute_weight?: number;
+  ratio_weight?: number;
+  ratio_prediction?: number;
+  absolute_prediction?: number;
 }
 
 export interface PlayerComparison {
