@@ -48,6 +48,11 @@ def save_bundle(bundle: dict, out_dir: str) -> None:
         with open(out / "metrics.json", "w") as f:
             json.dump(bundle["metrics"], f, indent=2)
 
+    # Save sentinel imputation values
+    if "sentinel_impute" in bundle and bundle["sentinel_impute"]:
+        with open(out / "sentinel_impute.json", "w") as f:
+            json.dump(bundle["sentinel_impute"], f, indent=2)
+
 
 def load_bundle(model_dir: str) -> dict:
     """Load a saved model bundle from disk.
@@ -89,9 +94,16 @@ def load_bundle(model_dir: str) -> dict:
         with open(metrics_path) as f:
             metrics = json.load(f)
 
+    sentinel_impute = {}
+    sentinel_path = d / "sentinel_impute.json"
+    if sentinel_path.exists():
+        with open(sentinel_path) as f:
+            sentinel_impute = json.load(f)
+
     return {
         "models": models,
         "clip_bounds": clip_bounds,
         "calibrators": calibrators,
         "metrics": metrics,
+        "sentinel_impute": sentinel_impute,
     }

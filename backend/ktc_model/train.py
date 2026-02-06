@@ -27,6 +27,7 @@ FEATURES = [
     "weeks_missed_so_far",
     "draft_pick",
     "years_remaining",
+    "start_ktc_was_sentinel",
 ]
 MIN_SAMPLES = 100
 GP_BUCKETS = [(1, 3), (4, 7), (8, 11), (12, 17)]
@@ -149,7 +150,7 @@ def _try_xgb(seed: int):
             n_estimators=200,
             max_depth=5,
             learning_rate=0.1,
-            monotone_constraints="(0,1,0,0,0,0,0)",
+            monotone_constraints="(0,1,0,0,0,0,0,0)",
             random_state=seed,
         )
     except ImportError:
@@ -162,7 +163,7 @@ def _build_hgb(seed: int):
         max_iter=200,
         max_depth=5,
         learning_rate=0.1,
-        monotonic_cst=[0, 1, 0, 0, 0, 0, 0],
+        monotonic_cst=[0, 1, 0, 0, 0, 0, 0, 0],
         random_state=seed,
     )
 
@@ -170,7 +171,7 @@ def _build_hgb(seed: int):
 def _monotonic_smoke_test(model, position: str) -> bool:
     """Verify log_ratio predictions are non-decreasing as PPG increases (gp=8, start_ktc=5000)."""
     ppg_values = [5, 10, 15, 20]
-    X_test = np.array([[8, ppg, 5000, 25, 2, np.nan, 3] for ppg in ppg_values])
+    X_test = np.array([[8, ppg, 5000, 25, 2, np.nan, 3, 0] for ppg in ppg_values])
     preds = model.predict(X_test)
 
     is_monotonic = all(preds[i] <= preds[i + 1] for i in range(len(preds) - 1))
@@ -349,6 +350,15 @@ def train_all(
             "clip_low": round(low, 1),
             "clip_high": round(high, 1),
         }
+
+    # Save per-position start_ktc medians for sentinel imputation at inference
+    sentinel_impute = {}
+    for pos in POSITIONS:
+        pos_df = df[df["position"] == pos]
+        non_sent = pos_df[pos_df["start_ktc_was_sentinel"] == 0]
+        if not non_sent.empty:
+            sentinel_impute[pos] = float(non_sent["start_ktc"].median())
+    bundle["sentinel_impute"] = sentinel_impute
 
     if export_csv and all_test_rows:
         csv_df = pd.DataFrame(all_test_rows)

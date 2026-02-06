@@ -31,11 +31,13 @@ async def lifespan(app: FastAPI):
         _state["models"] = bundle["models"]
         _state["clip_bounds"] = bundle["clip_bounds"]
         _state["calibrators"] = bundle["calibrators"]
+        _state["sentinel_impute"] = bundle.get("sentinel_impute", {})
     except Exception as e:
         print(f"WARNING: Failed to load models: {e}")
         _state["models"] = {}
         _state["clip_bounds"] = {}
         _state["calibrators"] = {}
+        _state["sentinel_impute"] = {}
     yield
     _state.clear()
 
@@ -57,6 +59,11 @@ class PredictRequest(BaseModel):
     position: str
     games_played: int = Field(..., alias="gamesPlayed", ge=0)
     ppg: float = Field(..., ge=0)
+    start_ktc: float = Field(..., alias="startKtc", gt=0)
+    age: int | None = None
+    weeks_missed: int | None = Field(None, alias="weeksMissed", ge=0)
+    draft_pick: int | None = Field(None, alias="draftPick", ge=1)
+    years_remaining: int | None = Field(None, alias="yearsRemaining", ge=0)
 
     model_config = {"populate_by_name": True}
 
@@ -75,6 +82,12 @@ class PredictResponse(BaseModel):
     position: str
     games_played: int = Field(..., alias="gamesPlayed")
     ppg: float
+    start_ktc: float = Field(..., alias="startKtc")
+    age: int | None = None
+    weeks_missed: int | None = Field(None, alias="weeksMissed")
+    draft_pick: int | None = Field(None, alias="draftPick")
+    years_remaining: int | None = Field(None, alias="yearsRemaining")
+    predicted_delta_ktc: float = Field(..., alias="predictedDeltaKtc")
     predicted_end_ktc: float = Field(..., alias="predictedEndKtc")
 
     model_config = {"populate_by_name": True, "serialize_by_alias": True}
@@ -98,6 +111,12 @@ async def predict(req: PredictRequest):
             position=req.position,
             gp=req.games_played,
             ppg=req.ppg,
+            start_ktc=req.start_ktc,
+            age=req.age,
+            weeks_missed=req.weeks_missed,
+            draft_pick=req.draft_pick,
+            years_remaining=req.years_remaining,
+            sentinel_impute=_state.get("sentinel_impute"),
         )
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -106,5 +125,11 @@ async def predict(req: PredictRequest):
         position=req.position,
         games_played=req.games_played,
         ppg=req.ppg,
-        predicted_end_ktc=result,
+        start_ktc=req.start_ktc,
+        age=req.age,
+        weeks_missed=req.weeks_missed,
+        draft_pick=req.draft_pick,
+        years_remaining=req.years_remaining,
+        predicted_delta_ktc=result["delta_ktc"],
+        predicted_end_ktc=result["end_ktc"],
     )

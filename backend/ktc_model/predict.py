@@ -26,6 +26,7 @@ def predict_end_ktc(
     weeks_missed: float | None = None,
     draft_pick: float | None = None,
     years_remaining: float | None = None,
+    sentinel_impute: dict | None = None,
 ) -> dict:
     """Predict end-of-season KTC value.
 
@@ -55,6 +56,9 @@ def predict_end_ktc(
         NFL draft pick number. None -> NaN for the model.
     years_remaining : float or None
         Contract years remaining. None -> NaN for the model.
+    sentinel_impute : dict or None
+        Mapping of position -> median start_ktc for sentinel imputation.
+        If provided and start_ktc >= 9999, auto-replaces with imputed value.
 
     Returns
     -------
@@ -91,6 +95,13 @@ def predict_end_ktc(
         raise KeyError(f"No model available for position '{position}'")
 
     model = models[position]
+
+    # Auto-detect and replace sentinel start_ktc values
+    was_sentinel = 0
+    if start_ktc >= 9999 and sentinel_impute and position in sentinel_impute:
+        was_sentinel = 1
+        start_ktc = sentinel_impute[position]
+
     X = np.array([[
         gp,
         ppg,
@@ -99,6 +110,7 @@ def predict_end_ktc(
         weeks_missed if weeks_missed is not None else np.nan,
         draft_pick if draft_pick is not None else np.nan,
         years_remaining if years_remaining is not None else np.nan,
+        was_sentinel,
     ]])
 
     # Predict log_ratio: log(end_ktc / start_ktc)

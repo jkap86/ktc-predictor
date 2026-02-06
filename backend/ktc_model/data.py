@@ -98,18 +98,27 @@ def build_weekly_snapshot_df(
 
     df = pd.DataFrame(rows)
 
-    # Winsorize start_ktc: cap at 99th percentile per position
+    # Mark and replace 9999 sentinels in both start_ktc and end_ktc
+    df["start_ktc_was_sentinel"] = 0
     for pos in VALID_POSITIONS:
         mask = df["position"] == pos
         if not mask.any():
             continue
-        p99 = df.loc[mask, "start_ktc"].quantile(0.99)
-        capped = df.loc[mask, "start_ktc"].clip(upper=p99)
-        df.loc[mask, "start_ktc"] = capped
-        # Recompute derived columns
+        # start_ktc sentinels → median (conservative; flag compensates)
+        start_sent = mask & (df["start_ktc"] >= 9999)
+        if start_sent.any():
+            non_sent = mask & (df["start_ktc"] < 9999)
+            df.loc[start_sent, "start_ktc_was_sentinel"] = 1
+            df.loc[start_sent, "start_ktc"] = df.loc[non_sent, "start_ktc"].median()
+        # end_ktc sentinels → p95 (closer to truth for target)
+        end_sent = mask & (df["end_ktc"] >= 9999)
+        if end_sent.any():
+            non_sent_end = mask & (df["end_ktc"] < 9999)
+            df.loc[end_sent, "end_ktc"] = df.loc[non_sent_end, "end_ktc"].quantile(0.95)
+        # Recompute derived columns for entire position
         df.loc[mask, "log_ratio"] = np.log(
-            np.maximum(df.loc[mask, "end_ktc"], 1) / capped
+            np.maximum(df.loc[mask, "end_ktc"], 1) / df.loc[mask, "start_ktc"]
         )
-        df.loc[mask, "abs_change"] = df.loc[mask, "end_ktc"] - capped
+        df.loc[mask, "abs_change"] = df.loc[mask, "end_ktc"] - df.loc[mask, "start_ktc"]
 
     return df
