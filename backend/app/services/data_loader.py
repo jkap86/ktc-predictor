@@ -84,6 +84,66 @@ def calculate_derived_features(season: dict) -> dict:
     }
 
 
+def get_position_age_factor(age: int, position: str) -> float:
+    """Age depreciation factor by position. <1.0 for declining players."""
+    peak_ages = {"QB": 28, "WR": 26, "RB": 25, "TE": 27}
+    peak = peak_ages.get(position, 27)
+    if age <= peak:
+        return 1.0
+    years_past = age - peak
+    rate = {"RB": 0.06, "WR": 0.04, "TE": 0.04, "QB": 0.03}.get(position, 0.04)
+    return max(1.0 - years_past * rate, 0.5)
+
+
+def get_position_ktc_ceiling(position: str) -> float:
+    """Typical KTC ceiling for elite players at each position."""
+    ceilings = {"QB": 9500, "WR": 8500, "RB": 7000, "TE": 6500}
+    return ceilings.get(position, 7000)
+
+
+def get_draft_capital_score(draft_round, draft_pick) -> float:
+    """Score 0-10 based on draft position. Higher = more capital."""
+    if draft_round is None or draft_pick is None:
+        return 0.0
+    try:
+        rd = int(draft_round)
+        pk = int(draft_pick)
+    except (ValueError, TypeError):
+        return 0.0
+    overall = (rd - 1) * 32 + pk
+    return max(10.0 - (overall / 26.0), 0.0)
+
+
+def calculate_offseason_features(season: dict, prior_end_ktc: float) -> dict:
+    """Calculate offseason KTC movement features."""
+    start_ktc = season.get("start_ktc", 0)
+    retention = start_ktc / prior_end_ktc if prior_end_ktc > 0 else 1.0
+    offseason_ktc_values = season.get("offseason_ktc_values", [])
+    if len(offseason_ktc_values) >= 2:
+        trend = (offseason_ktc_values[-1] - offseason_ktc_values[0]) / max(offseason_ktc_values[0], 1)
+        vals = [float(v) for v in offseason_ktc_values]
+        vol = (max(vals) - min(vals)) / max(max(vals), 1) if vals else 0
+        peak = max(vals)
+        trough = min(vals)
+        max_dd = (peak - trough) / peak if peak > 0 else 0
+        recovery = (vals[-1] - trough) / (peak - trough) if peak > trough else 1.0
+    else:
+        trend = 0.0
+        vol = 0.0
+        max_dd = 0.0
+        recovery = 1.0
+    return {
+        "offseason_ktc_retention": retention,
+        "offseason_trend": trend,
+        "offseason_volatility": vol,
+        "draft_impact": season.get("draft_impact", 0),
+        "training_camp_surge": season.get("training_camp_surge", 0),
+        "free_agency_impact": season.get("free_agency_impact", 0),
+        "offseason_max_drawdown": max_dd,
+        "offseason_recovery": recovery,
+    }
+
+
 class DataLoader:
     def __init__(self, data_path: Optional[Path] = None):
         self.data_path = data_path or TRAINING_DATA_PATH
