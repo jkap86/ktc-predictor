@@ -1,26 +1,31 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getPlayer, simulateCurve } from '../../../lib/api';
-import type { Player, SimulateCurveResponse } from '../../../types/player';
+import { getPlayer, getPrediction, predictEos } from '../../../lib/api';
+import type { Player, EOSPrediction } from '../../../types/player';
 import PredictionChart from '../../../components/PredictionChart';
 import HistoricalChart from '../../../components/HistoricalChart';
-import PPGValueCurve from '../../../components/PPGValueCurve';
 
 export default function PlayerPage() {
   const params = useParams();
   const playerId = params.id as string;
 
   const [player, setPlayer] = useState<Player | null>(null);
+  const [prediction, setPrediction] = useState<EOSPrediction | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Simulator state
-  const [games, setGames] = useState(17);
-  const [curveData, setCurveData] = useState<SimulateCurveResponse | null>(null);
-  const [simulatorLoading, setSimulatorLoading] = useState(false);
+  // What-If sliders
+  const [whatIfGames, setWhatIfGames] = useState(17);
+  const [whatIfPpg, setWhatIfPpg] = useState(15);
+  const [whatIfResult, setWhatIfResult] = useState<EOSPrediction | null>(null);
+  const [whatIfLoading, setWhatIfLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Charts collapsed by default
+  const [chartsOpen, setChartsOpen] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -28,6 +33,22 @@ export default function PlayerPage() {
         setLoading(true);
         const playerData = await getPlayer(playerId);
         setPlayer(playerData);
+
+        // Initialize what-if sliders from latest season
+        if (playerData.seasons.length > 0) {
+          const latest = playerData.seasons.reduce((a, b) => (a.year > b.year ? a : b));
+          setWhatIfGames(latest.games_played);
+          const ppg = latest.games_played > 0
+            ? latest.fantasy_points / latest.games_played
+            : 15;
+          setWhatIfPpg(Math.round(ppg * 2) / 2);
+        }
+
+        // Prediction may return null if player has no valid seasons
+        const predictionData = await getPrediction(playerId);
+        if (predictionData) {
+          setPrediction(predictionData);
+        }
       } catch (err) {
         setError('Failed to load player data');
         console.error(err);
@@ -39,26 +60,33 @@ export default function PlayerPage() {
     fetchData();
   }, [playerId]);
 
-  // Fetch curve data when games changes
-  const fetchCurveData = useCallback(async () => {
-    if (!playerId) return;
+  // Debounced what-if prediction
+  const fetchWhatIf = useCallback(async () => {
+    if (!prediction) return;
+    setWhatIfLoading(true);
     try {
-      setSimulatorLoading(true);
-      const data = await simulateCurve(playerId, games);
-      setCurveData(data);
+      const result = await predictEos({
+        position: prediction.position,
+        start_ktc: prediction.start_ktc,
+        games_played: whatIfGames,
+        ppg: whatIfPpg,
+      });
+      setWhatIfResult(result);
     } catch (err) {
-      console.error('Failed to load simulation data:', err);
+      console.error('What-if prediction failed:', err);
     } finally {
-      setSimulatorLoading(false);
+      setWhatIfLoading(false);
     }
-  }, [playerId, games]);
+  }, [prediction, whatIfGames, whatIfPpg]);
 
   useEffect(() => {
-    // Only fetch curve data after initial player data is loaded
-    if (player && !loading) {
-      fetchCurveData();
-    }
-  }, [player, loading, fetchCurveData]);
+    if (!prediction) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(fetchWhatIf, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [fetchWhatIf, prediction]);
 
   if (loading) {
     return (
@@ -105,11 +133,44 @@ export default function PlayerPage() {
         </span>
       </div>
 
-      {player.seasons.length > 0 && (
-        <>
-          <PredictionChart seasons={player.seasons} />
-          <HistoricalChart seasons={player.seasons} />
-        </>
+      {/* EOS Prediction Card */}
+      {prediction && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              End-of-Season Prediction
+            </h3>
+            <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full font-mono">
+              {prediction.model_version}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                {prediction.start_ktc.toLocaleString()}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Current KTC</div>
+            </div>
+            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                {prediction.predicted_end_ktc.toLocaleString()}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
+            </div>
+            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <div className={`text-2xl font-bold ${prediction.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                {prediction.predicted_delta_ktc >= 0 ? '+' : ''}{prediction.predicted_delta_ktc.toLocaleString()}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Delta</div>
+            </div>
+            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <div className={`text-2xl font-bold ${prediction.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                {prediction.predicted_pct_change >= 0 ? '+' : ''}{prediction.predicted_pct_change.toFixed(1)}%
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">% Change</div>
+            </div>
+          </div>
+        </div>
       )}
 
       {latestSeason && (
@@ -146,40 +207,104 @@ export default function PlayerPage() {
         </div>
       )}
 
-      {/* KTC Value Simulator */}
-      <div className="space-y-4">
+      {/* What-If Sliders */}
+      {prediction && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Simulate Future Value
+            What-If Scenario
           </h3>
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Games to simulate:
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="17"
-              value={games}
-              onChange={(e) => setGames(parseInt(e.target.value))}
-              className="flex-1"
-            />
-            <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-8 text-center">
-              {games}
-            </span>
-          </div>
-        </div>
-
-        {simulatorLoading ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700 p-6">
-            <div className="flex justify-center items-center py-12">
-              <div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">
+                Games:
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="17"
+                value={whatIfGames}
+                onChange={(e) => setWhatIfGames(parseInt(e.target.value))}
+                className="flex-1"
+              />
+              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">
+                {whatIfGames}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">
+                PPG:
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="40"
+                step="0.5"
+                value={whatIfPpg}
+                onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))}
+                className="flex-1"
+              />
+              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">
+                {whatIfPpg}
+              </span>
             </div>
           </div>
-        ) : curveData ? (
-          <PPGValueCurve data={curveData} />
-        ) : null}
-      </div>
+
+          {whatIfLoading ? (
+            <div className="flex justify-center items-center py-6">
+              <div className="w-6 h-6 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
+            </div>
+          ) : whatIfResult ? (
+            <div className="grid grid-cols-3 gap-4 mt-4">
+              <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <div className="text-xl font-bold text-gray-900 dark:text-white">
+                  {whatIfResult.predicted_end_ktc.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
+              </div>
+              <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <div className={`text-xl font-bold ${whatIfResult.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {whatIfResult.predicted_delta_ktc >= 0 ? '+' : ''}{whatIfResult.predicted_delta_ktc.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Delta</div>
+              </div>
+              <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <div className={`text-xl font-bold ${whatIfResult.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {whatIfResult.predicted_pct_change >= 0 ? '+' : ''}{whatIfResult.predicted_pct_change.toFixed(1)}%
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">% Change</div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Collapsible Charts */}
+      {player.seasons.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
+          <button
+            onClick={() => setChartsOpen(!chartsOpen)}
+            className="w-full px-6 py-4 flex items-center justify-between text-left"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Historical Charts
+            </h3>
+            <svg
+              className={`w-5 h-5 text-gray-500 transition-transform ${chartsOpen ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {chartsOpen && (
+            <div className="px-6 pb-6 space-y-6">
+              <PredictionChart seasons={player.seasons} />
+              <HistoricalChart seasons={player.seasons} />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="text-center">
         <Link

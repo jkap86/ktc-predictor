@@ -28,7 +28,6 @@ export interface PlayerSeason {
   start_position_rank: number;
   weekly_stats: WeeklyStat[];
   weekly_ktc: WeeklyKTC[];
-  ml_predicted_ktc?: number;  // ML model's prediction for this season's end_ktc
 }
 
 export interface Player {
@@ -51,107 +50,40 @@ export interface PlayerList {
   total: number;
 }
 
-export interface PredictionResponse {
-  player_id: string;
-  name: string;
+export interface EOSPrediction {
+  player_id?: string;
+  name?: string;
   position: string;
-  current_ktc: number;
-  predicted_ktc: number;
-  ktc_change: number;
-  ktc_change_pct: number;
-  confidence?: number;
-  // XGBCalibratedBreakoutPredictor fields
-  tier?: 'low' | 'mid' | 'high' | 'elite';
-  breakout_boost_applied?: boolean;
-  bust_penalty_applied?: boolean;
-  model?: string;
-  // Legacy hybrid ensemble fields (deprecated)
-  absolute_weight?: number;
-  ratio_weight?: number;
-  ratio_prediction?: number;
-  absolute_prediction?: number;
+  start_ktc: number;
+  predicted_end_ktc: number;
+  predicted_delta_ktc: number;
+  predicted_pct_change: number;
+  model_version: string;
+}
+
+export interface EOSPredictRequest {
+  position: string;
+  start_ktc: number;
+  games_played: number;
+  ppg: number;
+  age?: number;
+  weeks_missed?: number;
+  draft_pick?: number;
+  years_remaining?: number;
 }
 
 export interface PlayerComparison {
   player_id: string;
   name: string;
   position: string;
-  current_ktc: number;
-  predicted_ktc: number;
-  ktc_change: number;
+  start_ktc: number;
+  predicted_end_ktc: number;
+  predicted_delta_ktc: number;
+  predicted_pct_change: number;
+  model_version: string;
   seasons: PlayerSeason[];
 }
 
 export interface CompareResponse {
   players: PlayerComparison[];
-}
-
-export interface PredictionWithPPG {
-  player_id: string;
-  name: string;
-  position: string;
-  ppg: number;
-  predicted_ktc: number;
-  current_ktc: number;
-  ktc_change_pct: number;
-}
-
-// ========== Weekly Simulation Types ==========
-
-export interface CurvePoint {
-  ppg: number;
-  predicted_ktc: number;
-}
-
-export interface SimulateCurveResponse {
-  player_id: string;
-  name: string;
-  position: string;
-  starting_ktc: number;
-  current_ppg: number;
-  games: number;
-  curve: CurvePoint[];
-}
-
-export interface WeeklyProjection {
-  week: number;
-  ktc: number;
-  fp: number;
-  change: number;
-}
-
-export interface SimulationResponse {
-  player_id: string;
-  name: string;
-  position: string;
-  starting_ktc: number;
-  final_ktc: number;
-  total_change: number;
-  total_change_pct: number;
-  games: number;
-  ppg: number;
-  trajectory: WeeklyProjection[];
-}
-
-// ========== Model Metrics Types ==========
-
-export interface YearMetrics {
-  year: number;
-  r2: number;
-  mae: number;
-  n_samples: number;
-}
-
-export interface OverallMetrics {
-  test_r2: number;
-  test_mae: number;
-  train_r2: number;
-  train_mae: number;
-  n_train: number;
-  n_test: number;
-}
-
-export interface MetricsByYearResponse {
-  overall: OverallMetrics;
-  by_year: YearMetrics[];
 }

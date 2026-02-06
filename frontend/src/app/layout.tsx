@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import './globals.css';
-import ModelMetrics from '../components/ModelMetrics';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -36,7 +35,6 @@ function ThemeToggle() {
   const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
-    // Check localStorage on mount, default to dark
     const stored = localStorage.getItem('theme');
     const prefersDark = stored ? stored === 'dark' : true;
     setIsDark(prefersDark);
@@ -98,7 +96,6 @@ export default function RootLayout({
             </div>
           </div>
         </nav>
-        <ModelMetrics />
         <main className="max-w-7xl mx-auto px-4 py-8">{children}</main>
       </body>
     </html>

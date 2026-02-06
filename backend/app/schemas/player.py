@@ -54,15 +54,28 @@ class PlayerList(BaseModel):
     total: int
 
 
-class PredictionResponse(BaseModel):
-    player_id: str
-    name: str
+class EOSPredictionResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    player_id: str | None = None
+    name: str | None = None
     position: str
-    current_ktc: float
-    predicted_ktc: float
-    ktc_change: float
-    ktc_change_pct: float
-    confidence: Optional[float] = None
+    start_ktc: float
+    predicted_end_ktc: float
+    predicted_delta_ktc: float
+    predicted_pct_change: float
+    model_version: str = "eos_hgb_v1"
+
+
+class EOSPredictRequest(BaseModel):
+    position: str
+    start_ktc: float
+    games_played: int
+    ppg: float
+    age: float | None = None
+    weeks_missed: float | None = None
+    draft_pick: float | None = None
+    years_remaining: float | None = None
 
 
 class CompareRequest(BaseModel):
@@ -70,66 +83,18 @@ class CompareRequest(BaseModel):
 
 
 class PlayerComparison(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     player_id: str
     name: str
     position: str
-    current_ktc: float
-    predicted_ktc: float
-    ktc_change: float
+    start_ktc: float
+    predicted_end_ktc: float
+    predicted_delta_ktc: float
+    predicted_pct_change: float
+    model_version: str = "eos_hgb_v1"
     seasons: list[PlayerSeason] = []
 
 
 class CompareResponse(BaseModel):
     players: list[PlayerComparison]
-
-
-class PredictionWithPPG(BaseModel):
-    player_id: str
-    name: str
-    position: str
-    ppg: float
-    predicted_ktc: float
-    current_ktc: float
-    ktc_change_pct: float
-
-
-# ========== Weekly Simulation Schemas ==========
-
-
-class SimulateCurveRequest(BaseModel):
-    games: int
-
-
-class CurvePoint(BaseModel):
-    ppg: int
-    predicted_ktc: float
-
-
-class SimulateCurveResponse(BaseModel):
-    player_id: str
-    name: str
-    position: str
-    starting_ktc: float
-    current_ppg: float
-    games: int
-    curve: list[CurvePoint]
-
-
-class WeeklyProjection(BaseModel):
-    week: int
-    ktc: float
-    fp: float
-    change: float
-
-
-class SimulationResponse(BaseModel):
-    player_id: str
-    name: str
-    position: str
-    starting_ktc: float
-    final_ktc: float
-    total_change: float
-    total_change_pct: float
-    games: int
-    ppg: float
-    trajectory: list[WeeklyProjection]
