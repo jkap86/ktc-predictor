@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   LineChart,
   Line,
@@ -38,7 +38,7 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
 
   // Get union of all years across all players
   const allYears = new Set<number>();
-  players.forEach((p) => p.seasons.forEach((s) => allYears.add(s.year)));
+  players.forEach((p) => (p.seasons ?? []).forEach((s) => allYears.add(s.year)));
   const years = Array.from(allYears).sort((a, b) => a - b);
 
   // Initialize selectedYear if not set
@@ -53,7 +53,7 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
       return weeks.map((week) => {
         const point: Record<string, number | undefined> = { week };
         players.forEach((p) => {
-          const season = p.seasons.find((s) => s.year === selectedYear);
+          const season = (p.seasons ?? []).find((s) => s.year === selectedYear);
           const weekStat = season?.weekly_stats.find((w) => w.week === week);
           point[p.name] = weekStat?.fantasy_points;
         });
@@ -65,7 +65,7 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
     return years.map((year) => {
       const point: Record<string, number | undefined> = { year };
       players.forEach((p) => {
-        const season = p.seasons.find((s) => s.year === year);
+        const season = (p.seasons ?? []).find((s) => s.year === year);
         if (view === 'ktc') {
           point[`${p.name} Predicted`] = season?.start_ktc;
           point[`${p.name} Actual`] = season?.end_ktc;
@@ -155,7 +155,7 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
 
           {view === 'ktc' &&
             players.map((player, idx) => (
-              <>
+              <Fragment key={player.player_id}>
                 <Line
                   key={`${player.player_id}-predicted`}
                   type="monotone"
@@ -175,7 +175,7 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
                   dot={{ r: 4, fill: COLORS[idx % COLORS.length], stroke: '#fff', strokeWidth: 2 }}
                   connectNulls
                 />
-              </>
+              </Fragment>
             ))}
 
           {view === 'fantasy' &&
