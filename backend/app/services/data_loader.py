@@ -268,7 +268,7 @@ class DataLoader:
         return self._seasons_df
 
     def get_feature_matrix(
-        self, prior_predictions: Optional[dict] = None
+        self, prior_predictions: Optional[dict] = None, include_metadata: bool = False
     ) -> tuple[pd.DataFrame, pd.Series]:
         """Prepare features and target for ML model.
 
@@ -369,6 +369,9 @@ class DataLoader:
                     "games_x_consistency": games_played * fp_consistency,
                     "ktc_x_volatility": current_ktc * ktc_volatility / 10000,
                     "ktc_x_trend": current_ktc * ktc_trend / 10000,
+                    # Metadata (not used as features)
+                    "year": current_season["year"],
+                    "player_id": player_id,
                     # Target: next season's end KTC
                     "target_ktc": next_season["end_ktc"],
                 }
@@ -417,6 +420,13 @@ class DataLoader:
         X = train_df[feature_cols].fillna(0)
         y = train_df["target_ktc"]
 
+        if include_metadata:
+            metadata = {
+                "year": train_df["year"],
+                "player_id": train_df["player_id"],
+                "position": train_df["position"],
+            }
+            return X, y, metadata
         return X, y
 
     def get_weekly_feature_matrix(self) -> tuple[pd.DataFrame, pd.Series]:
