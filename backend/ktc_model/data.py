@@ -4,6 +4,7 @@ import json
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 VALID_POSITIONS = {"QB", "RB", "WR", "TE"}
@@ -28,7 +29,8 @@ def build_weekly_snapshot_df(
     -------
     pd.DataFrame
         Columns: player_id, position, year, week, games_played_so_far,
-                 ppg_so_far, end_ktc
+                 ppg_so_far, start_ktc, age, weeks_missed_so_far,
+                 draft_pick, years_remaining, end_ktc, abs_change
     """
     zip_path = Path(zip_path)
     with zipfile.ZipFile(zip_path, "r") as zf:
@@ -49,7 +51,14 @@ def build_weekly_snapshot_df(
             if end_ktc is None:
                 continue
 
+            start_ktc = season.get("start_ktc")
+            if start_ktc is None or start_ktc <= 0:
+                continue
+
             year = season["year"]
+            age = season.get("age")
+            draft_pick = season.get("draft_pick")
+            years_remaining = season.get("years_remaining")
             weekly_stats = season.get("weekly_stats", [])
 
             # Sort by week to ensure correct accumulation
@@ -66,6 +75,7 @@ def build_weekly_snapshot_df(
                     continue
 
                 ppg_so_far = fp_so_far / games_so_far
+                weeks_missed_so_far = ws["week"] - games_so_far
 
                 rows.append(
                     {
@@ -75,9 +85,31 @@ def build_weekly_snapshot_df(
                         "week": ws["week"],
                         "games_played_so_far": games_so_far,
                         "ppg_so_far": round(ppg_so_far, 4),
+                        "start_ktc": start_ktc,
+                        "age": age,
+                        "weeks_missed_so_far": weeks_missed_so_far,
+                        "draft_pick": draft_pick,
+                        "years_remaining": years_remaining,
                         "end_ktc": end_ktc,
+                        "abs_change": end_ktc - start_ktc,
+                        "log_ratio": np.log(max(end_ktc, 1) / start_ktc),
                     }
                 )
 
     df = pd.DataFrame(rows)
+
+    # Winsorize start_ktc: cap at 99th percentile per position
+    for pos in VALID_POSITIONS:
+        mask = df["position"] == pos
+        if not mask.any():
+            continue
+        p99 = df.loc[mask, "start_ktc"].quantile(0.99)
+        capped = df.loc[mask, "start_ktc"].clip(upper=p99)
+        df.loc[mask, "start_ktc"] = capped
+        # Recompute derived columns
+        df.loc[mask, "log_ratio"] = np.log(
+            np.maximum(df.loc[mask, "end_ktc"], 1) / capped
+        )
+        df.loc[mask, "abs_change"] = df.loc[mask, "end_ktc"] - capped
+
     return df

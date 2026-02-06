@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import mean_absolute_error, r2_score
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import GroupKFold, GroupShuffleSplit
 
 from .data import build_weekly_snapshot_df
 from .io import save_bundle
@@ -29,8 +29,18 @@ FEATURES = [
     "years_remaining",
 ]
 MIN_SAMPLES = 100
+GP_BUCKETS = [(1, 3), (4, 7), (8, 11), (12, 17)]
+GP_BUCKET_MIN_SAMPLES = 30
 
 NAN_CHECK_COLS = ["age", "draft_pick", "years_remaining"]
+
+
+def _gp_bucket_key(gp: float) -> str | None:
+    """Return the bucket key string for a games_played value, or None."""
+    for lo, hi in GP_BUCKETS:
+        if lo <= gp <= hi:
+            return f"gp_{lo}_{hi}"
+    return None
 
 
 def print_diagnostics(df: pd.DataFrame, test_rows: list[dict]) -> None:
@@ -236,17 +246,54 @@ def train_all(
         train_preds = model.predict(X_train)
         test_preds = model.predict(X_test)
 
-        # Isotonic calibration
-        calibrator = None
+        # Isotonic calibration using cross-validated out-of-fold predictions
+        calibrator_dict = None
         if not no_calibration:
-            calibrator = IsotonicRegression(out_of_bounds="clip")
-            calibrator.fit(train_preds, y_train)
+            # Generate OOF predictions so calibrator sees realistic bias
+            oof_preds = np.full(len(X_train), np.nan)
+            train_groups = groups[train_idx]
+            n_unique = len(np.unique(train_groups))
+            n_cv_folds = min(5, n_unique)
 
-            # Calibrate test predictions
-            test_preds_cal = calibrator.predict(test_preds)
-            nan_mask = ~np.isnan(test_preds_cal)
-            if nan_mask.any():
-                test_preds = np.where(nan_mask, test_preds_cal, test_preds)
+            if n_cv_folds >= 2:
+                gkf = GroupKFold(n_splits=n_cv_folds)
+                for cv_train, cv_val in gkf.split(X_train, y_train, train_groups):
+                    cv_model = _try_xgb(seed) if prefer_xgb and backend_name == "XGB" else _build_hgb(seed)
+                    cv_model.fit(X_train[cv_train], y_train[cv_train])
+                    oof_preds[cv_val] = cv_model.predict(X_train[cv_val])
+
+            # Fall back to train preds if OOF failed
+            valid_oof = ~np.isnan(oof_preds)
+            if valid_oof.sum() < GP_BUCKET_MIN_SAMPLES:
+                oof_preds = train_preds
+                valid_oof = np.ones(len(oof_preds), dtype=bool)
+
+            # Global calibrator
+            global_cal = IsotonicRegression(out_of_bounds="clip")
+            global_cal.fit(oof_preds[valid_oof], y_train[valid_oof])
+            calibrator_dict = {"global": global_cal}
+
+            # Per-GP-bucket calibrators
+            gp_train = pos_df.iloc[train_idx]["games_played_so_far"].values
+            gp_test = pos_df.iloc[test_idx]["games_played_so_far"].values
+
+            for lo, hi in GP_BUCKETS:
+                bkey = f"gp_{lo}_{hi}"
+                bucket_mask = (gp_train >= lo) & (gp_train <= hi) & valid_oof
+                if bucket_mask.sum() >= GP_BUCKET_MIN_SAMPLES:
+                    bucket_cal = IsotonicRegression(out_of_bounds="clip")
+                    bucket_cal.fit(oof_preds[bucket_mask], y_train[bucket_mask])
+                    calibrator_dict[bkey] = bucket_cal
+
+            # Apply calibration to test predictions (bucket-specific, fallback to global)
+            test_preds_cal = test_preds.copy()
+            for i in range(len(test_preds)):
+                bkey = _gp_bucket_key(gp_test[i])
+                cal = calibrator_dict.get(bkey, global_cal) if bkey else global_cal
+                calibrated = float(cal.predict([test_preds[i]])[0])
+                if not np.isnan(calibrated):
+                    test_preds_cal[i] = calibrated
+            test_preds = test_preds_cal
 
         # Clip bounds: 2nd/98th percentile of y_train
         low = float(np.percentile(y_train, 2))
@@ -292,7 +339,7 @@ def train_all(
 
         bundle["models"][pos] = model
         bundle["clip_bounds"][pos] = (low, high)
-        bundle["calibrators"][pos] = calibrator
+        bundle["calibrators"][pos] = calibrator_dict
         bundle["metrics"][pos] = {
             "mae": round(mae, 1),
             "r2": round(r2, 4),
