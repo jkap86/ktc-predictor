@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -12,17 +11,15 @@ import {
   Legend,
   Area,
   ComposedChart,
-  Scatter,
 } from 'recharts';
 import { predictEos } from '../lib/api';
-import type { EOSPrediction, Player } from '../types/player';
+import type { EOSPrediction } from '../types/player';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-const PPG_RANGE = Array.from({ length: 21 }, (_, i) => i * 2); // 0, 2, 4, ... 40
+const PPG_RANGE = Array.from({ length: 13 }, (_, i) => i * 2); // 0, 2, 4, ... 24
 
 interface ComparisonPredictionChartProps {
   predictions: EOSPrediction[];
-  players: Player[];
   whatIfGames: number;
 }
 
@@ -74,21 +71,27 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 
 export default function ComparisonPredictionChart({
   predictions,
-  players,
   whatIfGames,
 }: ComparisonPredictionChartProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const predictionsRef = useRef(predictions);
+
+  // Keep ref in sync with props
+  useEffect(() => {
+    predictionsRef.current = predictions;
+  }, [predictions]);
 
   const fetchAllPredictions = useCallback(async () => {
-    if (predictions.length === 0) return;
+    const currentPredictions = predictionsRef.current;
+    if (currentPredictions.length === 0) return;
 
     setLoading(true);
     try {
       // For each player, fetch predictions across all PPG values 0-40
       const playerResults = await Promise.all(
-        predictions.map(async (pred) => {
+        currentPredictions.map(async (pred) => {
           const results = await Promise.all(
             PPG_RANGE.map((ppg) =>
               predictEos({
@@ -109,9 +112,15 @@ export default function ComparisonPredictionChart({
         playerResults.forEach(({ name, results }) => {
           const result = results[idx];
           if (result) {
-            point[name] = result.predicted_end_ktc;
-            if (result.low_end_ktc != null) point[`${name}_low`] = result.low_end_ktc;
-            if (result.high_end_ktc != null) point[`${name}_high`] = result.high_end_ktc;
+            // Clamp all KTC values to valid range [0, 9999]
+            point[name] = Math.min(9999, Math.max(0, result.predicted_end_ktc));
+            if (result.low_end_ktc != null && result.high_end_ktc != null) {
+              const low = Math.min(9999, Math.max(0, result.low_end_ktc));
+              const high = Math.min(9999, Math.max(0, result.high_end_ktc));
+              point[`${name}_low`] = low;
+              point[`${name}_high`] = high;
+              point[`${name}_band`] = high - low; // Band height for stacking
+            }
           }
         });
         return point;
@@ -123,7 +132,7 @@ export default function ComparisonPredictionChart({
     } finally {
       setLoading(false);
     }
-  }, [predictions, whatIfGames]);
+  }, [whatIfGames]);
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -132,9 +141,23 @@ export default function ComparisonPredictionChart({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [fetchAllPredictions]);
+  }, [fetchAllPredictions, predictions.length]);
 
   if (predictions.length === 0) return null;
+
+  // Don't render chart until data is loaded
+  if (chartData.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          Predicted EOS KTC by PPG
+        </h3>
+        <div className="h-[350px] flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   // Compute Y-axis domain from chart data
   let minKtc = Infinity;
@@ -154,30 +177,7 @@ export default function ComparisonPredictionChart({
     });
   });
   if (!isFinite(minKtc)) { minKtc = 0; maxKtc = 10000; }
-  const padding = (maxKtc - minKtc) * 0.15 || 500;
 
-  // Build reference dot data for each player's baseline PPG
-  const referenceDots: Array<{ ppg: number; ktc: number; color: string; name: string }> = [];
-  predictions.forEach((pred, idx) => {
-    const name = pred.name || 'Unknown';
-    const player = players[idx];
-    if (!player) return;
-    // Use the most recent season to compute PPG from fantasy_points / games_played
-    const latestSeason = player.seasons?.[player.seasons.length - 1];
-    if (!latestSeason || !latestSeason.games_played || latestSeason.games_played === 0) return;
-    const computedPpg = latestSeason.fantasy_points / latestSeason.games_played;
-    // Round to nearest even number to match PPG_RANGE
-    const baselinePpg = Math.round(computedPpg / 2) * 2;
-    const dataPoint = chartData.find((d) => d.ppg === baselinePpg);
-    if (dataPoint && typeof dataPoint[name] === 'number') {
-      referenceDots.push({
-        ppg: baselinePpg,
-        ktc: dataPoint[name] as number,
-        color: COLORS[idx % COLORS.length],
-        name,
-      });
-    }
-  });
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
@@ -200,12 +200,16 @@ export default function ComparisonPredictionChart({
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis
               dataKey="ppg"
+              type="number"
+              domain={[0, 25]}
+              ticks={[0, 5, 10, 15, 20, 25]}
               tick={{ fontSize: 12 }}
               label={{ value: 'PPG', position: 'bottom', offset: 0, fontSize: 12 }}
             />
             <YAxis
               tickFormatter={formatKtcTick}
-              domain={[Math.max(0, Math.floor(minKtc - padding)), Math.ceil(maxKtc + padding)]}
+              domain={[0, 9999]}
+              ticks={[0, 2500, 5000, 7500, 9999]}
               tick={{ fontSize: 12 }}
               width={60}
               label={{ value: 'Predicted EOS KTC', angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}
@@ -217,25 +221,40 @@ export default function ComparisonPredictionChart({
               }
             />
 
-            {/* Confidence bands as shaded areas */}
+            {/* Confidence bands as stacked areas (low + band height) */}
             {predictions.map((pred, idx) => {
               const name = pred.name || 'Unknown';
               const hasConfidence = chartData.some(
                 (d) => d[`${name}_low`] != null && d[`${name}_high`] != null
               );
               if (!hasConfidence) return null;
-              return (
+              const color = COLORS[idx % COLORS.length];
+              const stackId = `band-${pred.player_id}`;
+              return [
+                // Invisible base area from 0 to low
                 <Area
-                  key={`band-${pred.player_id}`}
-                  dataKey={`${name}_high`}
+                  key={`band-base-${pred.player_id}`}
+                  dataKey={`${name}_low`}
+                  stackId={stackId}
                   stroke="none"
-                  fill={COLORS[idx % COLORS.length]}
-                  fillOpacity={0.1}
-                  baseValue="dataMin"
+                  fill="transparent"
                   legendType="none"
                   tooltipType="none"
-                />
-              );
+                  isAnimationActive={false}
+                />,
+                // Visible band area from low to high
+                <Area
+                  key={`band-fill-${pred.player_id}`}
+                  dataKey={`${name}_band`}
+                  stackId={stackId}
+                  stroke="none"
+                  fill={color}
+                  fillOpacity={0.15}
+                  legendType="none"
+                  tooltipType="none"
+                  isAnimationActive={false}
+                />,
+              ];
             })}
 
             {/* Main prediction lines */}
@@ -251,31 +270,6 @@ export default function ComparisonPredictionChart({
               />
             ))}
 
-            {/* Reference dots for baseline PPG */}
-            {referenceDots.map((dot, idx) => (
-              <Scatter
-                key={`ref-${idx}`}
-                data={[{ ppg: dot.ppg, [dot.name]: dot.ktc }]}
-                fill={dot.color}
-                stroke="#fff"
-                strokeWidth={2}
-                legendType="none"
-                tooltipType="none"
-                shape={(props: { cx?: number; cy?: number }) => {
-                  const { cx = 0, cy = 0 } = props;
-                  return (
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={6}
-                      fill={dot.color}
-                      stroke="#fff"
-                      strokeWidth={2}
-                    />
-                  );
-                }}
-              />
-            ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

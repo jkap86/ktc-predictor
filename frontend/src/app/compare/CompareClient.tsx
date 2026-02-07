@@ -295,7 +295,6 @@ export default function CompareClient() {
           {!loading && predictions.length > 0 && (
             <ComparisonPredictionChart
               predictions={predictions}
-              players={players}
               whatIfGames={whatIfGames}
             />
           )}
