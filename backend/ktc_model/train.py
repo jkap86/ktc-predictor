@@ -363,6 +363,15 @@ def train_all(
         # Clip test predictions (on log-ratio scale)
         test_preds_clipped = np.clip(test_preds, low, high)
 
+        # Apply KTC-aware clamp (same as production inference in predict.py)
+        # This ensures end_ktc stays within [1, 9999] domain
+        ktc_aware_upper = np.log(9999.0 / start_ktc_test)
+        ktc_aware_lower = np.log(1.0 / start_ktc_test)
+        test_preds_clipped = np.maximum(
+            ktc_aware_lower,
+            np.minimum(ktc_aware_upper, test_preds_clipped),
+        )
+
         # Convert to end_ktc for reporting: predicted_end = start_ktc * exp(log_ratio)
         test_end_ktc_preds = start_ktc_test * np.exp(test_preds_clipped)
 
@@ -425,6 +434,14 @@ def train_all(
         csv_df = csv_df.sort_values("error", key=abs, ascending=False)
         csv_df.to_csv(export_csv, index=False)
         print(f"Exported {len(csv_df)} test-set predictions to {export_csv}")
+
+        # Sanity check: verify KTC-aware clamp is working
+        max_pred = csv_df["predicted_end_ktc"].max()
+        min_pred = csv_df["predicted_end_ktc"].min()
+        count_over_9999 = (csv_df["predicted_end_ktc"] > 9999).sum()
+        count_under_1 = (csv_df["predicted_end_ktc"] < 1).sum()
+        print(f"  KTC sanity check: max={max_pred:.1f}, min={min_pred:.1f}, "
+              f"count>9999={count_over_9999}, count<1={count_under_1}")
         print()
 
     print_diagnostics(df, all_test_rows)
