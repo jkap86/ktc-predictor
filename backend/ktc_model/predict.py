@@ -167,7 +167,7 @@ def predict_end_ktc(
             if not np.isnan(calibrated):
                 pred_log_ratio = calibrated
 
-        # Second-stage: per-position calibration (linear or isotonic)
+        # Second-stage: per-position calibration (linear)
         if isinstance(cal_entry, dict):
             pos_cal = cal_entry.get("pos_cal")
             if pos_cal is not None:
@@ -190,7 +190,8 @@ def predict_end_ktc(
         ppg_adjustment = boost * (ppg - baseline)
         pred_log_ratio += ppg_adjustment
 
-    # Clip log_ratio to bounds
+    # Clip log_ratio to percentile bounds from training data
+    # This prevents extreme predictions outside the observed distribution
     bounds = clip_bounds.get(position)
     if bounds is not None:
         low, high = bounds
