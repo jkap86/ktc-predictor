@@ -43,9 +43,9 @@ interface CustomTooltipProps {
 function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (!active || !payload || !payload.length) return null;
 
-  // Filter out confidence band entries (low/high keys)
+  // Filter out confidence band entries (low/high/band keys)
   const lines = payload.filter(
-    (entry) => !entry.dataKey.endsWith('_low') && !entry.dataKey.endsWith('_high')
+    (entry) => !entry.dataKey.endsWith('_low') && !entry.dataKey.endsWith('_high') && !entry.dataKey.endsWith('_band')
   );
 
   return (
@@ -210,7 +210,7 @@ export default function ComparisonPredictionChart({
             <Tooltip content={<CustomTooltip />} />
             <Legend
               formatter={(value: string) =>
-                value.endsWith('_low') || value.endsWith('_high') ? '' : value
+                value.endsWith('_low') || value.endsWith('_high') || value.endsWith('_band') ? '' : value
               }
             />
 

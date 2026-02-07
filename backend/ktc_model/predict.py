@@ -5,6 +5,40 @@ import numpy as np
 VALID_POSITIONS = {"QB", "RB", "WR", "TE"}
 GP_BUCKETS = [(1, 3), (4, 7), (8, 11), (12, 17)]
 
+# PPG sensitivity boost by position: multiplier applied to log_ratio based on PPG
+# This compensates for positions where the model has weak PPG sensitivity due to
+# limited training data variance. Only applied when gp >= 8 (meaningful sample).
+# Formula: log_ratio += boost * (ppg - baseline_ppg) where baseline_ppg is position average
+_PPG_SENSITIVITY_BOOST = {
+    "TE": {"boost": 0.035, "baseline": 8.0},  # TEs average ~8 PPG in training data
+}
+
+# Performance floor thresholds by position: (min_games, max_ppg, log_ratio_cap)
+# QBs score more, so thresholds are higher; TEs score less, so thresholds are lower
+_PERF_FLOOR_THRESHOLDS = {
+    "QB": [(12, 2, -0.35), (12, 5, -0.25), (12, 8, -0.15),
+           (8, 2, -0.20), (8, 5, -0.10)],
+    "RB": [(12, 2, -0.35), (12, 4, -0.25), (12, 6, -0.15),
+           (8, 2, -0.20), (8, 4, -0.10)],
+    "WR": [(12, 2, -0.35), (12, 4, -0.25), (12, 6, -0.15),
+           (8, 2, -0.20), (8, 4, -0.10)],
+    "TE": [(12, 1, -0.35), (12, 2, -0.25), (12, 4, -0.15),
+           (8, 1, -0.20), (8, 2, -0.10)],
+}
+
+
+def _perf_floor_log_ratio_cap(position: str, gp: float, ppg: float) -> float | None:
+    """Return an upper bound for log_ratio in low-performance regimes.
+
+    Prevents model from predicting positive growth when a player plays
+    many games but scores very little (a scenario with no training data).
+    """
+    pos_thresholds = _PERF_FLOOR_THRESHOLDS.get(position, [])
+    for min_gp, max_ppg, cap in pos_thresholds:
+        if gp >= min_gp and ppg <= max_ppg:
+            return cap
+    return None
+
 
 def _gp_bucket_key(gp: float) -> str | None:
     """Return the bucket key string for a games_played value, or None."""
@@ -141,11 +175,32 @@ def predict_end_ktc(
                 if not np.isnan(pos_calibrated):
                     pred_log_ratio = pos_calibrated
 
+    # Performance floor: cap log_ratio in low-performance regimes
+    # This prevents positive predictions when player has high games but very low PPG
+    perf_cap = _perf_floor_log_ratio_cap(position, gp, ppg)
+    if perf_cap is not None:
+        pred_log_ratio = min(pred_log_ratio, perf_cap)
+
+    # PPG sensitivity boost: compensate for positions with weak model sensitivity
+    # Only apply when games played >= 8 (meaningful sample size)
+    ppg_boost_config = _PPG_SENSITIVITY_BOOST.get(position)
+    if ppg_boost_config is not None and gp >= 8:
+        boost = ppg_boost_config["boost"]
+        baseline = ppg_boost_config["baseline"]
+        ppg_adjustment = boost * (ppg - baseline)
+        pred_log_ratio += ppg_adjustment
+
     # Clip log_ratio to bounds
     bounds = clip_bounds.get(position)
     if bounds is not None:
         low, high = bounds
         pred_log_ratio = max(low, min(high, pred_log_ratio))
+
+    # KTC-aware log_ratio bounds: prevent flatline at domain boundaries
+    # This ensures end_ktc can never mathematically exceed [1, 9999]
+    ktc_aware_upper = np.log(9999.0 / start_ktc)
+    ktc_aware_lower = np.log(1.0 / start_ktc)
+    pred_log_ratio = max(ktc_aware_lower, min(ktc_aware_upper, pred_log_ratio))
 
     # KTC domain bounds
     KTC_MIN = 1.0
