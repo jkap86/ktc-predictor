@@ -11,21 +11,13 @@ import {
   Legend,
 } from 'recharts';
 import type { Player } from '../types/player';
+import { formatKtc, formatKtcTick, clampKtc } from '../lib/format';
 
 interface ComparisonKTCChartProps {
   players: Player[];
 }
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-
-// Format KTC values for axis ticks (e.g., 2000 -> "2K")
-function formatKtcTick(value: number): string {
-  if (value >= 1000) {
-    const k = value / 1000;
-    return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
-  }
-  return value.toString();
-}
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -47,7 +39,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
       <p className="text-sm font-medium mb-2 text-gray-900 dark:text-white">Year: {label}</p>
       {payload.map((entry, idx) => (
         <p key={idx} className="text-sm" style={{ color: entry.color }}>
-          {entry.dataKey}: {Math.round(entry.value).toLocaleString()}
+          {entry.dataKey}: {formatKtc(entry.value)}
         </p>
       ))}
     </div>
@@ -79,7 +71,7 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
   let maxKtc = -Infinity;
   players.forEach((p) => {
     (p.seasons ?? []).forEach((s) => {
-      const ktc = s.end_ktc || s.start_ktc;
+      const ktc = clampKtc(s.end_ktc || s.start_ktc);
       if (ktc > 0) {
         minKtc = Math.min(minKtc, ktc);
         maxKtc = Math.max(maxKtc, ktc);

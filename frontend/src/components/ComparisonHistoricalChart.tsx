@@ -12,6 +12,7 @@ import {
   Legend,
 } from 'recharts';
 import type { Player } from '../types/player';
+import { formatKtcTick, clampKtc } from '../lib/format';
 
 interface ComparisonHistoricalChartProps {
   players: Player[];
@@ -20,15 +21,6 @@ interface ComparisonHistoricalChartProps {
 type ViewType = 'ktc' | 'fantasy' | 'weekly';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-
-// Format KTC values for axis ticks (e.g., 2000 -> "2K")
-function formatKtcTick(value: number): string {
-  if (value >= 1000) {
-    const k = value / 1000;
-    return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
-  }
-  return value.toString();
-}
 
 export default function ComparisonHistoricalChart({ players }: ComparisonHistoricalChartProps) {
   const [view, setView] = useState<ViewType>('ktc');
@@ -93,12 +85,14 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
     players.forEach((p) => {
       (p.seasons ?? []).forEach((s) => {
         if (s.start_ktc && s.start_ktc > 0) {
-          minY = Math.min(minY, s.start_ktc);
-          maxY = Math.max(maxY, s.start_ktc);
+          const clamped = clampKtc(s.start_ktc);
+          minY = Math.min(minY, clamped);
+          maxY = Math.max(maxY, clamped);
         }
         if (s.end_ktc && s.end_ktc > 0) {
-          minY = Math.min(minY, s.end_ktc);
-          maxY = Math.max(maxY, s.end_ktc);
+          const clamped = clampKtc(s.end_ktc);
+          minY = Math.min(minY, clamped);
+          maxY = Math.max(maxY, clamped);
         }
       });
     });

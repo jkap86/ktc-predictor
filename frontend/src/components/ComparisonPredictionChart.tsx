@@ -13,6 +13,7 @@ import {
   ComposedChart,
 } from 'recharts';
 import { predictEos } from '../lib/api';
+import { formatKtc, formatKtcTick, clampKtc, KTC_MAX } from '../lib/format';
 import type { EOSPrediction } from '../types/player';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
@@ -26,14 +27,6 @@ interface ComparisonPredictionChartProps {
 interface ChartDataPoint {
   ppg: number;
   [key: string]: number | undefined;
-}
-
-function formatKtcTick(value: number): string {
-  if (value >= 1000) {
-    const k = value / 1000;
-    return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
-  }
-  return value.toString();
 }
 
 interface CustomTooltipProps {
@@ -62,7 +55,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
       </p>
       {lines.map((entry, idx) => (
         <p key={idx} className="text-sm" style={{ color: entry.color }}>
-          {entry.dataKey}: {Math.round(entry.value).toLocaleString()}
+          {entry.dataKey}: {formatKtc(entry.value)}
         </p>
       ))}
     </div>
@@ -112,11 +105,11 @@ export default function ComparisonPredictionChart({
         playerResults.forEach(({ name, results }) => {
           const result = results[idx];
           if (result) {
-            // Clamp all KTC values to valid range [0, 9999]
-            point[name] = Math.min(9999, Math.max(0, result.predicted_end_ktc));
+            // Clamp all KTC values to valid range [1, 9999]
+            point[name] = clampKtc(result.predicted_end_ktc);
             if (result.low_end_ktc != null && result.high_end_ktc != null) {
-              const low = Math.min(9999, Math.max(0, result.low_end_ktc));
-              const high = Math.min(9999, Math.max(0, result.high_end_ktc));
+              const low = clampKtc(result.low_end_ktc);
+              const high = clampKtc(result.high_end_ktc);
               point[`${name}_low`] = low;
               point[`${name}_high`] = high;
               point[`${name}_band`] = high - low; // Band height for stacking
@@ -208,8 +201,8 @@ export default function ComparisonPredictionChart({
             />
             <YAxis
               tickFormatter={formatKtcTick}
-              domain={[0, 9999]}
-              ticks={[0, 2500, 5000, 7500, 9999]}
+              domain={[0, KTC_MAX]}
+              ticks={[0, 2500, 5000, 7500, KTC_MAX]}
               tick={{ fontSize: 12 }}
               width={60}
               label={{ value: 'Predicted EOS KTC', angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}

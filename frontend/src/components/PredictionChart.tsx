@@ -10,6 +10,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { PlayerSeason } from '../types/player';
+import { formatKtc, formatKtcTick, clampKtc } from '../lib/format';
 
 interface PredictionChartProps {
   seasons: PlayerSeason[];
@@ -18,10 +19,10 @@ interface PredictionChartProps {
 export default function PredictionChart({ seasons }: PredictionChartProps) {
   const sortedSeasons = [...seasons].sort((a, b) => a.year - b.year);
 
-  // Build data: historical seasons only
+  // Build data: historical seasons only, clamping KTC values
   const data = sortedSeasons.map((s) => ({
     year: s.year,
-    ktc: s.end_ktc || s.start_ktc,
+    ktc: clampKtc(s.end_ktc || s.start_ktc),
   }));
 
   return (
@@ -33,10 +34,10 @@ export default function PredictionChart({ seasons }: PredictionChartProps) {
           <XAxis dataKey="year" />
           <YAxis
             domain={['auto', 'auto']}
-            tickFormatter={(value) => value.toLocaleString()}
+            tickFormatter={formatKtcTick}
           />
           <Tooltip
-            formatter={(value: number) => [value.toLocaleString(), 'KTC']}
+            formatter={(value: number) => [formatKtc(value), 'KTC']}
           />
           <Line
             type="monotone"
