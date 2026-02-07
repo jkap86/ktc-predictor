@@ -7,8 +7,8 @@ from .calibration import MonotoneLinearCalibrator
 
 def test_calibrator_preserves_variance():
     """Ensure calibrators don't collapse input range to near-constant output."""
-    # Create a calibrator trained on typical log_ratio range
-    cal = MonotoneLinearCalibrator(min_slope=0.01)
+    # Create a calibrator with identity shrinkage (new default behavior)
+    cal = MonotoneLinearCalibrator(min_slope=0.0, identity_strength=10.0)
 
     # Simulate training data with reasonable variance
     X_train = np.linspace(-0.3, 0.3, 100)
@@ -33,7 +33,7 @@ def test_calibrator_preserves_variance():
 
 def test_calibrator_slope_not_flat():
     """Ensure minimum slope constraint prevents flat calibration."""
-    cal = MonotoneLinearCalibrator(min_slope=0.01)
+    cal = MonotoneLinearCalibrator(min_slope=0.01, identity_strength=0.0)
 
     # Even with flat training data, slope should be at least min_slope
     X_train = np.linspace(-0.2, 0.2, 50)
@@ -46,7 +46,7 @@ def test_calibrator_slope_not_flat():
 
 def test_calibrator_linear_output():
     """Ensure calibrator produces smooth linear output, not step function."""
-    cal = MonotoneLinearCalibrator(min_slope=0.01)
+    cal = MonotoneLinearCalibrator(min_slope=0.0, identity_strength=10.0)
 
     X_train = np.linspace(-0.5, 0.5, 200)
     y_train = X_train * 0.8 + np.random.normal(0, 0.02, 200)  # Add noise
@@ -64,3 +64,54 @@ def test_calibrator_linear_output():
     # Most diffs should be non-zero (not a step function)
     nonzero_diffs = np.sum(diffs > 1e-10)
     assert nonzero_diffs > 900, f"Too many flat regions: only {nonzero_diffs}/999 segments are non-flat"
+
+
+def test_identity_shrinkage_pulls_toward_identity():
+    """Ensure identity shrinkage pulls slope toward 1 and intercept toward 0."""
+    # Without shrinkage: pure OLS
+    cal_no_shrink = MonotoneLinearCalibrator(min_slope=0.0, identity_strength=0.0)
+    # With strong shrinkage
+    cal_shrink = MonotoneLinearCalibrator(min_slope=0.0, identity_strength=10.0)
+
+    # Training data with slope=0.5 and intercept=0.1
+    X_train = np.linspace(-0.3, 0.3, 100)
+    y_train = X_train * 0.5 + 0.1
+
+    cal_no_shrink.fit(X_train, y_train)
+    cal_shrink.fit(X_train, y_train)
+
+    # Without shrinkage: slope should be ~0.5
+    assert 0.45 < cal_no_shrink.slope < 0.55, f"No-shrink slope {cal_no_shrink.slope} should be ~0.5"
+
+    # With shrinkage: slope should be pulled toward 1.0
+    # Formula: (0.5 + 10*1.0) / 11 ≈ 0.95
+    assert cal_shrink.slope > 0.9, f"Shrunk slope {cal_shrink.slope} should be closer to 1.0"
+
+    # Intercept should also be smaller with shrinkage
+    assert abs(cal_shrink.intercept) < abs(cal_no_shrink.intercept), (
+        f"Shrunk intercept {cal_shrink.intercept} should be smaller than {cal_no_shrink.intercept}"
+    )
+
+
+def test_identity_shrinkage_strength():
+    """Test that stronger shrinkage pulls more aggressively toward identity."""
+    X_train = np.linspace(-0.3, 0.3, 100)
+    y_train = X_train * 0.3  # Very flat slope
+
+    cal_weak = MonotoneLinearCalibrator(min_slope=0.0, identity_strength=5.0)
+    cal_strong = MonotoneLinearCalibrator(min_slope=0.0, identity_strength=20.0)
+
+    cal_weak.fit(X_train, y_train)
+    cal_strong.fit(X_train, y_train)
+
+    # Stronger shrinkage should result in slope closer to 1.0
+    assert cal_strong.slope > cal_weak.slope, (
+        f"Strong shrink slope {cal_strong.slope} should be larger than weak {cal_weak.slope}"
+    )
+
+
+def test_default_parameters():
+    """Test default parameters are set correctly."""
+    cal = MonotoneLinearCalibrator()
+    assert cal.min_slope == 0.0, f"Default min_slope should be 0.0, got {cal.min_slope}"
+    assert cal.identity_strength == 10.0, f"Default identity_strength should be 10.0, got {cal.identity_strength}"
