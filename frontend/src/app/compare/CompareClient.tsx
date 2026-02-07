@@ -23,7 +23,7 @@ export default function CompareClient() {
   const [loading, setLoading] = useState(false);
 
   // What-If sliders
-  const [whatIfPpg, setWhatIfPpg] = useState(15);
+  const [whatIfGames, setWhatIfGames] = useState(17);
   const [whatIfResults, setWhatIfResults] = useState<EOSPrediction[]>([]);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,8 +99,8 @@ export default function CompareClient() {
           predictEos({
             position: pred.position,
             start_ktc: pred.start_ktc,
-            games_played: 17,
-            ppg: whatIfPpg,
+            games_played: whatIfGames,
+            ppg: 15, // Default PPG for what-if cards
           })
         )
       );
@@ -111,7 +111,7 @@ export default function CompareClient() {
     } finally {
       setWhatIfLoading(false);
     }
-  }, [predictions, whatIfPpg]);
+  }, [predictions, whatIfGames]);
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -254,6 +254,12 @@ export default function CompareClient() {
                   </span>
                 </div>
               </div>
+              {pred.anchor_year && (
+                <div className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                  Anchor: {pred.anchor_year} {pred.anchor_source === 'end_ktc' ? 'end' : 'start'}
+                  {pred.baseline_year && <span> | Stats: {pred.baseline_year}</span>}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -268,19 +274,19 @@ export default function CompareClient() {
             </h3>
             <div className="flex items-center gap-4">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">
-                PPG:
+                Games:
               </label>
               <input
                 type="range"
                 min="0"
-                max="40"
-                step="0.5"
-                value={whatIfPpg}
-                onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))}
+                max="17"
+                step="1"
+                value={whatIfGames}
+                onChange={(e) => setWhatIfGames(parseInt(e.target.value))}
                 className="flex-1"
               />
               <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">
-                {whatIfPpg}
+                {whatIfGames}
               </span>
             </div>
           </div>
@@ -289,7 +295,7 @@ export default function CompareClient() {
             <ComparisonPredictionChart
               predictions={predictions}
               players={players}
-              whatIfPpg={whatIfPpg}
+              whatIfGames={whatIfGames}
             />
           )}
 
@@ -307,7 +313,7 @@ export default function CompareClient() {
                       {predictions[i]?.name}
                     </div>
                     <div className="text-sm">
-                      <span className="text-gray-500 dark:text-gray-400">EOS (17 games): </span>
+                      <span className="text-gray-500 dark:text-gray-400">EOS ({whatIfGames} games): </span>
                       <span className="font-medium text-gray-900 dark:text-white">{result.predicted_end_ktc.toLocaleString()}</span>
                       <span className={`ml-2 ${result.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         ({result.predicted_pct_change >= 0 ? '+' : ''}{result.predicted_pct_change.toFixed(1)}%)

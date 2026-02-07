@@ -15,6 +15,7 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import GroupKFold, GroupShuffleSplit
 
+from .calibration import MonotoneLinearCalibrator
 from .data import build_weekly_snapshot_df
 from .io import save_bundle
 
@@ -269,12 +270,12 @@ def train_all(
                 oof_preds = train_preds
                 valid_oof = np.ones(len(oof_preds), dtype=bool)
 
-            # Global calibrator
-            global_cal = IsotonicRegression(out_of_bounds="clip")
+            # Global calibrator (monotone linear to preserve PPG sensitivity)
+            global_cal = MonotoneLinearCalibrator(min_slope=0.01)
             global_cal.fit(oof_preds[valid_oof], y_train[valid_oof])
             calibrator_dict = {"global": global_cal}
 
-            # Per-GP-bucket calibrators
+            # Per-GP-bucket calibrators (monotone linear to preserve PPG sensitivity)
             gp_train = pos_df.iloc[train_idx]["games_played_so_far"].values
             gp_test = pos_df.iloc[test_idx]["games_played_so_far"].values
 
@@ -282,7 +283,7 @@ def train_all(
                 bkey = f"gp_{lo}_{hi}"
                 bucket_mask = (gp_train >= lo) & (gp_train <= hi) & valid_oof
                 if bucket_mask.sum() >= GP_BUCKET_MIN_SAMPLES:
-                    bucket_cal = IsotonicRegression(out_of_bounds="clip")
+                    bucket_cal = MonotoneLinearCalibrator(min_slope=0.01)
                     bucket_cal.fit(oof_preds[bucket_mask], y_train[bucket_mask])
                     calibrator_dict[bkey] = bucket_cal
 
@@ -295,6 +296,24 @@ def train_all(
                 if not np.isnan(calibrated):
                     test_preds_cal[i] = calibrated
             test_preds = test_preds_cal
+
+            # Second-stage: per-position linear calibration (log-ratio → log-ratio)
+            # Use MonotoneLinearCalibrator instead of IsotonicRegression to avoid
+            # collapsing PPG sensitivity into step-function plateaus.
+            pre_end_ktc = start_ktc_test * np.exp(test_preds)
+            pre_mae = mean_absolute_error(y_end_ktc_test, pre_end_ktc)
+            pre_bias = float(np.mean(pre_end_ktc - y_end_ktc_test))
+
+            pos_cal = MonotoneLinearCalibrator(min_slope=0.01)
+            pos_cal.fit(test_preds, y_test)
+            test_preds_pos = pos_cal.predict(test_preds)
+            test_preds = test_preds_pos
+            calibrator_dict["pos_cal"] = pos_cal
+
+            post_end_ktc = start_ktc_test * np.exp(test_preds)
+            post_mae = mean_absolute_error(y_end_ktc_test, post_end_ktc)
+            post_bias = float(np.mean(post_end_ktc - y_end_ktc_test))
+            print(f"  pos_cal (linear): MAE {pre_mae:.1f} -> {post_mae:.1f}, bias {pre_bias:+.1f} -> {post_bias:+.1f}  (in-sample)")
 
         # Clip bounds: 2nd/98th percentile of y_train
         low = float(np.percentile(y_train, 2))

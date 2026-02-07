@@ -133,7 +133,7 @@ def predict_end_ktc(
             if not np.isnan(calibrated):
                 pred_log_ratio = calibrated
 
-        # Second-stage: per-position isotonic calibration
+        # Second-stage: per-position calibration (linear or isotonic)
         if isinstance(cal_entry, dict):
             pos_cal = cal_entry.get("pos_cal")
             if pos_cal is not None:

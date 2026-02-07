@@ -18,16 +18,16 @@ import { predictEos } from '../lib/api';
 import type { EOSPrediction, Player } from '../types/player';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-const GAMES_RANGE = Array.from({ length: 18 }, (_, i) => i); // 0-17
+const PPG_RANGE = Array.from({ length: 21 }, (_, i) => i * 2); // 0, 2, 4, ... 40
 
 interface ComparisonPredictionChartProps {
   predictions: EOSPrediction[];
   players: Player[];
-  whatIfPpg: number;
+  whatIfGames: number;
 }
 
 interface ChartDataPoint {
-  games: number;
+  ppg: number;
   [key: string]: number | undefined;
 }
 
@@ -61,7 +61,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   return (
     <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
       <p className="text-sm font-medium mb-2 text-gray-900 dark:text-white">
-        Games: {label}
+        PPG: {label}
       </p>
       {lines.map((entry, idx) => (
         <p key={idx} className="text-sm" style={{ color: entry.color }}>
@@ -75,7 +75,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 export default function ComparisonPredictionChart({
   predictions,
   players,
-  whatIfPpg,
+  whatIfGames,
 }: ComparisonPredictionChartProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -86,16 +86,16 @@ export default function ComparisonPredictionChart({
 
     setLoading(true);
     try {
-      // For each player, fetch predictions across all games 0-17
+      // For each player, fetch predictions across all PPG values 0-40
       const playerResults = await Promise.all(
         predictions.map(async (pred) => {
           const results = await Promise.all(
-            GAMES_RANGE.map((games) =>
+            PPG_RANGE.map((ppg) =>
               predictEos({
                 position: pred.position,
                 start_ktc: pred.start_ktc,
-                games_played: games,
-                ppg: whatIfPpg,
+                games_played: whatIfGames,
+                ppg: ppg,
               })
             )
           );
@@ -103,11 +103,11 @@ export default function ComparisonPredictionChart({
         })
       );
 
-      // Build chart data: one point per games value
-      const data: ChartDataPoint[] = GAMES_RANGE.map((games) => {
-        const point: ChartDataPoint = { games };
+      // Build chart data: one point per PPG value
+      const data: ChartDataPoint[] = PPG_RANGE.map((ppg, idx) => {
+        const point: ChartDataPoint = { ppg };
         playerResults.forEach(({ name, results }) => {
-          const result = results[games];
+          const result = results[idx];
           if (result) {
             point[name] = result.predicted_end_ktc;
             if (result.low_end_ktc != null) point[`${name}_low`] = result.low_end_ktc;
@@ -123,7 +123,7 @@ export default function ComparisonPredictionChart({
     } finally {
       setLoading(false);
     }
-  }, [predictions, whatIfPpg]);
+  }, [predictions, whatIfGames]);
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -156,20 +156,21 @@ export default function ComparisonPredictionChart({
   if (!isFinite(minKtc)) { minKtc = 0; maxKtc = 10000; }
   const padding = (maxKtc - minKtc) * 0.1 || 500;
 
-  // Build reference dot data for each player's baseline games_played
-  const referenceDots: Array<{ games: number; ktc: number; color: string; name: string }> = [];
+  // Build reference dot data for each player's baseline PPG
+  const referenceDots: Array<{ ppg: number; ktc: number; color: string; name: string }> = [];
   predictions.forEach((pred, idx) => {
     const name = pred.name || 'Unknown';
     const player = players[idx];
     if (!player) return;
-    // Use the most recent season's games_played as baseline
+    // Use the most recent season's PPG as baseline
     const latestSeason = player.seasons?.[player.seasons.length - 1];
-    if (!latestSeason) return;
-    const baselineGames = latestSeason.games_played;
-    const dataPoint = chartData.find((d) => d.games === baselineGames);
+    if (!latestSeason || latestSeason.ppg == null) return;
+    // Round to nearest even number to match PPG_RANGE
+    const baselinePpg = Math.round(latestSeason.ppg / 2) * 2;
+    const dataPoint = chartData.find((d) => d.ppg === baselinePpg);
     if (dataPoint && typeof dataPoint[name] === 'number') {
       referenceDots.push({
-        games: baselineGames,
+        ppg: baselinePpg,
         ktc: dataPoint[name] as number,
         color: COLORS[idx % COLORS.length],
         name,
@@ -180,10 +181,10 @@ export default function ComparisonPredictionChart({
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-        Predicted EOS KTC by Games Played
+        Predicted EOS KTC by PPG
       </h3>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        At {whatIfPpg} PPG — hover to compare values
+        At {whatIfGames} games played — hover to compare values
       </p>
 
       <div className="relative">
@@ -197,9 +198,9 @@ export default function ComparisonPredictionChart({
           <ComposedChart data={chartData} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis
-              dataKey="games"
+              dataKey="ppg"
               tick={{ fontSize: 12 }}
-              label={{ value: 'Games Played', position: 'insideBottom', offset: -10, fontSize: 12 }}
+              label={{ value: 'PPG', position: 'insideBottom', offset: -10, fontSize: 12 }}
             />
             <YAxis
               tickFormatter={formatKtcTick}
@@ -248,11 +249,11 @@ export default function ComparisonPredictionChart({
               />
             ))}
 
-            {/* Reference dots for baseline games played */}
+            {/* Reference dots for baseline PPG */}
             {referenceDots.map((dot, idx) => (
               <Scatter
                 key={`ref-${idx}`}
-                data={[{ games: dot.games, [dot.name]: dot.ktc }]}
+                data={[{ ppg: dot.ppg, [dot.name]: dot.ktc }]}
                 fill={dot.color}
                 stroke="#fff"
                 strokeWidth={2}
