@@ -200,7 +200,12 @@ class DataLoader:
                 latest_year = None
                 if seasons:
                     latest = max(seasons, key=lambda s: s["year"])
-                    latest_ktc = latest.get("end_ktc") or latest.get("start_ktc")
+                    raw_end = latest.get("end_ktc")
+                    raw_start = latest.get("start_ktc")
+                    latest_ktc = (
+                        (raw_end if raw_end and 0 < raw_end < 9999 else None)
+                        or (raw_start if raw_start and 0 < raw_start < 9999 else None)
+                    )
                     latest_year = latest["year"]
 
                 results.append(

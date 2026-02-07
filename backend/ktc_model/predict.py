@@ -63,7 +63,7 @@ def predict_end_ktc(
     Returns
     -------
     dict
-        {"delta_ktc": float, "end_ktc": float}
+        {"delta_ktc": float, "end_ktc": float, "effective_start_ktc": float}
 
     Raises
     ------
@@ -133,6 +133,14 @@ def predict_end_ktc(
             if not np.isnan(calibrated):
                 pred_log_ratio = calibrated
 
+        # Second-stage: per-position isotonic calibration
+        if isinstance(cal_entry, dict):
+            pos_cal = cal_entry.get("pos_cal")
+            if pos_cal is not None:
+                pos_calibrated = float(pos_cal.predict([pred_log_ratio])[0])
+                if not np.isnan(pos_calibrated):
+                    pred_log_ratio = pos_calibrated
+
     # Clip log_ratio to bounds
     bounds = clip_bounds.get(position)
     if bounds is not None:
@@ -142,4 +150,8 @@ def predict_end_ktc(
     # Convert to end_ktc: start_ktc * exp(log_ratio)
     end_ktc = start_ktc * np.exp(pred_log_ratio)
     delta_ktc = end_ktc - start_ktc
-    return {"delta_ktc": round(delta_ktc, 1), "end_ktc": round(end_ktc, 1)}
+    return {
+        "delta_ktc": round(delta_ktc, 1),
+        "end_ktc": round(end_ktc, 1),
+        "effective_start_ktc": round(start_ktc, 1),
+    }
