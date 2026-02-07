@@ -202,6 +202,9 @@ class DataLoader:
                 anchor = select_anchor_ktc(seasons) if seasons else None
                 if anchor:
                     latest_ktc, latest_year, _ = anchor
+                    # Clamp to valid KTC domain [1, 9999]
+                    if latest_ktc is not None:
+                        latest_ktc = max(1.0, min(9999.0, latest_ktc))
 
                 results.append(
                     {

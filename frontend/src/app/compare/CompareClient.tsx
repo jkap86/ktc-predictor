@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { searchPlayers, getPlayer, getPrediction, predictEos } from '../../lib/api';
+import { formatKtc } from '../../lib/format';
 import type { Player, PlayerSummary, EOSPrediction } from '../../types/player';
 import ComparisonKTCChart from '../../components/ComparisonKTCChart';
 import ComparisonHistoricalChart from '../../components/ComparisonHistoricalChart';
@@ -194,7 +195,7 @@ export default function CompareClient() {
                 </span>
                 {player.latest_ktc && (
                   <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                    {player.latest_ktc.toLocaleString()}
+                    {formatKtc(player.latest_ktc)}
                   </span>
                 )}
               </button>
@@ -241,11 +242,11 @@ export default function CompareClient() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">Current</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{pred.start_ktc.toLocaleString()}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{formatKtc(pred.start_ktc)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">Predicted EOS</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{pred.predicted_end_ktc.toLocaleString()}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{formatKtc(pred.predicted_end_ktc)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">Change</span>
@@ -314,7 +315,7 @@ export default function CompareClient() {
                     </div>
                     <div className="text-sm">
                       <span className="text-gray-500 dark:text-gray-400">EOS ({whatIfGames} games): </span>
-                      <span className="font-medium text-gray-900 dark:text-white">{result.predicted_end_ktc.toLocaleString()}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{formatKtc(result.predicted_end_ktc)}</span>
                       <span className={`ml-2 ${result.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         ({result.predicted_pct_change >= 0 ? '+' : ''}{result.predicted_pct_change.toFixed(1)}%)
                       </span>

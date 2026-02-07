@@ -147,11 +147,27 @@ def predict_end_ktc(
         low, high = bounds
         pred_log_ratio = max(low, min(high, pred_log_ratio))
 
+    # KTC domain bounds
+    KTC_MIN = 1.0
+    KTC_MAX = 9999.0
+
     # Convert to end_ktc: start_ktc * exp(log_ratio)
-    end_ktc = start_ktc * np.exp(pred_log_ratio)
+    raw_end_ktc = start_ktc * np.exp(pred_log_ratio)
+
+    # Clamp to valid KTC domain
+    end_ktc = max(KTC_MIN, min(KTC_MAX, raw_end_ktc))
+
+    # Recompute delta using clamped value
     delta_ktc = end_ktc - start_ktc
+
+    # Track if clamping occurred (for optional UI indication)
+    capped_high = raw_end_ktc > KTC_MAX
+    capped_low = raw_end_ktc < KTC_MIN
+
     return {
         "delta_ktc": round(delta_ktc, 1),
         "end_ktc": round(end_ktc, 1),
         "effective_start_ktc": round(start_ktc, 1),
+        "capped_high": capped_high,
+        "capped_low": capped_low,
     }

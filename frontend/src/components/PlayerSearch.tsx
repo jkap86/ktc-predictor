@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { searchPlayers } from '../lib/api';
+import { formatKtc } from '../lib/format';
 import type { PlayerSummary } from '../types/player';
 
 const POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE'];
@@ -83,7 +84,7 @@ export default function PlayerSearch() {
                 {player.latest_ktc && (
                   <div className="text-right">
                     <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                      {player.latest_ktc.toLocaleString()}
+                      {formatKtc(player.latest_ktc)}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">KTC Value</div>
                   </div>

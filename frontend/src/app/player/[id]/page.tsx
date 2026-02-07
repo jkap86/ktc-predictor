@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { getPlayer, getPrediction, predictEos } from '../../../lib/api';
+import { formatKtc } from '../../../lib/format';
 import type { Player, EOSPrediction } from '../../../types/player';
 
 // Lazy-load charts so initial render is fast
@@ -23,7 +24,7 @@ function ConfidenceBand({ prediction }: { prediction: EOSPrediction }) {
         Confidence Range (p20 – p80)
       </div>
       <div className="flex items-center gap-3 text-sm">
-        <span className="text-gray-600 dark:text-gray-400">{prediction.low_end_ktc.toLocaleString()}</span>
+        <span className="text-gray-600 dark:text-gray-400">{formatKtc(prediction.low_end_ktc)}</span>
         <div className="flex-1 h-2 bg-blue-100 dark:bg-blue-800 rounded-full relative">
           <div
             className="absolute h-2 bg-blue-500 dark:bg-blue-400 rounded-full"
@@ -34,7 +35,7 @@ function ConfidenceBand({ prediction }: { prediction: EOSPrediction }) {
             }}
           />
         </div>
-        <span className="text-gray-600 dark:text-gray-400">{prediction.high_end_ktc.toLocaleString()}</span>
+        <span className="text-gray-600 dark:text-gray-400">{formatKtc(prediction.high_end_ktc)}</span>
       </div>
     </div>
   );
@@ -191,13 +192,13 @@ export default function PlayerPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {prediction.start_ktc.toLocaleString()}
+                {formatKtc(prediction.start_ktc)}
               </div>
               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Current KTC</div>
             </div>
             <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {prediction.predicted_end_ktc.toLocaleString()}
+                {formatKtc(prediction.predicted_end_ktc)}
               </div>
               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
             </div>
@@ -219,7 +220,7 @@ export default function PlayerPage() {
             <div className="mt-2 text-xs text-gray-400 dark:text-gray-500 px-1">
               {prediction.anchor_year && (
                 <span>
-                  Anchor: {prediction.start_ktc.toLocaleString()} from {prediction.anchor_year}{' '}
+                  Anchor: {formatKtc(prediction.start_ktc)} from {prediction.anchor_year}{' '}
                   {prediction.anchor_source === 'end_ktc' ? 'end' : 'start'}
                 </span>
               )}
@@ -353,7 +354,7 @@ export default function PlayerPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div className="text-xl font-bold text-gray-900 dark:text-white">
-                    {whatIfResult.predicted_end_ktc.toLocaleString()}
+                    {formatKtc(whatIfResult.predicted_end_ktc)}
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
                 </div>
