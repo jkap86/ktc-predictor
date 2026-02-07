@@ -323,27 +323,38 @@ def train_all(
                     test_preds_cal[i] = calibrated
             test_preds = test_preds_cal
 
+            # Apply bucket calibration to OOF predictions (for pos_cal fitting)
+            oof_preds_cal = oof_preds.copy()
+            for i in range(len(oof_preds)):
+                if not valid_oof[i]:
+                    continue
+                bkey = _gp_bucket_key(gp_train[i])
+                cal = calibrator_dict.get(bkey, global_cal) if bkey else global_cal
+                calibrated = float(cal.predict([oof_preds[i]])[0])
+                if not np.isnan(calibrated):
+                    oof_preds_cal[i] = calibrated
+
             # Second-stage: per-position linear calibration (log-ratio → log-ratio)
-            # Use MonotoneLinearCalibrator instead of IsotonicRegression to avoid
-            # collapsing PPG sensitivity into step-function plateaus.
+            # Fit on calibrated OOF predictions (no test leakage!)
             pre_end_ktc = start_ktc_test * np.exp(test_preds)
             pre_mae = mean_absolute_error(y_end_ktc_test, pre_end_ktc)
             pre_bias = float(np.mean(pre_end_ktc - y_end_ktc_test))
 
-            pos_cal = MonotoneLinearCalibrator(min_slope=0.01)
-            pos_cal.fit(test_preds, y_test)
-            test_preds_pos = pos_cal.predict(test_preds)
-            test_preds = test_preds_pos
+            pos_cal = MonotoneLinearCalibrator()  # Uses identity shrinkage defaults
+            pos_cal.fit(oof_preds_cal[valid_oof], y_train[valid_oof])
             calibrator_dict["pos_cal"] = pos_cal
+
+            # Apply pos_cal to test predictions
+            test_preds = pos_cal.predict(test_preds)
 
             post_end_ktc = start_ktc_test * np.exp(test_preds)
             post_mae = mean_absolute_error(y_end_ktc_test, post_end_ktc)
             post_bias = float(np.mean(post_end_ktc - y_end_ktc_test))
-            print(f"  pos_cal (linear): MAE {pre_mae:.1f} -> {post_mae:.1f}, bias {pre_bias:+.1f} -> {post_bias:+.1f}  (in-sample)")
+            print(f"  pos_cal: MAE {pre_mae:.1f} -> {post_mae:.1f}, bias {pre_bias:+.1f} -> {post_bias:+.1f}")
 
-        # Clip bounds: 2nd/98th percentile of y_train
+        # Clip bounds: 2nd/99th percentile of y_train (asymmetric to allow upside)
         low = float(np.percentile(y_train, 2))
-        high = float(np.percentile(y_train, 98))
+        high = float(np.percentile(y_train, 99))
 
         # Verify PPG sensitivity wasn't collapsed by calibration
         if calibrator_dict:
