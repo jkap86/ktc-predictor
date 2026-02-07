@@ -76,7 +76,12 @@ def compare_players(request: CompareRequest):
                 predicted_end_ktc=prediction["predicted_end_ktc"],
                 predicted_delta_ktc=prediction["predicted_delta_ktc"],
                 predicted_pct_change=prediction["predicted_pct_change"],
+                low_end_ktc=prediction.get("low_end_ktc"),
+                high_end_ktc=prediction.get("high_end_ktc"),
                 model_version=prediction["model_version"],
+                anchor_year=prediction.get("anchor_year"),
+                anchor_source=prediction.get("anchor_source"),
+                baseline_year=prediction.get("baseline_year"),
                 seasons=player_data.get("seasons", []),
             )
         )

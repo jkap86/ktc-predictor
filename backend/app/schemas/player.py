@@ -67,6 +67,9 @@ class EOSPredictionResponse(BaseModel):
     low_end_ktc: float | None = None
     high_end_ktc: float | None = None
     model_version: str = "eos_hgb_v1"
+    anchor_year: int | None = None
+    anchor_source: str | None = None
+    baseline_year: int | None = None
 
 
 class EOSPredictRequest(BaseModel):
@@ -97,6 +100,9 @@ class PlayerComparison(BaseModel):
     low_end_ktc: float | None = None
     high_end_ktc: float | None = None
     model_version: str = "eos_hgb_v1"
+    anchor_year: int | None = None
+    anchor_source: str | None = None
+    baseline_year: int | None = None
     seasons: list[PlayerSeason] = []
 
 

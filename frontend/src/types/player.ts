@@ -61,6 +61,9 @@ export interface EOSPrediction {
   low_end_ktc?: number;
   high_end_ktc?: number;
   model_version: string;
+  anchor_year?: number;
+  anchor_source?: string;
+  baseline_year?: number;
 }
 
 export interface EOSPredictRequest {
@@ -85,6 +88,9 @@ export interface PlayerComparison {
   low_end_ktc?: number;
   high_end_ktc?: number;
   model_version: string;
+  anchor_year?: number;
+  anchor_source?: string;
+  baseline_year?: number;
   seasons: PlayerSeason[];
 }
 

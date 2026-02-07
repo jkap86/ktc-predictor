@@ -215,6 +215,22 @@ export default function PlayerPage() {
             </div>
           </div>
           <ConfidenceBand prediction={prediction} />
+          {(prediction.anchor_year || prediction.baseline_year) && (
+            <div className="mt-2 text-xs text-gray-400 dark:text-gray-500 px-1">
+              {prediction.anchor_year && (
+                <span>
+                  Anchor: {prediction.start_ktc.toLocaleString()} from {prediction.anchor_year}{' '}
+                  {prediction.anchor_source === 'end_ktc' ? 'end' : 'start'}
+                </span>
+              )}
+              {prediction.anchor_year && prediction.baseline_year && (
+                <span className="mx-1">|</span>
+              )}
+              {prediction.baseline_year && (
+                <span>Baseline stats: {prediction.baseline_year} season</span>
+              )}
+            </div>
+          )}
         </div>
       )}
 

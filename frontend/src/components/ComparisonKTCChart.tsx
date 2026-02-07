@@ -59,14 +59,14 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
 
   // Get union of all years across all players
   const allYears = new Set<number>();
-  players.forEach((p) => p.seasons.forEach((s) => allYears.add(s.year)));
+  players.forEach((p) => (p.seasons ?? []).forEach((s) => allYears.add(s.year)));
   const years = Array.from(allYears).sort((a, b) => a - b);
 
   // Build data points: { year, PlayerA: ktc, PlayerB: ktc, ... }
   const data = years.map((year) => {
     const point: Record<string, number> = { year };
     players.forEach((p) => {
-      const season = p.seasons.find((s) => s.year === year);
+      const season = (p.seasons ?? []).find((s) => s.year === year);
       if (season) {
         point[p.name] = season.end_ktc || season.start_ktc;
       }
@@ -78,7 +78,7 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
   let minKtc = Infinity;
   let maxKtc = -Infinity;
   players.forEach((p) => {
-    p.seasons.forEach((s) => {
+    (p.seasons ?? []).forEach((s) => {
       const ktc = s.end_ktc || s.start_ktc;
       if (ktc > 0) {
         minKtc = Math.min(minKtc, ktc);
