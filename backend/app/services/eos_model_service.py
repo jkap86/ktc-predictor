@@ -7,20 +7,16 @@ from pathlib import Path
 import numpy as np
 
 from app.config import EOS_MODELS_DIR, EOS_MODEL_VERSION
+from app.services.ktc_utils import _is_valid_ktc, select_anchor_ktc, select_baseline_stats
 from ktc_model.io import load_bundle
 from ktc_model.predict import predict_end_ktc
-
-
-def _is_valid_ktc(x) -> bool:
-    """Return True if x is a usable KTC value (not None, not zero, not a 9999 sentinel)."""
-    return x is not None and 0 < x < 9999
 
 
 class EosModelService:
     """End-of-season KTC prediction service.
 
-    Loads per-position XGBoost models, clip bounds, calibrators,
-    sentinel imputation, and residual bands from ``EOS_MODELS_DIR``.
+    Loads per-position gradient boosting models (HGB or XGBoost), clip bounds,
+    linear calibrators, sentinel imputation, and residual bands from ``EOS_MODELS_DIR``.
     """
 
     def __init__(self):
@@ -80,10 +76,15 @@ class EosModelService:
         draft_pick: float | None = None,
         years_remaining: float | None = None,
     ) -> dict:
-        """Predict EOS KTC from raw inputs. Cached by input tuple."""
+        """Predict EOS KTC from raw inputs. Cached by quantized input tuple."""
+        # Quantize floats for cache efficiency (reduces key explosion from slider UX)
+        q_start_ktc = round(start_ktc / 5) * 5  # nearest 5
+        q_ppg = round(ppg, 1)  # 1 decimal
+        q_age = round(age, 1) if age is not None else None
+
         return self._cached_predict(
-            position, start_ktc, games_played, ppg,
-            age, weeks_missed, draft_pick, years_remaining,
+            position, q_start_ktc, games_played, q_ppg,
+            q_age, weeks_missed, draft_pick, years_remaining,
         )
 
     @lru_cache(maxsize=2048)
@@ -152,31 +153,27 @@ class EosModelService:
         if not seasons:
             return None
 
-        latest = max(seasons, key=lambda s: s["year"])
-
-        # Prefer most recent season with games > 0 for stats
-        played = [s for s in seasons if s.get("games_played", 0) > 0]
-        baseline = max(played, key=lambda s: s["year"]) if played else latest
-
-        games = baseline.get("games_played", 0) or 0
-        fp = baseline.get("fantasy_points", 0) or 0.0
-        ppg = fp / games if games > 0 else 0.0
-        age = baseline.get("age") or latest.get("age")
-
-        # start_ktc fallback: latest start_ktc -> prior season end_ktc -> any valid start_ktc
-        start_ktc = latest.get("start_ktc")
-        if not _is_valid_ktc(start_ktc):
-            prior = sorted(seasons, key=lambda s: s["year"], reverse=True)
-            for s in prior:
-                if _is_valid_ktc(s.get("end_ktc")):
-                    start_ktc = s["end_ktc"]
-                    break
-                if _is_valid_ktc(s.get("start_ktc")):
-                    start_ktc = s["start_ktc"]
-                    break
-
-        if not _is_valid_ktc(start_ktc):
+        # --- anchor KTC (shared logic) ---
+        anchor = select_anchor_ktc(seasons)
+        if anchor is None:
             return None
+        start_ktc, anchor_year, anchor_source = anchor
+
+        # --- baseline stats (shared logic) ---
+        latest = max(seasons, key=lambda s: s["year"])
+        baseline_info = select_baseline_stats(seasons)
+        if baseline_info:
+            baseline_year, games, ppg = baseline_info
+        else:
+            baseline_year = latest["year"]
+            games = 0
+            ppg = 0.0
+
+        # Age: prefer baseline season, fall back to latest
+        baseline_season = next(
+            (s for s in seasons if s["year"] == baseline_year), latest
+        )
+        age = baseline_season.get("age") or latest.get("age")
 
         result = self.predict_from_inputs(
             position=player["position"],
@@ -187,4 +184,7 @@ class EosModelService:
         )
         result["player_id"] = player_id
         result["name"] = player["name"]
+        result["anchor_year"] = anchor_year
+        result["anchor_source"] = anchor_source
+        result["baseline_year"] = baseline_year
         return result

@@ -1,12 +1,12 @@
-"""Monotone linear calibrator to replace isotonic pos_cal."""
+"""Monotone linear calibrator (no SciPy dependency)."""
 
 import numpy as np
-from scipy.optimize import minimize
 
 
 class MonotoneLinearCalibrator:
-    """Linear calibrator with monotonicity constraint (slope >= 0).
+    """Linear calibrator with monotonicity constraint (slope >= min_slope).
 
+    Uses closed-form OLS with slope clamping to avoid SciPy dependency.
     Unlike IsotonicRegression, this calibrator never collapses an interval
     to a constant value, preserving sensitivity across the input range.
 
@@ -41,26 +41,32 @@ class MonotoneLinearCalibrator:
 
         # Filter out NaN values
         mask = ~(np.isnan(X) | np.isnan(y))
-        X = X[mask]
-        y = y[mask]
+        X, y = X[mask], y[mask]
 
         if len(X) == 0:
             self.slope = 1.0
             self.intercept = 0.0
             return self
 
-        def loss(params):
-            slope, intercept = params
-            pred = slope * X + intercept
-            return np.sum((pred - y) ** 2)
+        # Closed-form OLS: slope = cov(X,y) / var(X), intercept = mean(y) - slope*mean(X)
+        x_mean, y_mean = X.mean(), y.mean()
+        x_var = ((X - x_mean) ** 2).sum()
 
-        result = minimize(
-            loss,
-            [1.0, 0.0],
-            bounds=[(self.min_slope, None), (None, None)],
-            method="L-BFGS-B",
-        )
-        self.slope, self.intercept = result.x
+        if x_var < 1e-12:  # degenerate case (all X values identical)
+            self.slope = 1.0
+            self.intercept = y_mean
+            return self
+
+        slope = ((X - x_mean) * (y - y_mean)).sum() / x_var
+
+        # Clamp slope to min_slope for monotonicity
+        slope = max(slope, self.min_slope)
+
+        # Recompute intercept given clamped slope
+        intercept = y_mean - slope * x_mean
+
+        self.slope = slope
+        self.intercept = intercept
         return self
 
     def predict(self, X):

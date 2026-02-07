@@ -30,7 +30,7 @@ def predict_end_ktc(
 ) -> dict:
     """Predict end-of-season KTC value.
 
-    Pipeline: raw model predict log_ratio -> isotonic calibration -> clip -> exp -> multiply start_ktc.
+    Pipeline: raw model predict log_ratio -> linear calibration -> clip -> exp -> multiply start_ktc.
 
     Parameters
     ----------

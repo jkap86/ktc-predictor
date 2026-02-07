@@ -11,7 +11,6 @@ import sys
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
-from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import GroupKFold, GroupShuffleSplit
 
@@ -181,6 +180,33 @@ def _monotonic_smoke_test(model, position: str) -> bool:
     return is_monotonic
 
 
+def _ppg_sensitivity_test(model, calibrator_dict, clip_bounds, position: str) -> bool:
+    """Verify predictions vary meaningfully across PPG range (not collapsed by calibration)."""
+    from .predict import predict_end_ktc
+
+    ppg_values = [0, 10, 20, 30]
+    results = []
+    for ppg in ppg_values:
+        r = predict_end_ktc(
+            models={position: model},
+            clip_bounds={position: clip_bounds},
+            calibrators={position: calibrator_dict},
+            position=position,
+            gp=17,
+            ppg=ppg,
+            start_ktc=5000,
+        )
+        results.append(r["end_ktc"])
+
+    # Require std dev > 100 (meaningful spread across PPG range)
+    std_dev = float(np.std(results))
+    is_sensitive = std_dev > 100
+
+    status = "PASS" if is_sensitive else "FAIL"
+    print(f"  PPG sensitivity ({position}): {status}  std={std_dev:.1f}  preds={[round(r, 0) for r in results]}")
+    return is_sensitive
+
+
 def train_all(
     zip_path: str,
     json_name: str = "training-data.json",
@@ -319,6 +345,10 @@ def train_all(
         low = float(np.percentile(y_train, 2))
         high = float(np.percentile(y_train, 98))
 
+        # Verify PPG sensitivity wasn't collapsed by calibration
+        if calibrator_dict:
+            _ppg_sensitivity_test(model, calibrator_dict, (low, high), pos)
+
         # Clip test predictions (on log-ratio scale)
         test_preds_clipped = np.clip(test_preds, low, high)
 
@@ -432,7 +462,7 @@ def main():
     parser.add_argument(
         "--no-calibration",
         action="store_true",
-        help="Skip isotonic calibration",
+        help="Skip calibration",
     )
     parser.add_argument(
         "--prefer-xgb",
