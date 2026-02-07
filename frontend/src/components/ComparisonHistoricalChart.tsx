@@ -79,6 +79,35 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
 
   const data = getChartData();
 
+  // Helper for dynamic Y-axis label
+  const getYAxisLabel = () => {
+    if (view === 'ktc') return 'KTC Value';
+    if (view === 'fantasy') return 'Fantasy Points';
+    return 'Fantasy Points';
+  };
+
+  // Calculate Y domain for KTC view for better zoom
+  let minY = Infinity;
+  let maxY = -Infinity;
+  if (view === 'ktc') {
+    players.forEach((p) => {
+      (p.seasons ?? []).forEach((s) => {
+        if (s.start_ktc && s.start_ktc > 0) {
+          minY = Math.min(minY, s.start_ktc);
+          maxY = Math.max(maxY, s.start_ktc);
+        }
+        if (s.end_ktc && s.end_ktc > 0) {
+          minY = Math.min(minY, s.end_ktc);
+          maxY = Math.max(maxY, s.end_ktc);
+        }
+      });
+    });
+  }
+  const yPadding = isFinite(minY) ? (maxY - minY) * 0.15 : 0;
+  const yDomain: [number, number] | undefined = isFinite(minY)
+    ? [Math.max(0, minY - yPadding), maxY + yPadding]
+    : undefined;
+
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
       <div className="flex flex-wrap justify-between items-center mb-4 gap-4">
@@ -139,16 +168,19 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
       )}
 
       <ResponsiveContainer width="100%" height={350}>
-        <LineChart data={data} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
+        <LineChart data={data} margin={{ top: 20, right: 30, bottom: 35, left: 25 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis
             dataKey={view === 'weekly' ? 'week' : 'year'}
             tick={{ fontSize: 12 }}
+            label={{ value: view === 'weekly' ? 'Week' : 'Year', position: 'bottom', offset: 0, fontSize: 12 }}
           />
           <YAxis
             tickFormatter={view === 'ktc' ? formatKtcTick : undefined}
             tick={{ fontSize: 12 }}
-            width={50}
+            width={60}
+            domain={view === 'ktc' ? yDomain : undefined}
+            label={{ value: getYAxisLabel(), angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}
           />
           <Tooltip />
           <Legend />

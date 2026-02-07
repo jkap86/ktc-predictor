@@ -19,6 +19,7 @@ export interface PlayerSeason {
   end_ktc: number;
   fantasy_points: number;
   games_played: number;
+  ppg?: number;
   ktc_30d_trend: number | null;
   ktc_90d_trend: number | null;
   ktc_volatility: number;

@@ -86,7 +86,7 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
       }
     });
   });
-  const padding = (maxKtc - minKtc) * 0.1;
+  const padding = (maxKtc - minKtc) * 0.15 || 500;
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
@@ -96,17 +96,19 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
       </p>
 
       <ResponsiveContainer width="100%" height={350}>
-        <LineChart data={data} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
+        <LineChart data={data} margin={{ top: 20, right: 30, bottom: 35, left: 25 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis
             dataKey="year"
             tick={{ fontSize: 12 }}
+            label={{ value: 'Year', position: 'bottom', offset: 0, fontSize: 12 }}
           />
           <YAxis
             tickFormatter={formatKtcTick}
             domain={[Math.max(0, minKtc - padding), maxKtc + padding]}
             tick={{ fontSize: 12 }}
-            width={50}
+            width={60}
+            label={{ value: 'KTC Value', angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend />

@@ -154,7 +154,7 @@ export default function ComparisonPredictionChart({
     });
   });
   if (!isFinite(minKtc)) { minKtc = 0; maxKtc = 10000; }
-  const padding = (maxKtc - minKtc) * 0.1 || 500;
+  const padding = (maxKtc - minKtc) * 0.15 || 500;
 
   // Build reference dot data for each player's baseline PPG
   const referenceDots: Array<{ ppg: number; ktc: number; color: string; name: string }> = [];
@@ -162,11 +162,12 @@ export default function ComparisonPredictionChart({
     const name = pred.name || 'Unknown';
     const player = players[idx];
     if (!player) return;
-    // Use the most recent season's PPG as baseline
+    // Use the most recent season to compute PPG from fantasy_points / games_played
     const latestSeason = player.seasons?.[player.seasons.length - 1];
-    if (!latestSeason || latestSeason.ppg == null) return;
+    if (!latestSeason || !latestSeason.games_played || latestSeason.games_played === 0) return;
+    const computedPpg = latestSeason.fantasy_points / latestSeason.games_played;
     // Round to nearest even number to match PPG_RANGE
-    const baselinePpg = Math.round(latestSeason.ppg / 2) * 2;
+    const baselinePpg = Math.round(computedPpg / 2) * 2;
     const dataPoint = chartData.find((d) => d.ppg === baselinePpg);
     if (dataPoint && typeof dataPoint[name] === 'number') {
       referenceDots.push({
@@ -195,18 +196,19 @@ export default function ComparisonPredictionChart({
         )}
 
         <ResponsiveContainer width="100%" height={350}>
-          <ComposedChart data={chartData} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
+          <ComposedChart data={chartData} margin={{ top: 20, right: 30, bottom: 35, left: 25 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis
               dataKey="ppg"
               tick={{ fontSize: 12 }}
-              label={{ value: 'PPG', position: 'insideBottom', offset: -10, fontSize: 12 }}
+              label={{ value: 'PPG', position: 'bottom', offset: 0, fontSize: 12 }}
             />
             <YAxis
               tickFormatter={formatKtcTick}
               domain={[Math.max(0, Math.floor(minKtc - padding)), Math.ceil(maxKtc + padding)]}
               tick={{ fontSize: 12 }}
-              width={55}
+              width={60}
+              label={{ value: 'Predicted EOS KTC', angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend
