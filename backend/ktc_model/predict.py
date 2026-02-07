@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from ktc_model.age_adjustment import apply_age_decline_adjustment, env_flag
+
 VALID_POSITIONS = {"QB", "RB", "WR", "TE"}
 GP_BUCKETS = [(1, 3), (4, 7), (8, 11), (12, 17)]
 
@@ -196,6 +198,10 @@ def predict_end_ktc(
     if bounds is not None:
         low, high = bounds
         pred_log_ratio = max(low, min(high, pred_log_ratio))
+
+    # Age decline adjustment (feature-flagged)
+    if env_flag("KTC_ENABLE_AGE_DECLINE_ADJ", default=False):
+        pred_log_ratio = apply_age_decline_adjustment(pred_log_ratio, age, position)
 
     # KTC-aware log_ratio bounds: prevent flatline at domain boundaries
     # This ensures end_ktc can never mathematically exceed [1, 9999]
