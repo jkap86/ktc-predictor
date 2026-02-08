@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import Ridge, ElasticNet
 from sklearn.metrics import mean_absolute_error, r2_score
-from sklearn.model_selection import GroupKFold, GroupShuffleSplit
+from sklearn.model_selection import GridSearchCV, GroupKFold, GroupShuffleSplit
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
@@ -56,6 +56,12 @@ POSITION_HYPERPARAMS = {
 }
 
 NAN_CHECK_COLS = ["age", "draft_pick", "years_remaining"]
+
+# ElasticNet hyperparameter grid for cross-validated tuning
+ELASTICNET_PARAM_GRID = {
+    'enet__alpha': [0.001, 0.005, 0.01, 0.05, 0.1],
+    'enet__l1_ratio': [0.3, 0.5, 0.7, 0.9],
+}
 
 
 def _gp_bucket_key(gp: float) -> str | None:
@@ -228,19 +234,84 @@ def _build_ridge():
     ])
 
 
-def _build_elasticnet_poly():
+def _build_elasticnet_poly(alpha: float = 0.01, l1_ratio: float = 0.5):
     """Create an ElasticNet model with polynomial features.
 
     Captures pairwise interactions with L1+L2 regularization.
     interaction_only=True avoids x^2 terms, just x*y interactions.
     Uses median imputation for NaN values.
+
+    Parameters
+    ----------
+    alpha : float
+        Regularization strength (higher = more regularization).
+    l1_ratio : float
+        Balance between L1 and L2 (1.0 = pure L1/Lasso, 0.0 = pure L2/Ridge).
     """
     return Pipeline([
         ('imputer', SimpleImputer(strategy='median')),
         ('scaler', StandardScaler()),
         ('poly', PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)),
-        ('enet', ElasticNet(alpha=0.01, l1_ratio=0.5, max_iter=10000))
+        ('enet', ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=10000))
     ])
+
+
+def _build_elasticnet_poly_tuned(X_train, y_train, groups, n_cv_folds: int = 5):
+    """Build ElasticNet+Poly with cross-validated hyperparameter search.
+
+    Uses GroupKFold to prevent player leakage during CV.
+    Searches over alpha and l1_ratio using neg_mean_absolute_error scoring.
+
+    Parameters
+    ----------
+    X_train : np.ndarray
+        Training features.
+    y_train : np.ndarray
+        Training targets (log_ratio).
+    groups : np.ndarray
+        Player IDs for group-based CV splitting.
+    n_cv_folds : int
+        Number of cross-validation folds.
+
+    Returns
+    -------
+    tuple
+        (best_estimator, best_params) - fitted Pipeline and dict of best hyperparameters.
+    """
+    base_pipeline = Pipeline([
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler()),
+        ('poly', PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)),
+        ('enet', ElasticNet(max_iter=10000))
+    ])
+
+    # Ensure we have enough unique groups for CV
+    n_unique_groups = len(np.unique(groups))
+    actual_folds = min(n_cv_folds, n_unique_groups)
+
+    if actual_folds < 2:
+        print(f"  Warning: Only {n_unique_groups} unique groups, using default params")
+        model = _build_elasticnet_poly()
+        model.fit(X_train, y_train)
+        return model, {'enet__alpha': 0.01, 'enet__l1_ratio': 0.5}
+
+    gkf = GroupKFold(n_splits=actual_folds)
+
+    grid_search = GridSearchCV(
+        base_pipeline,
+        ELASTICNET_PARAM_GRID,
+        cv=gkf,
+        scoring='neg_mean_absolute_error',
+        n_jobs=-1,
+        verbose=1
+    )
+
+    grid_search.fit(X_train, y_train, groups=groups)
+
+    print(f"  Best params: {grid_search.best_params_}")
+    print(f"  Best CV MAE (log-ratio): {-grid_search.best_score_:.4f}")
+
+    return grid_search.best_estimator_, grid_search.best_params_
 
 
 def _monotonic_smoke_test(model, position: str) -> bool:
@@ -298,6 +369,7 @@ def train_all(
     prefer_xgb: bool = False,
     export_csv: str | None = None,
     model_type: str = "hgb",
+    tune_hyperparams: bool = False,
 ) -> dict:
     """Train per-position models and return bundle.
 
@@ -305,6 +377,9 @@ def train_all(
     ----------
     model_type : str
         One of "hgb" (HistGradientBoosting), "ridge", or "elasticnet-poly".
+    tune_hyperparams : bool
+        If True and model_type is "elasticnet-poly", run GridSearchCV to find
+        optimal alpha and l1_ratio per position.
     """
     if model_type not in MODEL_TYPES:
         raise ValueError(f"model_type must be one of {MODEL_TYPES}, got '{model_type}'")
@@ -312,7 +387,7 @@ def train_all(
     is_linear = model_type in ("ridge", "elasticnet-poly")
 
     print(f"Loading data from {zip_path}...")
-    print(f"Model type: {model_type}")
+    print(f"Model type: {model_type}" + (" (with tuning)" if tune_hyperparams else ""))
     df = build_weekly_snapshot_df(zip_path, json_name)
     print(f"  Total rows: {len(df)}")
     print(f"  Positions: {df.groupby('position').size().to_dict()}")
@@ -351,13 +426,22 @@ def train_all(
         backend_name = model_type.upper()
         quantile_models = {}
 
+        # Track best hyperparameters for saving to metrics
+        best_params = None
+
         if model_type == "ridge":
             model = _build_ridge()
             model.fit(X_train, y_train)
             print(f"  Backend: Ridge regression (linear)")
         elif model_type == "elasticnet-poly":
-            model = _build_elasticnet_poly()
-            model.fit(X_train, y_train)
+            train_groups = groups[train_idx]
+            if tune_hyperparams:
+                model, best_params = _build_elasticnet_poly_tuned(
+                    X_train, y_train, train_groups
+                )
+            else:
+                model = _build_elasticnet_poly()
+                model.fit(X_train, y_train)
             n_poly_features = model.named_steps['poly'].n_output_features_
             print(f"  Backend: ElasticNet + Polynomial ({n_poly_features} features)")
         else:
@@ -540,7 +624,7 @@ def train_all(
         bundle["clip_bounds"][pos] = (low, high)
         bundle["calibrators"][pos] = calibrator_dict
         bundle["quantile_models"][pos] = quantile_models
-        bundle["metrics"][pos] = {
+        metrics_entry = {
             "mae": round(mae, 1),
             "r2": round(r2, 4),
             "n_train": len(X_train),
@@ -549,6 +633,11 @@ def train_all(
             "clip_low": round(low, 1),
             "clip_high": round(high, 1),
         }
+        # Save tuned hyperparameters if available
+        if best_params:
+            metrics_entry["best_alpha"] = best_params.get('enet__alpha')
+            metrics_entry["best_l1_ratio"] = best_params.get('enet__l1_ratio')
+        bundle["metrics"][pos] = metrics_entry
 
     # Save per-position start_ktc medians for sentinel imputation at inference
     sentinel_impute = {}
@@ -638,6 +727,11 @@ def main():
         choices=MODEL_TYPES,
         help="Model type: hgb (gradient boosting), ridge (linear), elasticnet-poly (polynomial)",
     )
+    parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="Run hyperparameter tuning via GridSearchCV (slower but better). Only applies to elasticnet-poly.",
+    )
 
     args = parser.parse_args()
     train_all(
@@ -650,6 +744,7 @@ def main():
         prefer_xgb=args.prefer_xgb,
         export_csv=args.export_csv,
         model_type=args.model_type,
+        tune_hyperparams=args.tune,
     )
 
 

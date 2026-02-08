@@ -1,38 +1,46 @@
 {
   "QB": {
-    "mae": 823.5,
-    "r2": 0.8614,
+    "mae": 803.6,
+    "r2": 0.8686,
     "n_train": 3045,
     "n_test": 784,
     "backend": "ELASTICNET-POLY",
     "clip_low": -0.9,
-    "clip_high": 1.5
+    "clip_high": 1.5,
+    "best_alpha": 0.01,
+    "best_l1_ratio": 0.7
   },
   "RB": {
-    "mae": 560.9,
-    "r2": 0.8637,
+    "mae": 569.8,
+    "r2": 0.8601,
     "n_train": 4798,
     "n_test": 1145,
     "backend": "ELASTICNET-POLY",
     "clip_low": -0.8,
-    "clip_high": 1.8
+    "clip_high": 1.8,
+    "best_alpha": 0.005,
+    "best_l1_ratio": 0.9
   },
   "WR": {
-    "mae": 425.3,
-    "r2": 0.9145,
+    "mae": 422.9,
+    "r2": 0.9159,
     "n_train": 7901,
     "n_test": 1632,
     "backend": "ELASTICNET-POLY",
     "clip_low": -0.7,
-    "clip_high": 1.5
+    "clip_high": 1.5,
+    "best_alpha": 0.01,
+    "best_l1_ratio": 0.7
   },
   "TE": {
-    "mae": 470.5,
-    "r2": 0.8875,
+    "mae": 458.7,
+    "r2": 0.8963,
     "n_train": 3579,
     "n_test": 1000,
     "backend": "ELASTICNET-POLY",
     "clip_low": -0.6,
-    "clip_high": 0.9
+    "clip_high": 0.9,
+    "best_alpha": 0.01,
+    "best_l1_ratio": 0.9
   }
 }
