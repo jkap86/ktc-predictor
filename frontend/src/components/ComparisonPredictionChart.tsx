@@ -14,13 +14,14 @@ import {
 } from 'recharts';
 import { predictEos } from '../lib/api';
 import { formatKtc, formatKtcTick, clampKtc, KTC_MAX } from '../lib/format';
-import type { EOSPrediction } from '../types/player';
+import type { EOSPrediction, Player } from '../types/player';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 const PPG_RANGE = Array.from({ length: 13 }, (_, i) => i * 2); // 0, 2, 4, ... 24
 
 interface ComparisonPredictionChartProps {
   predictions: EOSPrediction[];
+  players: Player[];
   whatIfGames: number;
 }
 
@@ -64,27 +65,42 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 
 export default function ComparisonPredictionChart({
   predictions,
+  players,
   whatIfGames,
 }: ComparisonPredictionChartProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const predictionsRef = useRef(predictions);
+  const playersRef = useRef(players);
 
-  // Keep ref in sync with props
+  // Keep refs in sync with props
   useEffect(() => {
     predictionsRef.current = predictions;
   }, [predictions]);
 
+  useEffect(() => {
+    playersRef.current = players;
+  }, [players]);
+
   const fetchAllPredictions = useCallback(async () => {
     const currentPredictions = predictionsRef.current;
+    const currentPlayers = playersRef.current;
     if (currentPredictions.length === 0) return;
 
     setLoading(true);
     try {
-      // For each player, fetch predictions across all PPG values 0-40
+      // For each player, fetch predictions across all PPG values 0-24
       const playerResults = await Promise.all(
-        currentPredictions.map(async (pred) => {
+        currentPredictions.map(async (pred, idx) => {
+          // Get age from player's latest season
+          const player = currentPlayers[idx];
+          const latestSeason = player?.seasons?.reduce(
+            (a, b) => (a.year > b.year ? a : b),
+            player.seasons[0]
+          );
+          const age = latestSeason?.age;
+
           const results = await Promise.all(
             PPG_RANGE.map((ppg) =>
               predictEos({
@@ -92,6 +108,7 @@ export default function ComparisonPredictionChart({
                 start_ktc: pred.start_ktc,
                 games_played: whatIfGames,
                 ppg: ppg,
+                age: age,
               })
             )
           );
@@ -125,7 +142,7 @@ export default function ComparisonPredictionChart({
     } finally {
       setLoading(false);
     }
-  }, [whatIfGames]);
+  }, [whatIfGames, players]);
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -134,7 +151,7 @@ export default function ComparisonPredictionChart({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [fetchAllPredictions, predictions.length]);
+  }, [fetchAllPredictions, predictions.length, players]);
 
   if (predictions.length === 0) return null;
 
