@@ -9,6 +9,76 @@ import pandas as pd
 
 VALID_POSITIONS = {"QB", "RB", "WR", "TE"}
 
+# Prime age by position (peak dynasty value age)
+PRIME_AGE = {"QB": 27, "RB": 24, "WR": 26, "TE": 27}
+
+# Position-specific PPG baselines for z-score calculation
+PPG_BASELINES = {
+    "QB": {"mean": 18.0, "std": 5.0},
+    "RB": {"mean": 12.0, "std": 5.0},
+    "WR": {"mean": 10.0, "std": 4.0},
+    "TE": {"mean": 8.0, "std": 3.5},
+}
+
+# KTC quartile boundaries (from analysis)
+KTC_QUARTILE_BOUNDS = [1559, 3085, 4850]
+
+
+def _get_ktc_quartile(ktc: float) -> int:
+    """Return KTC quartile (1-4) based on fixed boundaries."""
+    if ktc < 1559:
+        return 1
+    elif ktc < 3085:
+        return 2
+    elif ktc < 4850:
+        return 3
+    return 4
+
+
+def _age_prime_distance(age: float | None, position: str) -> float:
+    """Return age distance from positional prime. Negative = before prime."""
+    if age is None:
+        return 0.0
+    prime = PRIME_AGE.get(position, 26)
+    return age - prime
+
+
+def _ppg_zscore(ppg: float, position: str) -> float:
+    """Return PPG as z-score relative to position average."""
+    baseline = PPG_BASELINES.get(position, {"mean": 12.0, "std": 5.0})
+    return (ppg - baseline["mean"]) / baseline["std"]
+
+
+def _is_breakout_candidate(
+    age: float | None, ktc: float, ppg: float, position: str
+) -> int:
+    """Binary flag: 1 if player matches breakout profile, 0 otherwise.
+
+    Breakout profile:
+    - Mid-tier KTC (Q2-Q3)
+    - Prime age window (within 3 years of prime)
+    - Above-average PPG (z-score > 0.5)
+    """
+    if age is None:
+        return 0
+
+    # Check KTC tier
+    ktc_q = _get_ktc_quartile(ktc)
+    if ktc_q not in (2, 3):
+        return 0
+
+    # Check age (within 3 years of prime)
+    prime = PRIME_AGE.get(position, 26)
+    if abs(age - prime) > 3:
+        return 0
+
+    # Check PPG (above average for position)
+    zscore = _ppg_zscore(ppg, position)
+    if zscore < 0.5:
+        return 0
+
+    return 1
+
 
 def build_weekly_snapshot_df(
     zip_path: str, json_name: str = "training-data.json"
@@ -93,6 +163,13 @@ def build_weekly_snapshot_df(
                         "end_ktc": end_ktc,
                         "abs_change": end_ktc - start_ktc,
                         "log_ratio": np.log(max(end_ktc, 1) / start_ktc),
+                        # New engineered features
+                        "start_ktc_quartile": _get_ktc_quartile(start_ktc),
+                        "age_prime_distance": _age_prime_distance(age, position),
+                        "ppg_zscore": round(_ppg_zscore(ppg_so_far, position), 4),
+                        "is_breakout_candidate": _is_breakout_candidate(
+                            age, start_ktc, ppg_so_far, position
+                        ),
                     }
                 )
 

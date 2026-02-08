@@ -5,49 +5,67 @@ import numpy as np
 from ktc_model.age_adjustment import apply_age_decline_adjustment, env_flag
 
 VALID_POSITIONS = {"QB", "RB", "WR", "TE"}
-GP_BUCKETS = [(1, 3), (4, 7), (8, 11), (12, 17)]
 
-# PPG sensitivity boost by position: multiplier applied to log_ratio based on PPG
-# This compensates for positions where the model has weak PPG sensitivity due to
-# limited training data variance. Only applied when gp >= 8 (meaningful sample).
-# Formula: log_ratio += boost * (ppg - baseline_ppg) where baseline_ppg is position average
-_PPG_SENSITIVITY_BOOST = {
-    "TE": {"boost": 0.035, "baseline": 8.0},  # TEs average ~8 PPG in training data
-}
+# Prime age by position (peak dynasty value age)
+PRIME_AGE = {"QB": 27, "RB": 24, "WR": 26, "TE": 27}
 
-# Performance floor thresholds by position: (min_games, max_ppg, log_ratio_cap)
-# QBs score more, so thresholds are higher; TEs score less, so thresholds are lower
-_PERF_FLOOR_THRESHOLDS = {
-    "QB": [(12, 2, -0.35), (12, 5, -0.25), (12, 8, -0.15),
-           (8, 2, -0.20), (8, 5, -0.10)],
-    "RB": [(12, 2, -0.35), (12, 4, -0.25), (12, 6, -0.15),
-           (8, 2, -0.20), (8, 4, -0.10)],
-    "WR": [(12, 2, -0.35), (12, 4, -0.25), (12, 6, -0.15),
-           (8, 2, -0.20), (8, 4, -0.10)],
-    "TE": [(12, 1, -0.35), (12, 2, -0.25), (12, 4, -0.15),
-           (8, 1, -0.20), (8, 2, -0.10)],
+# Position-specific PPG baselines for z-score calculation
+PPG_BASELINES = {
+    "QB": {"mean": 18.0, "std": 5.0},
+    "RB": {"mean": 12.0, "std": 5.0},
+    "WR": {"mean": 10.0, "std": 4.0},
+    "TE": {"mean": 8.0, "std": 3.5},
 }
 
 
-def _perf_floor_log_ratio_cap(position: str, gp: float, ppg: float) -> float | None:
-    """Return an upper bound for log_ratio in low-performance regimes.
-
-    Prevents model from predicting positive growth when a player plays
-    many games but scores very little (a scenario with no training data).
-    """
-    pos_thresholds = _PERF_FLOOR_THRESHOLDS.get(position, [])
-    for min_gp, max_ppg, cap in pos_thresholds:
-        if gp >= min_gp and ppg <= max_ppg:
-            return cap
-    return None
+def _get_ktc_quartile(ktc: float) -> int:
+    """Return KTC quartile (1-4) based on fixed boundaries."""
+    if ktc < 1559:
+        return 1
+    elif ktc < 3085:
+        return 2
+    elif ktc < 4850:
+        return 3
+    return 4
 
 
-def _gp_bucket_key(gp: float) -> str | None:
-    """Return the bucket key string for a games_played value, or None."""
-    for lo, hi in GP_BUCKETS:
-        if lo <= gp <= hi:
-            return f"gp_{lo}_{hi}"
-    return None
+def _age_prime_distance(age: float | None, position: str) -> float:
+    """Return age distance from positional prime. Negative = before prime."""
+    if age is None:
+        return 0.0
+    prime = PRIME_AGE.get(position, 26)
+    return age - prime
+
+
+def _ppg_zscore(ppg: float, position: str) -> float:
+    """Return PPG as z-score relative to position average."""
+    baseline = PPG_BASELINES.get(position, {"mean": 12.0, "std": 5.0})
+    return (ppg - baseline["mean"]) / baseline["std"]
+
+
+def _is_breakout_candidate(
+    age: float | None, ktc: float, ppg: float, position: str
+) -> int:
+    """Binary flag: 1 if player matches breakout profile, 0 otherwise."""
+    if age is None:
+        return 0
+
+    # Check KTC tier (Q2-Q3)
+    ktc_q = _get_ktc_quartile(ktc)
+    if ktc_q not in (2, 3):
+        return 0
+
+    # Check age (within 3 years of prime)
+    prime = PRIME_AGE.get(position, 26)
+    if abs(age - prime) > 3:
+        return 0
+
+    # Check PPG (above average for position)
+    zscore = _ppg_zscore(ppg, position)
+    if zscore < 0.5:
+        return 0
+
+    return 1
 
 
 def predict_end_ktc(
@@ -138,6 +156,12 @@ def predict_end_ktc(
         was_sentinel = 1
         start_ktc = sentinel_impute[position]
 
+    # Compute engineered features
+    ktc_quartile = _get_ktc_quartile(start_ktc)
+    age_prime_dist = _age_prime_distance(age, position)
+    ppg_z = _ppg_zscore(ppg, position)
+    breakout_flag = _is_breakout_candidate(age, start_ktc, ppg, position)
+
     X = np.array([[
         gp,
         ppg,
@@ -147,50 +171,16 @@ def predict_end_ktc(
         draft_pick if draft_pick is not None else np.nan,
         years_remaining if years_remaining is not None else np.nan,
         was_sentinel,
+        ktc_quartile,
+        age_prime_dist,
+        ppg_z,
+        breakout_flag,
     ]])
 
     # Predict log_ratio: log(end_ktc / start_ktc)
+    # Note: ElasticNet+Poly model handles feature interactions internally,
+    # so no post-hoc calibration or adjustments are needed
     pred_log_ratio = float(model.predict(X)[0])
-
-    # Calibrate if calibrator exists
-    cal_entry = calibrators.get(position)
-    if cal_entry is not None:
-        if isinstance(cal_entry, dict):
-            # Bucketed calibrator dict: try bucket-specific, fallback to global
-            bkey = _gp_bucket_key(gp)
-            cal = cal_entry.get(bkey) if bkey else None
-            if cal is None:
-                cal = cal_entry.get("global")
-        else:
-            # Backward compat: bare IsotonicRegression
-            cal = cal_entry
-        if cal is not None:
-            calibrated = float(cal.predict([pred_log_ratio])[0])
-            if not np.isnan(calibrated):
-                pred_log_ratio = calibrated
-
-        # Second-stage: per-position calibration (linear)
-        if isinstance(cal_entry, dict):
-            pos_cal = cal_entry.get("pos_cal")
-            if pos_cal is not None:
-                pos_calibrated = float(pos_cal.predict([pred_log_ratio])[0])
-                if not np.isnan(pos_calibrated):
-                    pred_log_ratio = pos_calibrated
-
-    # Performance floor: cap log_ratio in low-performance regimes
-    # This prevents positive predictions when player has high games but very low PPG
-    perf_cap = _perf_floor_log_ratio_cap(position, gp, ppg)
-    if perf_cap is not None:
-        pred_log_ratio = min(pred_log_ratio, perf_cap)
-
-    # PPG sensitivity boost: compensate for positions with weak model sensitivity
-    # Only apply when games played >= 8 (meaningful sample size)
-    ppg_boost_config = _PPG_SENSITIVITY_BOOST.get(position)
-    if ppg_boost_config is not None and gp >= 8:
-        boost = ppg_boost_config["boost"]
-        baseline = ppg_boost_config["baseline"]
-        ppg_adjustment = boost * (ppg - baseline)
-        pred_log_ratio += ppg_adjustment
 
     # Clip log_ratio to percentile bounds from training data
     # This prevents extreme predictions outside the observed distribution

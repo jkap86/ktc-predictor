@@ -1,37 +1,37 @@
 {
   "QB": {
-    "mae": 989.2,
-    "r2": 0.7669,
+    "mae": 823.5,
+    "r2": 0.8614,
     "n_train": 3045,
     "n_test": 784,
-    "backend": "HGB",
+    "backend": "ELASTICNET-POLY",
     "clip_low": -0.9,
     "clip_high": 1.5
   },
   "RB": {
-    "mae": 701.2,
-    "r2": 0.7772,
+    "mae": 560.9,
+    "r2": 0.8637,
     "n_train": 4798,
     "n_test": 1145,
-    "backend": "HGB",
+    "backend": "ELASTICNET-POLY",
     "clip_low": -0.8,
     "clip_high": 1.8
   },
   "WR": {
-    "mae": 446.4,
-    "r2": 0.9148,
+    "mae": 425.3,
+    "r2": 0.9145,
     "n_train": 7901,
     "n_test": 1632,
-    "backend": "HGB",
+    "backend": "ELASTICNET-POLY",
     "clip_low": -0.7,
     "clip_high": 1.5
   },
   "TE": {
-    "mae": 615.8,
-    "r2": 0.8219,
+    "mae": 470.5,
+    "r2": 0.8875,
     "n_train": 3579,
     "n_test": 1000,
-    "backend": "HGB",
+    "backend": "ELASTICNET-POLY",
     "clip_low": -0.6,
     "clip_high": 0.9
   }

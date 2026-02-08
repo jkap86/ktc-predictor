@@ -11,14 +11,19 @@ import sys
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.linear_model import Ridge, ElasticNet
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import GroupKFold, GroupShuffleSplit
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
 from .calibration import MonotoneLinearCalibrator
 from .data import build_weekly_snapshot_df
-from .io import save_bundle
+from .io import EnsembleModel, save_bundle
 
 POSITIONS = ["QB", "RB", "WR", "TE"]
+MODEL_TYPES = ["hgb", "ridge", "elasticnet-poly"]
 FEATURES = [
     "games_played_so_far",
     "ppg_so_far",
@@ -28,10 +33,27 @@ FEATURES = [
     "draft_pick",
     "years_remaining",
     "start_ktc_was_sentinel",
+    # Engineered features for breakout detection
+    "start_ktc_quartile",
+    "age_prime_distance",
+    "ppg_zscore",
+    "is_breakout_candidate",
 ]
 MIN_SAMPLES = 100
 GP_BUCKETS = [(1, 3), (4, 7), (8, 11), (12, 17)]
 GP_BUCKET_MIN_SAMPLES = 30
+
+# Ensemble configuration: train multiple models with different seeds for variance reduction
+ENSEMBLE_SEEDS = [42, 123, 456, 789, 999]
+
+# Position-specific hyperparameters: QB/RB/TE underfit with default params
+# WR works great with defaults (R²=0.91), so keep current settings
+POSITION_HYPERPARAMS = {
+    "QB": {"max_depth": 6, "learning_rate": 0.08, "n_estimators": 300},
+    "RB": {"max_depth": 7, "learning_rate": 0.05, "n_estimators": 400},
+    "WR": {"max_depth": 5, "learning_rate": 0.10, "n_estimators": 200},
+    "TE": {"max_depth": 6, "learning_rate": 0.08, "n_estimators": 300},
+}
 
 NAN_CHECK_COLS = ["age", "draft_pick", "years_remaining"]
 
@@ -141,37 +163,96 @@ def print_diagnostics(df: pd.DataFrame, test_rows: list[dict]) -> None:
     print()
 
 
-def _try_xgb(seed: int):
-    """Attempt to create an XGBRegressor with monotonic constraints."""
+def _try_xgb(seed: int, position: str = "WR"):
+    """Attempt to create an XGBRegressor with monotonic constraints and position-specific hyperparams."""
     try:
         from xgboost import XGBRegressor
 
+        params = POSITION_HYPERPARAMS.get(position, POSITION_HYPERPARAMS["WR"])
+        # Monotonic constraints: 12 features
+        # ppg (idx 1): positive, ppg_zscore (idx 10): positive,
+        # is_breakout_candidate (idx 11): positive
         return XGBRegressor(
-            n_estimators=200,
-            max_depth=5,
-            learning_rate=0.1,
-            monotone_constraints="(0,1,0,0,0,0,0,0)",
+            n_estimators=params["n_estimators"],
+            max_depth=params["max_depth"],
+            learning_rate=params["learning_rate"],
+            monotone_constraints="(0,1,0,0,0,0,0,0,0,0,1,1)",
             random_state=seed,
         )
     except ImportError:
         return None
 
 
-def _build_hgb(seed: int):
-    """Create a HistGradientBoostingRegressor with monotonic constraints."""
+def _build_hgb(seed: int, position: str = "WR"):
+    """Create a HistGradientBoostingRegressor with monotonic constraints and position-specific hyperparams."""
+    params = POSITION_HYPERPARAMS.get(position, POSITION_HYPERPARAMS["WR"])
+    # Monotonic constraints: 12 features
+    # ppg (idx 1): positive, ppg_zscore (idx 10): positive,
+    # is_breakout_candidate (idx 11): positive
     return HistGradientBoostingRegressor(
-        max_iter=200,
-        max_depth=5,
-        learning_rate=0.1,
-        monotonic_cst=[0, 1, 0, 0, 0, 0, 0, 0],
+        max_iter=params["n_estimators"],
+        max_depth=params["max_depth"],
+        learning_rate=params["learning_rate"],
+        monotonic_cst=[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
         random_state=seed,
     )
+
+
+def _build_quantile_hgb(seed: int, position: str, quantile: float):
+    """Create a HistGradientBoostingRegressor for quantile regression.
+
+    Used for uncertainty estimation - trains models to predict 20th and 80th percentiles.
+    """
+    params = POSITION_HYPERPARAMS.get(position, POSITION_HYPERPARAMS["WR"])
+    return HistGradientBoostingRegressor(
+        loss="quantile",
+        quantile=quantile,
+        max_iter=params["n_estimators"],
+        max_depth=params["max_depth"],
+        learning_rate=params["learning_rate"],
+        monotonic_cst=[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        random_state=seed,
+    )
+
+
+def _build_ridge():
+    """Create a Ridge regression model with imputation and standardization.
+
+    Simple linear model with L2 regularization.
+    Uses median imputation for NaN values (age, draft_pick, years_remaining).
+    """
+    return Pipeline([
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler()),
+        ('ridge', Ridge(alpha=1.0))
+    ])
+
+
+def _build_elasticnet_poly():
+    """Create an ElasticNet model with polynomial features.
+
+    Captures pairwise interactions with L1+L2 regularization.
+    interaction_only=True avoids x^2 terms, just x*y interactions.
+    Uses median imputation for NaN values.
+    """
+    return Pipeline([
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler()),
+        ('poly', PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)),
+        ('enet', ElasticNet(alpha=0.01, l1_ratio=0.5, max_iter=10000))
+    ])
 
 
 def _monotonic_smoke_test(model, position: str) -> bool:
     """Verify log_ratio predictions are non-decreasing as PPG increases (gp=8, start_ktc=5000)."""
     ppg_values = [5, 10, 15, 20]
-    X_test = np.array([[8, ppg, 5000, 25, 2, np.nan, 3, 0] for ppg in ppg_values])
+    # 12 features: gp, ppg, start_ktc, age, weeks_missed, draft_pick, years_remaining,
+    #              sentinel, ktc_quartile, age_prime_dist, ppg_zscore, is_breakout
+    # For QB at age 25, start_ktc 5000 (Q4), ppg_zscore = (ppg - 18) / 5
+    X_test = np.array([
+        [8, ppg, 5000, 25, 2, np.nan, 3, 0, 4, -2, (ppg - 18) / 5, 0]
+        for ppg in ppg_values
+    ])
     preds = model.predict(X_test)
 
     is_monotonic = all(preds[i] <= preds[i + 1] for i in range(len(preds) - 1))
@@ -216,15 +297,28 @@ def train_all(
     no_calibration: bool = False,
     prefer_xgb: bool = False,
     export_csv: str | None = None,
+    model_type: str = "hgb",
 ) -> dict:
-    """Train per-position models and return bundle."""
+    """Train per-position models and return bundle.
+
+    Parameters
+    ----------
+    model_type : str
+        One of "hgb" (HistGradientBoosting), "ridge", or "elasticnet-poly".
+    """
+    if model_type not in MODEL_TYPES:
+        raise ValueError(f"model_type must be one of {MODEL_TYPES}, got '{model_type}'")
+
+    is_linear = model_type in ("ridge", "elasticnet-poly")
+
     print(f"Loading data from {zip_path}...")
+    print(f"Model type: {model_type}")
     df = build_weekly_snapshot_df(zip_path, json_name)
     print(f"  Total rows: {len(df)}")
     print(f"  Positions: {df.groupby('position').size().to_dict()}")
     print()
 
-    bundle = {"models": {}, "clip_bounds": {}, "calibrators": {}, "metrics": {}}
+    bundle = {"models": {}, "clip_bounds": {}, "calibrators": {}, "quantile_models": {}, "metrics": {}}
     all_test_rows: list[dict] = []
 
     for pos in POSITIONS:
@@ -253,30 +347,63 @@ def train_all(
         start_ktc_test = start_ktc[test_idx]
         y_end_ktc_test = y_end_ktc[test_idx]
 
-        # Select backend
-        backend_name = "HGB"
-        if prefer_xgb:
-            model = _try_xgb(seed)
-            if model is not None:
-                backend_name = "XGB"
-            else:
-                print("  XGBoost not available, falling back to HGB")
-                model = _build_hgb(seed)
+        # Select backend and build model(s)
+        backend_name = model_type.upper()
+        quantile_models = {}
+
+        if model_type == "ridge":
+            model = _build_ridge()
+            model.fit(X_train, y_train)
+            print(f"  Backend: Ridge regression (linear)")
+        elif model_type == "elasticnet-poly":
+            model = _build_elasticnet_poly()
+            model.fit(X_train, y_train)
+            n_poly_features = model.named_steps['poly'].n_output_features_
+            print(f"  Backend: ElasticNet + Polynomial ({n_poly_features} features)")
         else:
-            model = _build_hgb(seed)
+            # HGB ensemble (default)
+            backend_name = "HGB"
+            ensemble_models = []
 
-        model.fit(X_train, y_train)
+            for eseed in ENSEMBLE_SEEDS:
+                if prefer_xgb:
+                    m = _try_xgb(eseed, pos)
+                    if m is not None:
+                        backend_name = "XGB"
+                    else:
+                        if eseed == ENSEMBLE_SEEDS[0]:
+                            print("  XGBoost not available, falling back to HGB")
+                        m = _build_hgb(eseed, pos)
+                else:
+                    m = _build_hgb(eseed, pos)
+                ensemble_models.append(m)
 
-        # Monotonic smoke test
-        _monotonic_smoke_test(model, pos)
+            # Train all ensemble models
+            for m in ensemble_models:
+                m.fit(X_train, y_train)
+
+            # Use first model for monotonic test, ensemble for predictions
+            model = EnsembleModel(ensemble_models)
+            print(f"  Ensemble: {len(ENSEMBLE_SEEDS)} models with seeds {ENSEMBLE_SEEDS}")
+
+            # Monotonic smoke test (use first model in ensemble)
+            _monotonic_smoke_test(ensemble_models[0], pos)
+
+            # Train quantile models for uncertainty estimation (20th and 80th percentiles)
+            for q in [0.2, 0.8]:
+                q_model = _build_quantile_hgb(seed, pos, q)
+                q_model.fit(X_train, y_train)
+                quantile_models[q] = q_model
+            print(f"  Quantile models trained (p20, p80) for uncertainty bands")
 
         # Raw predictions
         train_preds = model.predict(X_train)
         test_preds = model.predict(X_test)
 
         # Isotonic calibration using cross-validated out-of-fold predictions
+        # Skip calibration for linear models (not needed)
         calibrator_dict = None
-        if not no_calibration:
+        if not no_calibration and not is_linear:
             # Generate OOF predictions so calibrator sees realistic bias
             oof_preds = np.full(len(X_train), np.nan)
             train_groups = groups[train_idx]
@@ -286,7 +413,7 @@ def train_all(
             if n_cv_folds >= 2:
                 gkf = GroupKFold(n_splits=n_cv_folds)
                 for cv_train, cv_val in gkf.split(X_train, y_train, train_groups):
-                    cv_model = _try_xgb(seed) if prefer_xgb and backend_name == "XGB" else _build_hgb(seed)
+                    cv_model = _try_xgb(seed, pos) if prefer_xgb and backend_name == "XGB" else _build_hgb(seed, pos)
                     cv_model.fit(X_train[cv_train], y_train[cv_train])
                     oof_preds[cv_val] = cv_model.predict(X_train[cv_val])
 
@@ -356,8 +483,8 @@ def train_all(
         low = float(np.percentile(y_train, 2))
         high = float(np.percentile(y_train, 99))
 
-        # Verify PPG sensitivity wasn't collapsed by calibration
-        if calibrator_dict:
+        # Verify PPG sensitivity wasn't collapsed by calibration (HGB only)
+        if calibrator_dict and not is_linear:
             _ppg_sensitivity_test(model, calibrator_dict, (low, high), pos)
 
         # Clip test predictions (on log-ratio scale)
@@ -380,11 +507,13 @@ def train_all(
         for i in range(len(test_idx)):
             actual_delta = float(y_end_ktc_test[i] - start_ktc_test[i])
             predicted_delta = float(test_end_ktc_preds[i] - start_ktc_test[i])
+            age_val = test_meta.iloc[i]["age"]
             all_test_rows.append({
                 "player_id": test_meta.iloc[i]["player_id"],
                 "position": pos,
                 "year": test_meta.iloc[i]["year"],
                 "week": test_meta.iloc[i]["week"],
+                "age": round(age_val, 1) if pd.notna(age_val) else None,
                 "games_played": test_meta.iloc[i]["games_played_so_far"],
                 "ppg": round(test_meta.iloc[i]["ppg_so_far"], 2),
                 "start_ktc": start_ktc_test[i],
@@ -410,6 +539,7 @@ def train_all(
         bundle["models"][pos] = model
         bundle["clip_bounds"][pos] = (low, high)
         bundle["calibrators"][pos] = calibrator_dict
+        bundle["quantile_models"][pos] = quantile_models
         bundle["metrics"][pos] = {
             "mae": round(mae, 1),
             "r2": round(r2, 4),
@@ -502,6 +632,12 @@ def main():
         default=None,
         help="Export test-set predictions vs actuals to CSV",
     )
+    parser.add_argument(
+        "--model-type",
+        default="hgb",
+        choices=MODEL_TYPES,
+        help="Model type: hgb (gradient boosting), ridge (linear), elasticnet-poly (polynomial)",
+    )
 
     args = parser.parse_args()
     train_all(
@@ -513,6 +649,7 @@ def main():
         no_calibration=args.no_calibration,
         prefer_xgb=args.prefer_xgb,
         export_csv=args.export_csv,
+        model_type=args.model_type,
     )
 
 

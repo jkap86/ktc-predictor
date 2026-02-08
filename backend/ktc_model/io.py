@@ -4,6 +4,28 @@ import json
 from pathlib import Path
 
 import joblib
+import numpy as np
+
+
+class EnsembleModel:
+    """Wrapper that averages predictions from multiple models.
+
+    This class is defined here in io.py to ensure it's importable during
+    model loading (joblib needs access to the class definition).
+    """
+
+    def __init__(self, models: list):
+        self.models = models
+
+    def predict(self, X):
+        preds = np.array([m.predict(X) for m in self.models])
+        return np.mean(preds, axis=0)
+
+    def fit(self, X, y):
+        """Fit all models in the ensemble."""
+        for m in self.models:
+            m.fit(X, y)
+        return self
 
 
 def save_bundle(bundle: dict, out_dir: str) -> None:
@@ -52,6 +74,16 @@ def save_bundle(bundle: dict, out_dir: str) -> None:
     if "sentinel_impute" in bundle and bundle["sentinel_impute"]:
         with open(out / "sentinel_impute.json", "w") as f:
             json.dump(bundle["sentinel_impute"], f, indent=2)
+
+    # Save quantile models for uncertainty estimation
+    if "quantile_models" in bundle and bundle["quantile_models"]:
+        q_dir = out / "quantile_models"
+        q_dir.mkdir(exist_ok=True)
+        for pos, q_models in bundle["quantile_models"].items():
+            for quantile, model in q_models.items():
+                # Convert float quantile to string for filename (e.g., 0.2 -> "p20")
+                q_name = f"p{int(quantile * 100)}"
+                joblib.dump(model, q_dir / f"{pos}_{q_name}.joblib")
 
 
 def load_bundle(model_dir: str) -> dict:
@@ -106,10 +138,27 @@ def load_bundle(model_dir: str) -> dict:
         with open(bands_path) as f:
             residual_bands = json.load(f)
 
+    # Load quantile models for uncertainty estimation
+    quantile_models = {}
+    q_dir = d / "quantile_models"
+    if q_dir.exists():
+        for q_file in q_dir.glob("*.joblib"):
+            # Parse filename: e.g., "QB_p20.joblib" -> pos="QB", quantile=0.2
+            parts = q_file.stem.split("_")
+            if len(parts) >= 2:
+                pos = parts[0]
+                q_str = parts[1]  # e.g., "p20"
+                if q_str.startswith("p"):
+                    quantile = int(q_str[1:]) / 100  # "p20" -> 0.2
+                    if pos not in quantile_models:
+                        quantile_models[pos] = {}
+                    quantile_models[pos][quantile] = joblib.load(q_file)
+
     return {
         "models": models,
         "clip_bounds": clip_bounds,
         "calibrators": calibrators,
+        "quantile_models": quantile_models,
         "metrics": metrics,
         "sentinel_impute": sentinel_impute,
         "residual_bands": residual_bands,
