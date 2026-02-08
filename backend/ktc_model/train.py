@@ -16,7 +16,7 @@ from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import GridSearchCV, GroupKFold, GroupShuffleSplit
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+from sklearn.preprocessing import FunctionTransformer, PolynomialFeatures, StandardScaler
 
 from .calibration import MonotoneLinearCalibrator
 from .data import build_weekly_snapshot_df
@@ -256,11 +256,11 @@ def _build_elasticnet_poly(alpha: float = 0.01, l1_ratio: float = 0.5):
     ])
 
 
-def _build_elasticnet_poly_tuned(X_train, y_train, groups, n_cv_folds: int = 5):
+def _build_elasticnet_poly_tuned(X_train, y_train, groups, start_ktc_train, n_cv_folds: int = 5):
     """Build ElasticNet+Poly with cross-validated hyperparameter search.
 
     Uses GroupKFold to prevent player leakage during CV.
-    Searches over alpha and l1_ratio using neg_mean_absolute_error scoring.
+    Scores on end_ktc MAE (not log_ratio MAE) to align with evaluation metric.
 
     Parameters
     ----------
@@ -270,6 +270,8 @@ def _build_elasticnet_poly_tuned(X_train, y_train, groups, n_cv_folds: int = 5):
         Training targets (log_ratio).
     groups : np.ndarray
         Player IDs for group-based CV splitting.
+    start_ktc_train : np.ndarray
+        Start KTC values for reconstructing end_ktc in scorer.
     n_cv_folds : int
         Number of cross-validation folds.
 
@@ -278,13 +280,6 @@ def _build_elasticnet_poly_tuned(X_train, y_train, groups, n_cv_folds: int = 5):
     tuple
         (best_estimator, best_params) - fitted Pipeline and dict of best hyperparameters.
     """
-    base_pipeline = Pipeline([
-        ('imputer', SimpleImputer(strategy='median')),
-        ('scaler', StandardScaler()),
-        ('poly', PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)),
-        ('enet', ElasticNet(max_iter=10000))
-    ])
-
     # Ensure we have enough unique groups for CV
     n_unique_groups = len(np.unique(groups))
     actual_folds = min(n_cv_folds, n_unique_groups)
@@ -295,23 +290,57 @@ def _build_elasticnet_poly_tuned(X_train, y_train, groups, n_cv_folds: int = 5):
         model.fit(X_train, y_train)
         return model, {'enet__alpha': 0.01, 'enet__l1_ratio': 0.5}
 
+    # Append start_ktc as the last column of X for the scorer to access
+    # The pipeline will strip it before training via FunctionTransformer
+    X_with_ktc = np.column_stack([X_train, start_ktc_train])
+
+    # Pipeline that drops the last column (start_ktc) before processing
+    base_pipeline = Pipeline([
+        ('drop_ktc', FunctionTransformer(lambda X: X[:, :-1], validate=False)),
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler()),
+        ('poly', PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)),
+        ('enet', ElasticNet(max_iter=10000))
+    ])
+
+    def end_ktc_mae_scorer(estimator, X, y_log_ratio):
+        """Custom scorer: compute MAE on reconstructed end_ktc.
+
+        This aligns CV scoring with the actual evaluation metric.
+        """
+        start_ktc = X[:, -1]  # Last column is start_ktc
+        y_pred_log = estimator.predict(X)
+
+        pred_end_ktc = start_ktc * np.exp(y_pred_log)
+        actual_end_ktc = start_ktc * np.exp(y_log_ratio)
+
+        # Return negative because sklearn maximizes scores
+        return -mean_absolute_error(actual_end_ktc, pred_end_ktc)
+
     gkf = GroupKFold(n_splits=actual_folds)
 
     grid_search = GridSearchCV(
         base_pipeline,
         ELASTICNET_PARAM_GRID,
         cv=gkf,
-        scoring='neg_mean_absolute_error',
+        scoring=end_ktc_mae_scorer,
         n_jobs=-1,
         verbose=1
     )
 
-    grid_search.fit(X_train, y_train, groups=groups)
+    grid_search.fit(X_with_ktc, y_train, groups=groups)
+
+    best_alpha = grid_search.best_params_['enet__alpha']
+    best_l1 = grid_search.best_params_['enet__l1_ratio']
 
     print(f"  Best params: {grid_search.best_params_}")
-    print(f"  Best CV MAE (log-ratio): {-grid_search.best_score_:.4f}")
+    print(f"  Best CV MAE (end_ktc): {-grid_search.best_score_:.1f}")
 
-    return grid_search.best_estimator_, grid_search.best_params_
+    # Return a clean model (without the ktc-dropping step) retrained on full data
+    final_model = _build_elasticnet_poly(alpha=best_alpha, l1_ratio=best_l1)
+    final_model.fit(X_train, y_train)
+
+    return final_model, grid_search.best_params_
 
 
 def _monotonic_smoke_test(model, position: str) -> bool:
@@ -436,8 +465,9 @@ def train_all(
         elif model_type == "elasticnet-poly":
             train_groups = groups[train_idx]
             if tune_hyperparams:
+                start_ktc_train = start_ktc[train_idx]
                 model, best_params = _build_elasticnet_poly_tuned(
-                    X_train, y_train, train_groups
+                    X_train, y_train, train_groups, start_ktc_train
                 )
             else:
                 model = _build_elasticnet_poly()

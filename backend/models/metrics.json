@@ -11,14 +11,14 @@
     "best_l1_ratio": 0.7
   },
   "RB": {
-    "mae": 569.8,
-    "r2": 0.8601,
+    "mae": 558.4,
+    "r2": 0.8639,
     "n_train": 4798,
     "n_test": 1145,
     "backend": "ELASTICNET-POLY",
     "clip_low": -0.8,
     "clip_high": 1.8,
-    "best_alpha": 0.005,
+    "best_alpha": 0.01,
     "best_l1_ratio": 0.9
   },
   "WR": {
