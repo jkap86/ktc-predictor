@@ -46,7 +46,6 @@ class PlayerSummary(BaseModel):
     name: str
     position: str
     latest_ktc: Optional[float] = None
-    latest_year: Optional[int] = None
 
 
 class PlayerList(BaseModel):

@@ -1,5 +1,7 @@
 """Core EOS model service: load artifacts, predict with confidence bands, LRU cache."""
 
+import asyncio
+import concurrent.futures
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -16,6 +18,23 @@ from app.services.ktc_utils import (
 )
 from ktc_model.io import load_bundle
 from ktc_model.predict import predict_end_ktc, validate_feature_contract
+
+
+def get_live_ktc_sync(player_id: str) -> dict | None:
+    """Synchronous wrapper to fetch live KTC from database.
+
+    Returns dict with 'ktc', 'date', 'overall_rank', 'position_rank' or None.
+    """
+    from app.services.db import get_latest_ktc
+
+    try:
+        # Create a new event loop in a thread for sync context
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, get_latest_ktc(player_id))
+            return future.result(timeout=5)
+    except Exception:
+        # Fall back to None if database unavailable
+        return None
 
 
 def _cap_ktc(x):
@@ -236,11 +255,18 @@ class EosModelService:
         if not seasons:
             return None
 
-        # --- anchor KTC (shared logic) ---
-        anchor = select_anchor_ktc(seasons)
-        if anchor is None:
-            return None
-        start_ktc, anchor_year, anchor_source = anchor
+        # --- anchor KTC: prefer live DB, fall back to training data ---
+        live_ktc = get_live_ktc_sync(player_id)
+        if live_ktc and _is_valid_ktc(live_ktc.get("ktc")):
+            start_ktc = live_ktc["ktc"]
+            anchor_year = None  # Live KTC doesn't have a season year
+            anchor_source = "live_db"
+        else:
+            # Fall back to historical training data
+            anchor = select_anchor_ktc(seasons)
+            if anchor is None:
+                return None
+            start_ktc, anchor_year, anchor_source = anchor
 
         # --- baseline stats (shared logic) ---
         latest = max(seasons, key=lambda s: s["year"])
@@ -263,11 +289,13 @@ class EosModelService:
         prior_end_ktc = None
         max_ktc_prior = None
         prior_ppg = None
+        # For prior features, use anchor_year if available, else use year after latest season
+        prior_ref_year = anchor_year if anchor_year else (latest["year"] + 1)
         if player["position"] in ("QB", "WR", "TE"):
             prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(
-                seasons, anchor_year
+                seasons, prior_ref_year
             )
-            prior_ppg = compute_prior_ppg(seasons, anchor_year)
+            prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
 
         result = self.predict_from_inputs(
             position=player["position"],

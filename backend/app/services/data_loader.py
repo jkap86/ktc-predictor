@@ -1,3 +1,5 @@
+import asyncio
+import concurrent.futures
 import json
 import numpy as np
 import pandas as pd
@@ -6,6 +8,24 @@ from typing import Optional
 
 from app.config import TRAINING_DATA_PATH
 from app.services.ktc_utils import select_anchor_ktc
+
+
+def get_batch_live_ktc_sync(player_ids: list[str]) -> dict[str, dict]:
+    """Synchronous wrapper to fetch live KTC for multiple players from database.
+
+    Returns dict mapping player_id -> {'ktc', 'date', 'overall_rank', 'position_rank'}.
+    """
+    if not player_ids:
+        return {}
+
+    from app.services.db import get_latest_ktc_batch
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, get_latest_ktc_batch(player_ids))
+            return future.result(timeout=10)
+    except Exception:
+        return {}
 
 
 def get_age_bracket(age: int, position: str) -> str:
@@ -189,32 +209,48 @@ class DataLoader:
             sort_order: 'asc' or 'desc'
         """
         players = self.get_players()
-        results = []
 
+        # First pass: collect matching players
+        matching_players = []
         for player in players:
             if position and player["position"] != position:
                 continue
             if query.lower() in player["name"].lower():
-                # Get latest season info (shared anchor logic)
+                matching_players.append(player)
+
+        # Fetch live KTC for all matching players in one batch
+        player_ids = [p["player_id"] for p in matching_players]
+        live_ktc_map = get_batch_live_ktc_sync(player_ids)
+
+        # Build results with live KTC (fall back to training data if not in DB)
+        results = []
+        for player in matching_players:
+            player_id = player["player_id"]
+            live_data = live_ktc_map.get(player_id)
+
+            if live_data and live_data.get("ktc"):
+                latest_ktc = live_data["ktc"]
+                # Clamp to valid KTC domain [1, 9999]
+                latest_ktc = max(1.0, min(9999.0, latest_ktc))
+            else:
+                # Fall back to training data
                 seasons = player.get("seasons", [])
-                latest_ktc = None
-                latest_year = None
                 anchor = select_anchor_ktc(seasons) if seasons else None
                 if anchor:
-                    latest_ktc, latest_year, _ = anchor
-                    # Clamp to valid KTC domain [1, 9999]
+                    latest_ktc, _, _ = anchor
                     if latest_ktc is not None:
                         latest_ktc = max(1.0, min(9999.0, latest_ktc))
+                else:
+                    latest_ktc = None
 
-                results.append(
-                    {
-                        "player_id": player["player_id"],
-                        "name": player["name"],
-                        "position": player["position"],
-                        "latest_ktc": latest_ktc,
-                        "latest_year": latest_year,
-                    }
-                )
+            results.append(
+                {
+                    "player_id": player_id,
+                    "name": player["name"],
+                    "position": player["position"],
+                    "latest_ktc": latest_ktc,
+                }
+            )
 
         # Sort results
         if sort_by == "ktc":
