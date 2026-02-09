@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import APIRouter, HTTPException
 
 from app.services.model_service import get_model_service
@@ -16,14 +18,17 @@ from app.schemas.player import (
     NextWeekResponse,
 )
 
-# Singleton for transition model service
+# Singleton for transition model service (thread-safe initialization)
 _transition_service: TransitionModelService | None = None
+_transition_lock = threading.Lock()
 
 
 def get_transition_service() -> TransitionModelService:
     global _transition_service
     if _transition_service is None:
-        _transition_service = TransitionModelService()
+        with _transition_lock:
+            if _transition_service is None:  # Double-check after acquiring lock
+                _transition_service = TransitionModelService()
     return _transition_service
 
 router = APIRouter(prefix="/api", tags=["predictions"])

@@ -258,11 +258,12 @@ class EosModelService:
         )
         age = baseline_season.get("age") or latest.get("age")
 
-        # QB-only: compute prior-year features for trajectory signal
+        # Prior-season features for stable trajectory positions (QB, WR, TE)
+        # RB excluded due to high variance at elite tier
         prior_end_ktc = None
         max_ktc_prior = None
         prior_ppg = None
-        if player["position"] == "QB":
+        if player["position"] in ("QB", "WR", "TE"):
             prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(
                 seasons, anchor_year
             )
