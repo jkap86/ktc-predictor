@@ -110,3 +110,28 @@ export async function comparePlayers(
 export async function getPositions(): Promise<{ positions: string[] }> {
   return fetchApi<{ positions: string[] }>('/players/positions');
 }
+
+// Live KTC from database (cached hourly on backend)
+export interface LiveKTC {
+  player_id: string;
+  ktc: number;
+  date: string;
+  overall_rank: number | null;
+  position_rank: number | null;
+}
+
+export async function getLiveKtc(playerId: string): Promise<LiveKTC | null> {
+  try {
+    return await fetchApi<LiveKTC>(`/ktc/${playerId}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function getBatchLiveKtc(playerIds: string[]): Promise<LiveKTC[]> {
+  if (playerIds.length === 0) return [];
+  return fetchApi<LiveKTC[]>('/ktc/batch', {
+    method: 'POST',
+    body: JSON.stringify(playerIds),
+  });
+}

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import CORS_ORIGINS
-from app.routers import players_router, predictions_router
+from app.routers import players_router, predictions_router, ktc_router
 from app.services.model_service import get_model_service
 from ktc_model.age_adjustment import env_flag
 
@@ -41,6 +41,7 @@ app.add_middleware(
 # Include routers
 app.include_router(players_router)
 app.include_router(predictions_router)
+app.include_router(ktc_router)
 
 
 @app.get("/")

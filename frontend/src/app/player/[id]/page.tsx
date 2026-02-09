@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { getPlayer, getPrediction, predictEos } from '../../../lib/api';
+import { getPlayer, getPrediction, predictEos, getLiveKtc, type LiveKTC } from '../../../lib/api';
 import { formatKtc } from '../../../lib/format';
 import type { Player, EOSPrediction } from '../../../types/player';
 
@@ -47,6 +47,7 @@ export default function PlayerPage() {
 
   const [player, setPlayer] = useState<Player | null>(null);
   const [prediction, setPrediction] = useState<EOSPrediction | null>(null);
+  const [liveKtc, setLiveKtc] = useState<LiveKTC | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,6 +91,12 @@ export default function PlayerPage() {
         const predictionData = await getPrediction(playerId, true);
         if (predictionData) {
           setPrediction(predictionData);
+        }
+
+        // Fetch live KTC from database
+        const liveKtcData = await getLiveKtc(playerId);
+        if (liveKtcData) {
+          setLiveKtc(liveKtcData);
         }
       } catch (err) {
         setError('Failed to load player data');
@@ -173,10 +180,32 @@ export default function PlayerPage() {
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700 p-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{player.name}</h1>
-        <span className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full mt-2 font-medium">
-          {player.position}
-        </span>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{player.name}</h1>
+            <span className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full mt-2 font-medium">
+              {player.position}
+            </span>
+          </div>
+          {liveKtc && (
+            <div className="text-right">
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                {formatKtc(liveKtc.ktc)}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Live KTC
+                {liveKtc.position_rank && (
+                  <span className="ml-2 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
+                    #{liveKtc.position_rank} {player.position}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                as of {new Date(liveKtc.date).toLocaleDateString()}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* EOS Prediction Card */}

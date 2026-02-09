@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { searchPlayers, getPlayer, getPrediction, predictEos } from '../../lib/api';
+import { searchPlayers, getPlayer, getPrediction, predictEos, getBatchLiveKtc, type LiveKTC } from '../../lib/api';
 import { formatKtc } from '../../lib/format';
 import type { Player, PlayerSummary, EOSPrediction } from '../../types/player';
 import ComparisonKTCChart from '../../components/ComparisonKTCChart';
@@ -18,6 +18,7 @@ export default function CompareClient() {
   const [selectedIds, setSelectedIds] = useState<string[]>(initialPlayers);
   const [predictions, setPredictions] = useState<EOSPrediction[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [liveKtcMap, setLiveKtcMap] = useState<Record<string, LiveKTC>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [allPlayers, setAllPlayers] = useState<PlayerSummary[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
@@ -96,6 +97,21 @@ export default function CompareClient() {
       );
       setPredictions(valid.map((r) => r.pred));
       setPlayers(valid.map((r) => r.player));
+
+      // Fetch live KTC for all players in batch
+      if (valid.length > 0) {
+        const playerIds = valid.map((r) => r.player.player_id);
+        try {
+          const liveKtcList = await getBatchLiveKtc(playerIds);
+          const ktcMap: Record<string, LiveKTC> = {};
+          liveKtcList.forEach((ktc) => {
+            ktcMap[ktc.player_id] = ktc;
+          });
+          setLiveKtcMap(ktcMap);
+        } catch {
+          // Live KTC fetch failed, continue without it
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
@@ -272,6 +288,8 @@ export default function CompareClient() {
               ? lastSeason.fantasy_points / lastSeason.games_played
               : 0;
 
+            const liveKtc = liveKtcMap[player.player_id];
+
             return (
               <div
                 key={player.player_id}
@@ -287,8 +305,20 @@ export default function CompareClient() {
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-500 dark:text-gray-400">Current KTC</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatKtc(pred?.start_ktc)}</span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {liveKtc ? 'Live KTC' : 'Current KTC'}
+                    </span>
+                    <div className="text-right">
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {formatKtc(liveKtc?.ktc ?? pred?.start_ktc)}
+                      </span>
+                      {liveKtc && (
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
+                          as of {new Date(liveKtc.date).toLocaleDateString()}
+                          {liveKtc.position_rank && ` · #${liveKtc.position_rank}`}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500 dark:text-gray-400">Career Avg Games</span>
