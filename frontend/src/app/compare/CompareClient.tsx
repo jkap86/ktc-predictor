@@ -49,11 +49,12 @@ export default function CompareClient() {
     setLoading(true);
     try {
       // Fetch each player + prediction individually so one failure doesn't kill all
+      // Use weekly blend for better early/mid-season accuracy
       const results = await Promise.all(
         selectedIds.map(async (id) => {
           try {
             const [pred, player] = await Promise.all([
-              getPrediction(id),
+              getPrediction(id, true),
               getPlayer(id),
             ]);
             if (!pred) return null;

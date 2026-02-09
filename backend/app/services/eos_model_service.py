@@ -7,9 +7,15 @@ from pathlib import Path
 import numpy as np
 
 from app.config import EOS_MODELS_DIR, EOS_MODEL_VERSION
-from app.services.ktc_utils import _is_valid_ktc, select_anchor_ktc, select_baseline_stats
+from app.services.ktc_utils import (
+    _is_valid_ktc,
+    compute_prior_ktc_features,
+    compute_prior_ppg,
+    select_anchor_ktc,
+    select_baseline_stats,
+)
 from ktc_model.io import load_bundle
-from ktc_model.predict import predict_end_ktc
+from ktc_model.predict import predict_end_ktc, validate_feature_contract
 
 
 def _cap_ktc(x):
@@ -17,6 +23,40 @@ def _cap_ktc(x):
     if x is None:
         return None
     return max(1.0, min(9999.0, x))
+
+
+# Tier-specific confidence band multipliers
+# Elite tiers (especially RB 6k+) have higher inherent uncertainty
+# due to the difficulty of predicting whether elite players will rise or fall
+_BAND_MULTIPLIERS = {
+    "RB": {
+        # RB 6k+ tier has 1164 riser bias - inherently unpredictable
+        6000: 1.6,  # 60% wider bands for elite RBs
+        4000: 1.2,  # 20% wider for high-tier RBs
+    },
+    "QB": {
+        # QB 6k+ tier has 706 riser bias
+        6000: 1.4,  # 40% wider bands for elite QBs
+        4000: 1.15,  # 15% wider for high-tier QBs
+    },
+}
+
+
+def _get_band_multiplier(position: str, start_ktc: float) -> float:
+    """Get confidence band multiplier based on position and tier.
+
+    Elite tiers have wider bands due to higher prediction uncertainty.
+    """
+    if position not in _BAND_MULTIPLIERS:
+        return 1.0
+
+    thresholds = _BAND_MULTIPLIERS[position]
+    # Check thresholds from highest to lowest
+    for threshold in sorted(thresholds.keys(), reverse=True):
+        if start_ktc >= threshold:
+            return thresholds[threshold]
+
+    return 1.0
 
 
 class EosModelService:
@@ -54,6 +94,10 @@ class EosModelService:
 
         self._bundle = load_bundle(str(models_dir))
         self._residual_bands = self._bundle.get("residual_bands", {})
+
+        # Validate feature contract to catch train/predict mismatches early
+        validate_feature_contract(self._bundle.get("feature_names"))
+
         self._initialized = True
 
         # Clear LRU cache on re-init
@@ -82,16 +126,28 @@ class EosModelService:
         weeks_missed: float | None = None,
         draft_pick: float | None = None,
         years_remaining: float | None = None,
+        prior_end_ktc: float | None = None,
+        max_ktc_prior: float | None = None,
+        prior_ppg: float | None = None,
     ) -> dict:
-        """Predict EOS KTC from raw inputs. Cached by quantized input tuple."""
+        """Predict EOS KTC from raw inputs. Cached by quantized input tuple.
+
+        For QB predictions, prior_end_ktc, max_ktc_prior, and prior_ppg enable
+        trajectory features that improve accuracy.
+        """
         # Quantize floats for cache efficiency (reduces key explosion from slider UX)
         q_start_ktc = round(start_ktc / 5) * 5  # nearest 5
         q_ppg = round(ppg, 1)  # 1 decimal
         q_age = round(age, 1) if age is not None else None
+        # Quantize prior KTC/PPG values too (only used for QB)
+        q_prior_end_ktc = round(prior_end_ktc / 10) * 10 if prior_end_ktc else None
+        q_max_ktc_prior = round(max_ktc_prior / 10) * 10 if max_ktc_prior else None
+        q_prior_ppg = round(prior_ppg, 1) if prior_ppg else None
 
         return self._cached_predict(
             position, q_start_ktc, games_played, q_ppg,
             q_age, weeks_missed, draft_pick, years_remaining,
+            q_prior_end_ktc, q_max_ktc_prior, q_prior_ppg,
         )
 
     @lru_cache(maxsize=2048)
@@ -105,6 +161,9 @@ class EosModelService:
         weeks_missed: float | None,
         draft_pick: float | None,
         years_remaining: float | None,
+        prior_end_ktc: float | None = None,
+        max_ktc_prior: float | None = None,
+        prior_ppg: float | None = None,
     ) -> dict:
         b = self.bundle
         result = predict_end_ktc(
@@ -119,20 +178,29 @@ class EosModelService:
             weeks_missed=weeks_missed,
             draft_pick=draft_pick,
             years_remaining=years_remaining,
+            prior_end_ktc=prior_end_ktc,
+            max_ktc_prior=max_ktc_prior,
+            prior_ppg=prior_ppg,
             sentinel_impute=b.get("sentinel_impute"),
+            residual_correction=b.get("residual_correction"),
+            knn_adjuster=b.get("knn_adjuster"),
+            target_type=b.get("target_type", "log_ratio"),
         )
 
         # Use effective (post-imputation) start_ktc for display + math
         effective_ktc = result.get("effective_start_ktc", start_ktc)
 
         # Confidence bands from residual percentiles
+        # Apply tier-specific multiplier to widen bands for elite tiers
         bands = self._residual_bands.get(position, {})
         low_end_ktc = None
         high_end_ktc = None
         if bands and effective_ktc > 0:
             pred_log = np.log(result["end_ktc"] / effective_ktc)
-            low_end_ktc = round(effective_ktc * np.exp(pred_log + bands["p20"]), 1)
-            high_end_ktc = round(effective_ktc * np.exp(pred_log + bands["p80"]), 1)
+            multiplier = _get_band_multiplier(position, effective_ktc)
+            # Widen bands by multiplier (negative p20 becomes more negative, positive p80 stays positive)
+            low_end_ktc = round(effective_ktc * np.exp(pred_log + bands["p20"] * multiplier), 1)
+            high_end_ktc = round(effective_ktc * np.exp(pred_log + bands["p80"] * multiplier), 1)
 
         # Clamp all KTC outputs to valid domain [1, 9999]
         predicted_end_ktc = _cap_ktc(result["end_ktc"])
@@ -190,16 +258,118 @@ class EosModelService:
         )
         age = baseline_season.get("age") or latest.get("age")
 
+        # QB-only: compute prior-year features for trajectory signal
+        prior_end_ktc = None
+        max_ktc_prior = None
+        prior_ppg = None
+        if player["position"] == "QB":
+            prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(
+                seasons, anchor_year
+            )
+            prior_ppg = compute_prior_ppg(seasons, anchor_year)
+
         result = self.predict_from_inputs(
             position=player["position"],
             start_ktc=start_ktc,
             games_played=games,
             ppg=ppg,
             age=float(age) if age is not None else None,
+            prior_end_ktc=prior_end_ktc,
+            max_ktc_prior=max_ktc_prior,
+            prior_ppg=prior_ppg,
         )
         result["player_id"] = player_id
         result["name"] = player["name"]
         result["anchor_year"] = anchor_year
         result["anchor_source"] = anchor_source
         result["baseline_year"] = baseline_year
+        return result
+
+    # ------------------------------------------------------------------
+    # Blended prediction (EOS + weekly rollout)
+    # ------------------------------------------------------------------
+
+    def predict_with_weekly_blend(
+        self,
+        player_id: str,
+        data_loader,
+        transition_service,
+    ) -> dict | None:
+        """Predict EOS KTC blending EOS model with weekly rollout.
+
+        The weekly rollout model is more reactive to recent performance,
+        while the EOS model provides a stable end-of-season view.
+        Early-season: trust weekly more (captures hot/cold streaks)
+        Late-season: trust EOS more (stable projection)
+
+        Parameters
+        ----------
+        player_id : str
+            Player ID to predict for.
+        data_loader : DataLoaderService
+            Data loader for player data.
+        transition_service : TransitionModelService
+            Weekly transition model service.
+
+        Returns
+        -------
+        dict or None
+            Blended prediction result with:
+            - predicted_end_ktc: blended EOS + weekly
+            - eos_end_ktc: raw EOS prediction
+            - weekly_end_ktc: raw weekly rollout prediction
+            - blend_weight: weight given to weekly model
+        """
+        # Get EOS prediction
+        eos_result = self.predict_for_player(player_id, data_loader)
+        if eos_result is None:
+            return None
+
+        # Get weekly rollout prediction
+        try:
+            weekly_result = transition_service.predict_trajectory(player_id, data_loader)
+        except Exception:
+            weekly_result = None
+
+        if weekly_result is None:
+            # Fall back to EOS-only if weekly model unavailable
+            return eos_result
+
+        # Get games played for blend weighting
+        player = data_loader.get_player_by_id(player_id)
+        seasons = player.get("seasons", [])
+        latest = max(seasons, key=lambda s: s["year"]) if seasons else {}
+        weekly_stats = latest.get("weekly_stats", [])
+        games_played = sum(ws.get("games_played", 0) for ws in weekly_stats)
+
+        # Blend weights: early season trusts weekly more, late season trusts EOS
+        if games_played <= 4:
+            weekly_weight = 0.4  # 40% weekly, 60% EOS
+        elif games_played <= 8:
+            weekly_weight = 0.3
+        elif games_played <= 12:
+            weekly_weight = 0.2
+        else:
+            weekly_weight = 0.1  # Late season: mostly EOS
+
+        # Blend predictions
+        eos_end = eos_result["predicted_end_ktc"]
+        weekly_end = weekly_result["end_ktc"]
+        blended_end = (1 - weekly_weight) * eos_end + weekly_weight * weekly_end
+
+        # Clamp to valid domain
+        blended_end = max(1.0, min(9999.0, blended_end))
+
+        # Create result with both predictions
+        result = eos_result.copy()
+        result["predicted_end_ktc"] = round(blended_end, 1)
+        result["predicted_delta_ktc"] = round(blended_end - result["start_ktc"], 1)
+        result["predicted_pct_change"] = round(
+            (blended_end - result["start_ktc"]) / result["start_ktc"] * 100, 2
+        )
+        result["eos_end_ktc"] = eos_end
+        result["weekly_end_ktc"] = round(weekly_end, 1)
+        result["blend_weight"] = weekly_weight
+        result["games_played"] = games_played
+
         return result

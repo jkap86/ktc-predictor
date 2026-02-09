@@ -53,8 +53,12 @@ export async function getPlayer(playerId: string): Promise<Player> {
   return fetchApi<Player>(`/players/${playerId}`);
 }
 
-export async function getPrediction(playerId: string): Promise<EOSPrediction | null> {
-  const response = await fetch(`${API_BASE}/players/${playerId}/predict`, {
+export async function getPrediction(
+  playerId: string,
+  blendWeekly: boolean = false
+): Promise<EOSPrediction | null> {
+  const params = blendWeekly ? '?blend_weekly=true' : '';
+  const response = await fetch(`${API_BASE}/players/${playerId}/predict${params}`, {
     headers: { 'Content-Type': 'application/json' },
   });
 
@@ -93,10 +97,13 @@ export async function predictEos(payload: EOSPredictRequest): Promise<EOSPredict
   return data;
 }
 
-export async function comparePlayers(playerIds: string[]): Promise<CompareResponse> {
+export async function comparePlayers(
+  playerIds: string[],
+  blendWeekly: boolean = false
+): Promise<CompareResponse> {
   return fetchApi<CompareResponse>('/compare', {
     method: 'POST',
-    body: JSON.stringify({ player_ids: playerIds }),
+    body: JSON.stringify({ player_ids: playerIds, blend_weekly: blendWeekly }),
   });
 }
 

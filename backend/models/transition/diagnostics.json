@@ -1,0 +1,152 @@
+{
+  "positions": {
+    "QB": {
+      "n": 4652,
+      "mae_log": 0.0594,
+      "mae_points": 131.2,
+      "bias": -10.3,
+      "naive_mae": 133.8,
+      "tiers": {
+        "0-2k": {
+          "n": 1901,
+          "mae": 70.0,
+          "bias": -7.2,
+          "riser_bias": -79.2,
+          "faller_bias": 53.6
+        },
+        "2k-4k": {
+          "n": 1013,
+          "mae": 146.0,
+          "bias": -11.2,
+          "riser_bias": -138.5,
+          "faller_bias": 103.3
+        },
+        "4k-6k": {
+          "n": 846,
+          "mae": 181.5,
+          "bias": -7.8,
+          "riser_bias": -148.5,
+          "faller_bias": 133.9
+        },
+        "6k+": {
+          "n": 892,
+          "mae": 197.2,
+          "bias": -18.0,
+          "riser_bias": -127.7,
+          "faller_bias": 80.8
+        }
+      }
+    },
+    "RB": {
+      "n": 7193,
+      "mae_log": 0.0531,
+      "mae_points": 108.2,
+      "bias": -2.3,
+      "naive_mae": 114.9,
+      "tiers": {
+        "0-2k": {
+          "n": 2917,
+          "mae": 66.0,
+          "bias": -8.1,
+          "riser_bias": -75.8,
+          "faller_bias": 47.2
+        },
+        "2k-4k": {
+          "n": 2389,
+          "mae": 116.4,
+          "bias": -6.8,
+          "riser_bias": -115.9,
+          "faller_bias": 80.2
+        },
+        "4k-6k": {
+          "n": 1188,
+          "mae": 146.0,
+          "bias": 1.6,
+          "riser_bias": -108.6,
+          "faller_bias": 91.8
+        },
+        "6k+": {
+          "n": 699,
+          "mae": 192.1,
+          "bias": 30.8,
+          "riser_bias": -99.2,
+          "faller_bias": 130.3
+        }
+      }
+    },
+    "WR": {
+      "n": 10748,
+      "mae_log": 0.0489,
+      "mae_points": 100.4,
+      "bias": -4.4,
+      "naive_mae": 105.7,
+      "tiers": {
+        "0-2k": {
+          "n": 4713,
+          "mae": 64.8,
+          "bias": -5.8,
+          "riser_bias": -71.1,
+          "faller_bias": 49.7
+        },
+        "2k-4k": {
+          "n": 3054,
+          "mae": 107.5,
+          "bias": -10.4,
+          "riser_bias": -109.4,
+          "faller_bias": 62.8
+        },
+        "4k-6k": {
+          "n": 1913,
+          "mae": 139.2,
+          "bias": -14.0,
+          "riser_bias": -116.0,
+          "faller_bias": 68.5
+        },
+        "6k+": {
+          "n": 1068,
+          "mae": 167.6,
+          "bias": 36.1,
+          "riser_bias": -59.6,
+          "faller_bias": 114.8
+        }
+      }
+    },
+    "TE": {
+      "n": 4987,
+      "mae_log": 0.041,
+      "mae_points": 101.7,
+      "bias": -3.2,
+      "naive_mae": 107.4,
+      "tiers": {
+        "0-2k": {
+          "n": 2168,
+          "mae": 65.9,
+          "bias": -3.7,
+          "riser_bias": -62.7,
+          "faller_bias": 58.9
+        },
+        "2k-4k": {
+          "n": 1800,
+          "mae": 103.0,
+          "bias": -12.6,
+          "riser_bias": -105.4,
+          "faller_bias": 69.3
+        },
+        "4k-6k": {
+          "n": 626,
+          "mae": 163.2,
+          "bias": 4.2,
+          "riser_bias": -135.6,
+          "faller_bias": 114.6
+        },
+        "6k+": {
+          "n": 393,
+          "mae": 195.1,
+          "bias": 31.3,
+          "riser_bias": -81.6,
+          "faller_bias": 119.1
+        }
+      }
+    }
+  }
+}

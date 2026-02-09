@@ -65,6 +65,11 @@ export interface EOSPrediction {
   anchor_year?: number;
   anchor_source?: string;
   baseline_year?: number;
+  // Weekly blend fields (only populated when blend_weekly=true)
+  eos_end_ktc?: number;
+  weekly_end_ktc?: number;
+  blend_weight?: number;
+  games_played?: number;
 }
 
 export interface EOSPredictRequest {

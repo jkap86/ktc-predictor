@@ -86,7 +86,8 @@ export default function PlayerPage() {
         }
 
         // Prediction may return null if player has no valid seasons
-        const predictionData = await getPrediction(playerId);
+        // Use weekly blend for better early/mid-season accuracy
+        const predictionData = await getPrediction(playerId, true);
         if (predictionData) {
           setPrediction(predictionData);
         }

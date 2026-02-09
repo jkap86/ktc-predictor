@@ -1,0 +1,37 @@
+{
+  "positions": {
+    "QB": {
+      "n_train": 3721,
+      "n_test": 931,
+      "mae_train": 0.0574,
+      "mae_test": 0.0635,
+      "pct_mae": 6.55,
+      "bias": -0.0057
+    },
+    "RB": {
+      "n_train": 5754,
+      "n_test": 1439,
+      "mae_train": 0.0518,
+      "mae_test": 0.0513,
+      "pct_mae": 5.26,
+      "bias": 0.0036
+    },
+    "WR": {
+      "n_train": 8598,
+      "n_test": 2150,
+      "mae_train": 0.0483,
+      "mae_test": 0.0478,
+      "pct_mae": 4.89,
+      "bias": -0.0031
+    },
+    "TE": {
+      "n_train": 3989,
+      "n_test": 998,
+      "mae_train": 0.0412,
+      "mae_test": 0.0402,
+      "pct_mae": 4.11,
+      "bias": -0.0008
+    }
+  },
+  "overall_mae": 0.0507
+}
