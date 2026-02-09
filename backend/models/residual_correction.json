@@ -1,0 +1,27 @@
+{
+  "RB": [
+    {
+      "type": "hinge",
+      "ktc_mean": 3005.75,
+      "ktc_std": 1968.94,
+      "b0": 0.0330,
+      "b1": 0.0412,
+      "b2": -0.0608,
+      "hinge_z": 0.0
+    },
+    {
+      "type": "band",
+      "low_ktc": 2000,
+      "high_ktc": 4000,
+      "offset": 0.1673
+    }
+  ],
+  "QB": [
+    {
+      "type": "band",
+      "low_ktc": 4000,
+      "high_ktc": 10000,
+      "offset": 0.04
+    }
+  ]
+}

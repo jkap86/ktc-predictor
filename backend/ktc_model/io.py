@@ -70,6 +70,16 @@ def save_bundle(bundle: dict, out_dir: str) -> None:
         with open(out / "metrics.json", "w") as f:
             json.dump(bundle["metrics"], f, indent=2)
 
+    # Save feature contract (list of expected feature names in order)
+    if "feature_names" in bundle and bundle["feature_names"]:
+        with open(out / "feature_names.json", "w") as f:
+            json.dump(bundle["feature_names"], f, indent=2)
+
+    # Save bias diagnostics for regression testing
+    if "diagnostics" in bundle and bundle["diagnostics"]:
+        with open(out / "diagnostics.json", "w") as f:
+            json.dump(bundle["diagnostics"], f, indent=2)
+
     # Save sentinel imputation values
     if "sentinel_impute" in bundle and bundle["sentinel_impute"]:
         with open(out / "sentinel_impute.json", "w") as f:
@@ -84,6 +94,15 @@ def save_bundle(bundle: dict, out_dir: str) -> None:
                 # Convert float quantile to string for filename (e.g., 0.2 -> "p20")
                 q_name = f"p{int(quantile * 100)}"
                 joblib.dump(model, q_dir / f"{pos}_{q_name}.joblib")
+
+    # Save KNN adjusters for elite tier correction
+    if "knn_adjuster" in bundle and bundle["knn_adjuster"] is not None:
+        joblib.dump(bundle["knn_adjuster"], out / "knn_adjuster.joblib")
+
+    # Save target type (log_ratio vs pct_change)
+    if "target_type" in bundle:
+        with open(out / "target_type.json", "w") as f:
+            json.dump({"target_type": bundle["target_type"]}, f)
 
 
 def load_bundle(model_dir: str) -> dict:
@@ -126,6 +145,13 @@ def load_bundle(model_dir: str) -> dict:
         with open(metrics_path) as f:
             metrics = json.load(f)
 
+    # Load feature contract
+    feature_names = []
+    feature_path = d / "feature_names.json"
+    if feature_path.exists():
+        with open(feature_path) as f:
+            feature_names = json.load(f)
+
     sentinel_impute = {}
     sentinel_path = d / "sentinel_impute.json"
     if sentinel_path.exists():
@@ -137,6 +163,13 @@ def load_bundle(model_dir: str) -> dict:
     if bands_path.exists():
         with open(bands_path) as f:
             residual_bands = json.load(f)
+
+    # Load residual correction parameters (hinge/linear corrections per position)
+    residual_correction = {}
+    correction_path = d / "residual_correction.json"
+    if correction_path.exists():
+        with open(correction_path) as f:
+            residual_correction = json.load(f)
 
     # Load quantile models for uncertainty estimation
     quantile_models = {}
@@ -154,12 +187,29 @@ def load_bundle(model_dir: str) -> dict:
                         quantile_models[pos] = {}
                     quantile_models[pos][quantile] = joblib.load(q_file)
 
+    # Load KNN adjuster for elite tier correction
+    knn_adjuster = None
+    knn_path = d / "knn_adjuster.joblib"
+    if knn_path.exists():
+        knn_adjuster = joblib.load(knn_path)
+
+    # Load target type (log_ratio vs pct_change), default to log_ratio for legacy
+    target_type = "log_ratio"
+    target_path = d / "target_type.json"
+    if target_path.exists():
+        with open(target_path) as f:
+            target_type = json.load(f).get("target_type", "log_ratio")
+
     return {
         "models": models,
         "clip_bounds": clip_bounds,
         "calibrators": calibrators,
         "quantile_models": quantile_models,
         "metrics": metrics,
+        "feature_names": feature_names,
         "sentinel_impute": sentinel_impute,
         "residual_bands": residual_bands,
+        "residual_correction": residual_correction,
+        "knn_adjuster": knn_adjuster,
+        "target_type": target_type,
     }
