@@ -11,10 +11,12 @@ import {
   Legend,
   Area,
   ComposedChart,
+  ReferenceArea,
 } from 'recharts';
 import { predictEos } from '../lib/api';
-import { formatKtc, formatKtcTick, clampKtc, KTC_MAX } from '../lib/format';
+import { formatKtc, formatKtcTick, clampKtc, generateKtcTicks, KTC_MAX } from '../lib/format';
 import type { EOSPrediction, Player } from '../types/player';
+import { useChartZoom } from '../hooks/useChartZoom';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 const PPG_RANGE = Array.from({ length: 13 }, (_, i) => i * 2); // 0, 2, 4, ... 24
@@ -73,6 +75,7 @@ export default function ComparisonPredictionChart({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const predictionsRef = useRef(predictions);
   const playersRef = useRef(players);
+  const { zoom, handleMouseDown, handleMouseMove, handleMouseUp, resetZoom } = useChartZoom();
 
   // Keep refs in sync with props
   useEffect(() => {
@@ -169,10 +172,19 @@ export default function ComparisonPredictionChart({
     );
   }
 
-  // Compute Y-axis domain from chart data
+  // Filter data based on zoom
+  const filteredData = zoom.isZoomed
+    ? chartData.filter((d) => {
+        const ppg = d.ppg;
+        return ppg >= (zoom.left as number) && ppg <= (zoom.right as number);
+      })
+    : chartData;
+
+  // Compute Y-axis domain from chart data (filtered when zoomed)
   let minKtc = Infinity;
   let maxKtc = -Infinity;
-  chartData.forEach((point) => {
+  const dataToAnalyze = zoom.isZoomed ? filteredData : chartData;
+  dataToAnalyze.forEach((point) => {
     predictions.forEach((pred) => {
       const name = pred.name || 'Unknown';
       const val = point[name];
@@ -187,15 +199,29 @@ export default function ComparisonPredictionChart({
     });
   });
   if (!isFinite(minKtc)) { minKtc = 0; maxKtc = 10000; }
+  const yPadding = (maxKtc - minKtc) * 0.1 || 500;
+  const yMin = Math.max(0, minKtc - yPadding);
+  const yMax = Math.min(KTC_MAX, maxKtc + yPadding);
+  const yTicks = generateKtcTicks(yMin, yMax);
 
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-        Predicted EOS KTC by PPG
-      </h3>
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Predicted EOS KTC by PPG
+        </h3>
+        {zoom.isZoomed && (
+          <button
+            onClick={resetZoom}
+            className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+          >
+            Reset Zoom
+          </button>
+        )}
+      </div>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        At {whatIfGames} games played — hover to compare values
+        At {whatIfGames} games played — {!zoom.isZoomed ? 'drag to zoom, ' : ''}hover to compare values
       </p>
 
       <div className="relative">
@@ -206,23 +232,31 @@ export default function ComparisonPredictionChart({
         )}
 
         <ResponsiveContainer width="100%" height={350}>
-          <ComposedChart data={chartData} margin={{ top: 20, right: 30, bottom: 35, left: 25 }}>
+          <ComposedChart
+            data={filteredData}
+            margin={{ top: 20, right: 30, bottom: 35, left: 25 }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis
               dataKey="ppg"
               type="number"
-              domain={[0, 25]}
-              ticks={[0, 5, 10, 15, 20, 25]}
+              domain={zoom.isZoomed ? [zoom.left as number, zoom.right as number] : [0, 25]}
+              ticks={zoom.isZoomed ? undefined : [0, 5, 10, 15, 20, 25]}
               tick={{ fontSize: 12 }}
               label={{ value: 'PPG', position: 'bottom', offset: 0, fontSize: 12 }}
+              allowDataOverflow
             />
             <YAxis
               tickFormatter={formatKtcTick}
-              domain={[0, KTC_MAX]}
-              ticks={[0, 2500, 5000, 7500, KTC_MAX]}
+              domain={[yMin, yMax]}
+              ticks={yTicks}
               tick={{ fontSize: 12 }}
               width={60}
               label={{ value: 'Predicted EOS KTC', angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}
+              allowDataOverflow
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend
@@ -280,6 +314,15 @@ export default function ComparisonPredictionChart({
               />
             ))}
 
+            {zoom.refAreaLeft && zoom.refAreaRight && (
+              <ReferenceArea
+                x1={zoom.refAreaLeft as number}
+                x2={zoom.refAreaRight as number}
+                strokeOpacity={0.3}
+                fill="#2563eb"
+                fillOpacity={0.2}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

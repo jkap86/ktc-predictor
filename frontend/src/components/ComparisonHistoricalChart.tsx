@@ -10,9 +10,11 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceArea,
 } from 'recharts';
 import type { Player } from '../types/player';
-import { formatKtcTick, clampKtc } from '../lib/format';
+import { formatKtcTick, clampKtc, generateKtcTicks } from '../lib/format';
+import { useChartZoom } from '../hooks/useChartZoom';
 
 interface ComparisonHistoricalChartProps {
   players: Player[];
@@ -25,6 +27,7 @@ const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 export default function ComparisonHistoricalChart({ players }: ComparisonHistoricalChartProps) {
   const [view, setView] = useState<ViewType>('ktc');
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const { zoom, handleMouseDown, handleMouseMove, handleMouseUp, resetZoom } = useChartZoom();
 
   if (players.length === 0) return null;
 
@@ -71,6 +74,15 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
 
   const data = getChartData();
 
+  // Filter data based on zoom
+  const xKey = view === 'weekly' ? 'week' : 'year';
+  const filteredData = zoom.isZoomed
+    ? data.filter((d) => {
+        const x = d[xKey] as number;
+        return x >= (zoom.left as number) && x <= (zoom.right as number);
+      })
+    : data;
+
   // Helper for dynamic Y-axis label
   const getYAxisLabel = () => {
     if (view === 'ktc') return 'KTC Value';
@@ -82,15 +94,18 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
   let minY = Infinity;
   let maxY = -Infinity;
   if (view === 'ktc') {
+    const dataToAnalyze = zoom.isZoomed ? filteredData : data;
     players.forEach((p) => {
-      (p.seasons ?? []).forEach((s) => {
-        if (s.start_ktc && s.start_ktc > 0) {
-          const clamped = clampKtc(s.start_ktc);
+      dataToAnalyze.forEach((d) => {
+        const predicted = d[`${p.name} Predicted`];
+        const actual = d[`${p.name} Actual`];
+        if (predicted && predicted > 0) {
+          const clamped = clampKtc(predicted as number);
           minY = Math.min(minY, clamped);
           maxY = Math.max(maxY, clamped);
         }
-        if (s.end_ktc && s.end_ktc > 0) {
-          const clamped = clampKtc(s.end_ktc);
+        if (actual && actual > 0) {
+          const clamped = clampKtc(actual as number);
           minY = Math.min(minY, clamped);
           maxY = Math.max(maxY, clamped);
         }
@@ -98,14 +113,27 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
     });
   }
   const yPadding = isFinite(minY) ? (maxY - minY) * 0.15 : 0;
+  const yMin = isFinite(minY) ? Math.max(0, minY - yPadding) : 0;
+  const yMax = isFinite(maxY) ? maxY + yPadding : 10000;
   const yDomain: [number, number] | undefined = isFinite(minY)
-    ? [Math.max(0, minY - yPadding), maxY + yPadding]
+    ? [yMin, yMax]
     : undefined;
+  const yTicks = view === 'ktc' && isFinite(minY) ? generateKtcTicks(yMin, yMax) : undefined;
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
       <div className="flex flex-wrap justify-between items-center mb-4 gap-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Historical Performance</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Historical Performance</h3>
+          {zoom.isZoomed && (
+            <button
+              onClick={resetZoom}
+              className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+            >
+              Reset Zoom
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => setView('ktc')}
@@ -162,19 +190,28 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
       )}
 
       <ResponsiveContainer width="100%" height={350}>
-        <LineChart data={data} margin={{ top: 20, right: 30, bottom: 35, left: 25 }}>
+        <LineChart
+          data={filteredData}
+          margin={{ top: 20, right: 30, bottom: 35, left: 25 }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis
-            dataKey={view === 'weekly' ? 'week' : 'year'}
+            dataKey={xKey}
             tick={{ fontSize: 12 }}
             label={{ value: view === 'weekly' ? 'Week' : 'Year', position: 'bottom', offset: 0, fontSize: 12 }}
+            allowDataOverflow
           />
           <YAxis
             tickFormatter={view === 'ktc' ? formatKtcTick : undefined}
             tick={{ fontSize: 12 }}
             width={60}
             domain={view === 'ktc' ? yDomain : undefined}
+            ticks={yTicks}
             label={{ value: getYAxisLabel(), angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}
+            allowDataOverflow
           />
           <Tooltip />
           <Legend />
@@ -229,12 +266,22 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
                 connectNulls
               />
             ))}
+
+          {zoom.refAreaLeft && zoom.refAreaRight && (
+            <ReferenceArea
+              x1={zoom.refAreaLeft as number}
+              x2={zoom.refAreaRight as number}
+              strokeOpacity={0.3}
+              fill="#2563eb"
+              fillOpacity={0.2}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
 
       {view === 'ktc' && (
         <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-3">
-          Dashed lines show predicted KTC, solid lines show actual KTC
+          Dashed lines show predicted KTC, solid lines show actual KTC{!zoom.isZoomed && ' • Drag to zoom'}
         </p>
       )}
     </div>

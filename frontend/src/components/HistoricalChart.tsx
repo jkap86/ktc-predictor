@@ -10,8 +10,11 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceArea,
 } from 'recharts';
 import type { PlayerSeason } from '../types/player';
+import { formatKtcTick, clampKtc, generateKtcTicks } from '../lib/format';
+import { useChartZoom } from '../hooks/useChartZoom';
 
 interface HistoricalChartProps {
   seasons: PlayerSeason[];
@@ -42,6 +45,7 @@ function KTCLegend() {
 export default function HistoricalChart({ seasons }: HistoricalChartProps) {
   const [view, setView] = useState<ViewType>('ktc');
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const { zoom, handleMouseDown, handleMouseMove, handleMouseUp, resetZoom } = useChartZoom();
 
   const sortedSeasons = [...seasons].sort((a, b) => a.year - b.year);
   const years = sortedSeasons.map((s) => s.year);
@@ -69,10 +73,56 @@ export default function HistoricalChart({ seasons }: HistoricalChartProps) {
 
   const data = getChartData();
 
+  // Filter data based on zoom
+  const xKey = view === 'weekly' ? 'week' : 'year';
+  const filteredData = zoom.isZoomed
+    ? data.filter((d) => {
+        const x = (d as Record<string, number>)[xKey];
+        return x >= (zoom.left as number) && x <= (zoom.right as number);
+      })
+    : data;
+
+  // Calculate Y domain for KTC view
+  let minKtc = Infinity;
+  let maxKtc = -Infinity;
+  if (view === 'ktc') {
+    const dataToAnalyze = zoom.isZoomed ? filteredData : data;
+    dataToAnalyze.forEach((d) => {
+      const record = d as Record<string, number | undefined>;
+      const predicted = record.predicted_ktc;
+      const actual = record.actual_ktc;
+      if (predicted && predicted > 0) {
+        const clamped = clampKtc(predicted);
+        minKtc = Math.min(minKtc, clamped);
+        maxKtc = Math.max(maxKtc, clamped);
+      }
+      if (actual && actual > 0) {
+        const clamped = clampKtc(actual);
+        minKtc = Math.min(minKtc, clamped);
+        maxKtc = Math.max(maxKtc, clamped);
+      }
+    });
+  }
+  const yPadding = isFinite(minKtc) ? (maxKtc - minKtc) * 0.15 : 0;
+  const yMin = isFinite(minKtc) ? Math.max(0, minKtc - yPadding) : 0;
+  const yMax = isFinite(maxKtc) ? maxKtc + yPadding : 10000;
+  const yTicks = view === 'ktc' && isFinite(minKtc) ? generateKtcTicks(yMin, yMax) : undefined;
+  const yDomain: [number, number] | undefined = view === 'ktc' && isFinite(minKtc) ? [yMin, yMax] : undefined;
+
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
       <div className="flex flex-wrap justify-between items-center mb-4 gap-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Historical Performance</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Historical Performance</h3>
+          {zoom.isZoomed && (
+            <button
+              onClick={resetZoom}
+              className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+            >
+              Reset Zoom
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => setView('ktc')}
@@ -129,11 +179,23 @@ export default function HistoricalChart({ seasons }: HistoricalChartProps) {
       )}
 
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={data}>
+        <LineChart
+          data={filteredData}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        >
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey={view === 'weekly' ? 'week' : 'year'} />
-          <YAxis yAxisId="left" orientation="left" />
-          {view !== 'fantasy' && <YAxis yAxisId="right" orientation="right" />}
+          <XAxis dataKey={xKey} allowDataOverflow />
+          <YAxis
+            yAxisId="left"
+            orientation="left"
+            tickFormatter={view === 'ktc' ? formatKtcTick : undefined}
+            domain={yDomain}
+            ticks={yTicks}
+            allowDataOverflow
+          />
+          {view !== 'fantasy' && <YAxis yAxisId="right" orientation="right" allowDataOverflow />}
           <Tooltip />
           {view !== 'ktc' && <Legend />}
 
@@ -192,10 +254,26 @@ export default function HistoricalChart({ seasons }: HistoricalChartProps) {
               />
             </>
           )}
+
+          {zoom.refAreaLeft && zoom.refAreaRight && (
+            <ReferenceArea
+              yAxisId="left"
+              x1={zoom.refAreaLeft as number}
+              x2={zoom.refAreaRight as number}
+              strokeOpacity={0.3}
+              fill="#2563eb"
+              fillOpacity={0.2}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
 
       {view === 'ktc' && <KTCLegend />}
+      {!zoom.isZoomed && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-2">
+          Drag to zoom
+        </p>
+      )}
     </div>
   );
 }
