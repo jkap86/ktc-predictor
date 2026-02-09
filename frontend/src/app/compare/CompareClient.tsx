@@ -58,7 +58,7 @@ export default function CompareClient() {
   // Fetch all players on mount (sorted by KTC descending)
   useEffect(() => {
     setLoadingPlayers(true);
-    searchPlayers('', undefined, 200, 'ktc', 'desc')
+    searchPlayers('', undefined, 2000, 'ktc', 'desc')
       .then((result) => setAllPlayers(result.players))
       .catch(console.error)
       .finally(() => setLoadingPlayers(false));

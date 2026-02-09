@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/players", tags=["players"])
 def list_players(
     q: str = Query("", description="Search query for player name"),
     position: Optional[str] = Query(None, description="Filter by position (QB, RB, WR, TE)"),
-    limit: int = Query(50, ge=1, le=200, description="Maximum number of results"),
+    limit: int = Query(50, ge=1, le=2000, description="Maximum number of results"),
     sort_by: str = Query("name", regex="^(name|ktc)$", description="Sort by field"),
     sort_order: str = Query("asc", regex="^(asc|desc)$", description="Sort order"),
 ):
