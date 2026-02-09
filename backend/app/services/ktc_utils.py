@@ -41,3 +41,86 @@ def select_baseline_stats(
     fp = baseline.get("fantasy_points", 0) or 0.0
     ppg = fp / games if games > 0 else 0.0
     return (baseline["year"], games, ppg)
+
+
+def compute_prior_ktc_features(
+    seasons: list[dict],
+    anchor_year: int,
+) -> tuple[float | None, float | None]:
+    """Compute prior-year KTC features for QB trajectory signal.
+
+    For a given anchor year, looks at prior seasons to compute:
+    - prior_end_ktc: The end_ktc from the season immediately before anchor_year
+    - max_ktc_prior: The maximum end_ktc from all seasons before anchor_year
+
+    Parameters
+    ----------
+    seasons : list[dict]
+        List of player season dicts with 'year' and 'end_ktc' fields.
+    anchor_year : int
+        The year we're predicting for (current/latest season).
+
+    Returns
+    -------
+    tuple[float | None, float | None]
+        (prior_end_ktc, max_ktc_prior) - both None if no valid prior data.
+    """
+    # Sort seasons by year ascending
+    sorted_seasons = sorted(seasons, key=lambda s: s["year"])
+
+    prior_end_ktc = None
+    max_ktc_prior = None
+
+    for season in sorted_seasons:
+        year = season["year"]
+        if year >= anchor_year:
+            # Stop at anchor year - we only want prior seasons
+            break
+
+        end_ktc = season.get("end_ktc")
+        if _is_valid_ktc(end_ktc):
+            # Track the most recent prior season's end_ktc
+            prior_end_ktc = end_ktc
+            # Track career max
+            if max_ktc_prior is None or end_ktc > max_ktc_prior:
+                max_ktc_prior = end_ktc
+
+    return prior_end_ktc, max_ktc_prior
+
+
+def compute_prior_ppg(
+    seasons: list[dict],
+    anchor_year: int,
+    min_games: int = 4,
+) -> float | None:
+    """Compute prior-year PPG for a player.
+
+    Looks at the most recent season before anchor_year with sufficient games
+    to compute a meaningful PPG.
+
+    Parameters
+    ----------
+    seasons : list[dict]
+        List of player season dicts with 'year', 'games_played', 'fantasy_points'.
+    anchor_year : int
+        The year we're predicting for (current/latest season).
+    min_games : int
+        Minimum games required for valid PPG (default: 4).
+
+    Returns
+    -------
+    float or None
+        Prior season's PPG, or None if no valid prior data.
+    """
+    # Sort by year descending to get most recent first
+    for season in sorted(seasons, key=lambda s: s["year"], reverse=True):
+        if season["year"] >= anchor_year:
+            continue
+
+        games = season.get("games_played", 0) or 0
+        fp = season.get("fantasy_points", 0) or 0
+
+        if games >= min_games:
+            return fp / games
+
+    return None
