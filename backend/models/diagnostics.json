@@ -1,0 +1,144 @@
+{
+  "positions": {
+    "QB": {
+      "n": 784,
+      "mae": 744.8,
+      "bias": 342.9,
+      "tiers": {
+        "0-2k": {
+          "n": 229,
+          "mae": 371.0,
+          "bias": 195.4
+        },
+        "2k-4k": {
+          "n": 236,
+          "mae": 886.8,
+          "bias": 250.2
+        },
+        "4k-6k": {
+          "n": 131,
+          "mae": 829.5,
+          "bias": 610.9,
+          "riser_bias": 1278.6,
+          "riser_n": 65,
+          "faller_bias": -46.6,
+          "faller_n": 66
+        },
+        "6k+": {
+          "n": 188,
+          "mae": 962.8,
+          "bias": 452.2,
+          "riser_bias": 705.5,
+          "riser_n": 96,
+          "faller_bias": 187.9,
+          "faller_n": 92
+        }
+      }
+    },
+    "RB": {
+      "n": 1145,
+      "mae": 561.0,
+      "bias": 281.2,
+      "tiers": {
+        "0-2k": {
+          "n": 291,
+          "mae": 217.4,
+          "bias": -24.6
+        },
+        "2k-4k": {
+          "n": 442,
+          "mae": 617.0,
+          "bias": 379.6
+        },
+        "4k-6k": {
+          "n": 251,
+          "mae": 601.4,
+          "bias": 173.9,
+          "riser_bias": 960.5,
+          "riser_n": 60,
+          "faller_bias": -73.3,
+          "faller_n": 191
+        },
+        "6k+": {
+          "n": 161,
+          "mae": 965.3,
+          "bias": 730.8,
+          "riser_bias": 1164.2,
+          "riser_n": 99,
+          "faller_bias": 38.6,
+          "faller_n": 62
+        }
+      }
+    },
+    "WR": {
+      "n": 1632,
+      "mae": 387.0,
+      "bias": 19.8,
+      "tiers": {
+        "0-2k": {
+          "n": 588,
+          "mae": 266.3,
+          "bias": 77.5
+        },
+        "2k-4k": {
+          "n": 511,
+          "mae": 300.9,
+          "bias": -48.6
+        },
+        "4k-6k": {
+          "n": 267,
+          "mae": 499.3,
+          "bias": -114.4,
+          "riser_bias": 416.7,
+          "riser_n": 84,
+          "faller_bias": -358.2,
+          "faller_n": 183
+        },
+        "6k+": {
+          "n": 266,
+          "mae": 706.4,
+          "bias": 158.3,
+          "riser_bias": -144.2,
+          "riser_n": 132,
+          "faller_bias": 456.2,
+          "faller_n": 134
+        }
+      }
+    },
+    "TE": {
+      "n": 1000,
+      "mae": 455.1,
+      "bias": 5.0,
+      "tiers": {
+        "0-2k": {
+          "n": 433,
+          "mae": 349.3,
+          "bias": 30.3
+        },
+        "2k-4k": {
+          "n": 343,
+          "mae": 462.7,
+          "bias": -17.2
+        },
+        "4k-6k": {
+          "n": 113,
+          "mae": 702.4,
+          "bias": 268.7,
+          "riser_bias": 735.5,
+          "riser_n": 49,
+          "faller_bias": -88.7,
+          "faller_n": 64
+        },
+        "6k+": {
+          "n": 111,
+          "mae": 592.8,
+          "bias": -293.0,
+          "riser_bias": -620.0,
+          "riser_n": 17,
+          "faller_bias": -233.9,
+          "faller_n": 94
+        }
+      }
+    }
+  }
+}

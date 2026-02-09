@@ -14,6 +14,13 @@
       "low_ktc": 2000,
       "high_ktc": 4000,
       "offset": 0.1673
+    },
+    {
+      "type": "band",
+      "low_ktc": 6000,
+      "high_ktc": 10000,
+      "offset": 0.15,
+      "comment": "Elite tier correction: all 6k+ RBs get +0.15 log-ratio boost (~+1000 at 7k)"
     }
   ],
   "QB": [
@@ -22,6 +29,13 @@
       "low_ktc": 4000,
       "high_ktc": 10000,
       "offset": 0.04
+    },
+    {
+      "type": "band",
+      "low_ktc": 6000,
+      "high_ktc": 10000,
+      "offset": 0.08,
+      "comment": "Elite tier correction: all 6k+ QBs get +0.08 log-ratio boost (~+550 at 7k)"
     }
   ]
 }
