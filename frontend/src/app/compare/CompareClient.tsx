@@ -24,33 +24,54 @@ export default function CompareClient() {
   const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // What-If sliders - per-player games values
+  // What-If sliders - per-player games and PPG values
   const [playerGames, setPlayerGames] = useState<Record<string, number>>({});
+  const [playerPpg, setPlayerPpg] = useState<Record<string, number>>({});
   const [whatIfResults, setWhatIfResults] = useState<EOSPrediction[]>([]);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Initialize games for new players (default to 17)
+  // Initialize games and PPG for new players
   useEffect(() => {
     const newGames = { ...playerGames };
+    const newPpg = { ...playerPpg };
     let changed = false;
+
     selectedIds.forEach((id) => {
       if (!(id in newGames)) {
         newGames[id] = 17;
         changed = true;
       }
+      // Initialize PPG from player data if available
+      if (!(id in newPpg)) {
+        const player = players.find((p) => p.player_id === id);
+        if (player && player.seasons.length > 0) {
+          const lastSeason = player.seasons.reduce((a, b) => (a.year > b.year ? a : b));
+          const ppg = lastSeason.games_played > 0
+            ? lastSeason.fantasy_points / lastSeason.games_played
+            : 15;
+          newPpg[id] = Math.round(ppg * 2) / 2; // Round to nearest 0.5
+        } else {
+          newPpg[id] = 15; // Default fallback
+        }
+        changed = true;
+      }
     });
+
     // Clean up removed players
     Object.keys(newGames).forEach((id) => {
       if (!selectedIds.includes(id)) {
         delete newGames[id];
+        delete newPpg[id];
         changed = true;
       }
     });
+
     if (changed) {
       setPlayerGames(newGames);
+      setPlayerPpg(newPpg);
     }
-  }, [selectedIds]);
+  }, [selectedIds, players]);
 
   const updatePlayerGames = (playerId: string, games: number) => {
     setPlayerGames((prev) => ({ ...prev, [playerId]: games }));
@@ -133,20 +154,28 @@ export default function CompareClient() {
     router.replace(newUrl, { scroll: false });
   }, [selectedIds, router]);
 
-  // Debounced what-if predictions for all selected players (with per-player games)
+  // Debounced what-if predictions for all selected players (with per-player games and PPG)
   const fetchWhatIf = useCallback(async () => {
     if (predictions.length === 0) return;
     setWhatIfLoading(true);
     try {
       const results = await Promise.all(
-        predictions.map((pred) =>
-          predictEos({
+        predictions.map((pred) => {
+          // Get age from player's latest season
+          const player = players.find((p) => p.player_id === pred.player_id);
+          const latestSeason = player?.seasons?.reduce(
+            (a, b) => (a.year > b.year ? a : b),
+            player.seasons[0]
+          );
+
+          return predictEos({
             position: pred.position,
             start_ktc: pred.start_ktc,
             games_played: playerGames[pred.player_id!] ?? 17,
-            ppg: 15, // Default PPG for what-if cards
-          })
-        )
+            ppg: playerPpg[pred.player_id!] ?? 15,
+            age: latestSeason?.age,
+          });
+        })
       );
       // Keep aligned with predictions array (null entries skipped in render)
       setWhatIfResults(results as EOSPrediction[]);
@@ -155,7 +184,7 @@ export default function CompareClient() {
     } finally {
       setWhatIfLoading(false);
     }
-  }, [predictions, playerGames]);
+  }, [predictions, playerGames, playerPpg, players]);
 
   useEffect(() => {
     if (predictions.length === 0) return;
