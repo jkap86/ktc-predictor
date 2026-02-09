@@ -9,8 +9,8 @@ VALID_POSITIONS = {"QB", "RB", "WR", "TE"}
 # ============================================================================
 # POSITION-SPECIFIC FEATURE CONTRACTS
 # ============================================================================
-# QB uses prior-season KTC features (trajectory signal is stable).
-# RB/WR/TE do not (variance dominates at elite tier, features hurt more than help).
+# QB, WR, TE use prior-season KTC features (trajectory signal is stable).
+# RB does NOT use these features (variance dominates at elite tier, features hurt more than help).
 
 # Core features (polynomial expansion) - same for all positions
 _CORE_FEATURES = [
@@ -30,14 +30,14 @@ _BASE_LINEAR_FEATURES = [
     "start_ktc_was_sentinel",
 ]
 
-# Prior-season KTC features (QB ONLY)
+# Prior-season KTC features (QB, WR, TE - stable trajectory positions)
 _PRIOR_SEASON_FEATURES = [
     "ktc_yoy_log",          # log(start_ktc / prior_end_ktc), clipped to [-0.7, 0.7]
     "ktc_peak_drawdown",    # log(start_ktc / max_ktc_prior)
     "has_prior_season",     # 1 if prior season data exists
 ]
 
-# Prior-season PPG features (QB ONLY - captures performance trajectory)
+# Prior-season PPG features (QB, WR, TE - captures performance trajectory)
 _PRIOR_PPG_FEATURES = [
     "prior_ppg",            # Prior season's PPG (absolute baseline)
     "ppg_yoy_log",          # log(ppg_so_far / prior_ppg), clipped to [-1.0, 1.0]
@@ -56,7 +56,8 @@ _CONTRACT_FEATURES = [
 def get_expected_features(position: str) -> list[str]:
     """Get the expected feature list for a specific position."""
     linear_features = _BASE_LINEAR_FEATURES.copy()
-    if position == "QB":
+    # Prior-season features for stable trajectory positions (not RB)
+    if position in ("QB", "WR", "TE"):
         linear_features.extend(_PRIOR_SEASON_FEATURES)
         linear_features.extend(_PRIOR_PPG_FEATURES)
     # Contract features are used for all positions
@@ -200,6 +201,8 @@ def apply_residual_correction(
       correction = b0 + b1 * z
     - "band": Fixed offset within a KTC range
       correction = offset if low_ktc <= start_ktc < high_ktc else 0
+    - "riser_band": Fixed offset within a KTC range, ONLY if model predicts rise
+      correction = offset if low_ktc <= start_ktc < high_ktc AND log_ratio > 0 else 0
 
     Where z = (start_ktc - ktc_mean) / ktc_std
 
@@ -249,6 +252,15 @@ def apply_residual_correction(
             high_ktc = params.get("high_ktc", float("inf"))
             offset = params.get("offset", 0.0)
             if low_ktc <= start_ktc < high_ktc:
+                total_correction += offset
+
+        elif correction_type == "riser_band":
+            # Elite tier riser correction: only apply if model predicts rise
+            low_ktc = params.get("low_ktc", 0)
+            high_ktc = params.get("high_ktc", float("inf"))
+            offset = params.get("offset", 0.0)
+            # Only apply if in KTC range AND model predicts positive change
+            if low_ktc <= start_ktc < high_ktc and log_ratio > 0:
                 total_correction += offset
 
         elif correction_type == "linear":
@@ -401,9 +413,10 @@ def predict_end_ktc(
         was_sentinel,
     ]
 
-    # QB-only: prior-season KTC features (trajectory signal)
-    if position == "QB":
-        # Compute prior-season KTC features for QB
+    # Prior-season KTC features for stable trajectory positions (QB, WR, TE)
+    # RB excluded due to high variance at elite tier (injuries, role shocks)
+    if position in ("QB", "WR", "TE"):
+        # Compute prior-season KTC features
         if prior_end_ktc is not None and prior_end_ktc > 0:
             ktc_yoy_log = float(np.clip(np.log(start_ktc / prior_end_ktc), -0.7, 0.7))
             has_prior_season = 1
@@ -418,7 +431,7 @@ def predict_end_ktc(
 
         linear_features.extend([ktc_yoy_log, ktc_peak_drawdown, has_prior_season])
 
-        # Prior-season PPG features for QB (performance trajectory)
+        # Prior-season PPG features (performance trajectory)
         if prior_ppg is not None and prior_ppg > 0 and ppg > 0:
             eps = 0.1
             ppg_yoy_log = float(np.clip(np.log((ppg + eps) / (prior_ppg + eps)), -1.0, 1.0))
