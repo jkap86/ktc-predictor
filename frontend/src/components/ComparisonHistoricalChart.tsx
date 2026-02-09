@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import {
   LineChart,
   Line,
@@ -15,6 +15,7 @@ import {
 import type { Player } from '../types/player';
 import { formatKtcTick, clampKtc, generateKtcTicks } from '../lib/format';
 import { useChartZoom } from '../hooks/useChartZoom';
+import { predictEos } from '../lib/api';
 
 interface ComparisonHistoricalChartProps {
   players: Player[];
@@ -24,10 +25,74 @@ type ViewType = 'ktc' | 'fantasy' | 'weekly';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
+// Cache for model predictions keyed by player_id + year
+type PredictionCache = Map<string, number>;
+
 export default function ComparisonHistoricalChart({ players }: ComparisonHistoricalChartProps) {
   const [view, setView] = useState<ViewType>('ktc');
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const { zoom, handleMouseDown, handleMouseMove, handleMouseUp, resetZoom } = useChartZoom();
+  const [modelPredictions, setModelPredictions] = useState<PredictionCache>(new Map());
+  const [loadingPredictions, setLoadingPredictions] = useState(false);
+  const fetchedRef = useRef<Set<string>>(new Set());
+
+  // Fetch model predictions for all historical seasons
+  useEffect(() => {
+    if (players.length === 0) return;
+
+    const fetchPredictions = async () => {
+      const requests: { key: string; player: Player; season: (typeof players)[0]['seasons'][0] }[] = [];
+
+      players.forEach((player) => {
+        (player.seasons ?? []).forEach((season) => {
+          const key = `${player.player_id}-${season.year}`;
+          // Only fetch if we haven't already
+          if (!fetchedRef.current.has(key) && season.start_ktc > 0 && season.games_played > 0) {
+            requests.push({ key, player, season });
+          }
+        });
+      });
+
+      if (requests.length === 0) return;
+
+      setLoadingPredictions(true);
+      const newPredictions = new Map(modelPredictions);
+
+      // Batch fetch predictions (limit concurrency to avoid rate limits)
+      const batchSize = 10;
+      for (let i = 0; i < requests.length; i += batchSize) {
+        const batch = requests.slice(i, i + batchSize);
+        const results = await Promise.all(
+          batch.map(async ({ key, player, season }) => {
+            try {
+              const pred = await predictEos({
+                position: player.position,
+                start_ktc: season.start_ktc,
+                games_played: season.games_played,
+                ppg: season.ppg ?? season.fantasy_points / Math.max(1, season.games_played),
+                age: season.age,
+              });
+              return { key, value: pred?.predicted_end_ktc ?? null };
+            } catch {
+              return { key, value: null };
+            }
+          })
+        );
+
+        results.forEach(({ key, value }) => {
+          fetchedRef.current.add(key);
+          if (value !== null) {
+            newPredictions.set(key, value);
+          }
+        });
+      }
+
+      setModelPredictions(newPredictions);
+      setLoadingPredictions(false);
+    };
+
+    fetchPredictions();
+  }, [players]);
 
   if (players.length === 0) return null;
 
@@ -62,7 +127,10 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
       players.forEach((p) => {
         const season = (p.seasons ?? []).find((s) => s.year === year);
         if (view === 'ktc') {
-          point[`${p.name} Predicted`] = season?.start_ktc;
+          // Use model prediction if available, otherwise fall back to start_ktc
+          const predKey = `${p.player_id}-${year}`;
+          const modelPred = modelPredictions.get(predKey);
+          point[`${p.name} Predicted`] = modelPred ?? season?.start_ktc;
           point[`${p.name} Actual`] = season?.end_ktc;
         } else {
           point[p.name] = season?.fantasy_points;
@@ -281,7 +349,9 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
 
       {view === 'ktc' && (
         <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-3">
-          Dashed lines show predicted KTC, solid lines show actual KTC{!zoom.isZoomed && ' • Drag to zoom'}
+          Dashed lines show model-predicted EOS KTC, solid lines show actual EOS KTC
+          {loadingPredictions && ' (loading predictions...)'}
+          {!zoom.isZoomed && ' • Drag to zoom'}
         </p>
       )}
     </div>
