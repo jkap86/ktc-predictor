@@ -400,7 +400,7 @@ export default function PlayerPage() {
           {chartsOpen && (
             <div className="px-6 pb-6 space-y-6">
               <PredictionChart seasons={player.seasons} />
-              <HistoricalChart seasons={player.seasons} />
+              <HistoricalChart seasons={player.seasons} position={player.position} />
             </div>
           )}
         </div>

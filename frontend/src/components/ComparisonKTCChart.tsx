@@ -1,5 +1,6 @@
 'use client';
 
+import { Fragment, useState, useEffect, useRef } from 'react';
 import {
   LineChart,
   Line,
@@ -14,12 +15,16 @@ import {
 import type { Player } from '../types/player';
 import { formatKtc, formatKtcTick, KTC_Y_DOMAIN, KTC_Y_TICKS } from '../lib/format';
 import { useChartZoom } from '../hooks/useChartZoom';
+import { predictEos } from '../lib/api';
 
 interface ComparisonKTCChartProps {
   players: Player[];
 }
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+// Cache for model predictions keyed by player_id + year
+type PredictionCache = Map<string, number>;
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -50,6 +55,67 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 
 export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps) {
   const { zoom, handleMouseDown, handleMouseMove, handleMouseUp, resetZoom } = useChartZoom();
+  const [modelPredictions, setModelPredictions] = useState<PredictionCache>(new Map());
+  const [loadingPredictions, setLoadingPredictions] = useState(false);
+  const fetchedRef = useRef<Set<string>>(new Set());
+
+  // Fetch model predictions for all historical seasons
+  useEffect(() => {
+    if (players.length === 0) return;
+
+    const fetchPredictions = async () => {
+      const requests: { key: string; player: Player; season: (typeof players)[0]['seasons'][0] }[] = [];
+
+      players.forEach((player) => {
+        (player.seasons ?? []).forEach((season) => {
+          const key = `${player.player_id}-${season.year}`;
+          // Only fetch if we haven't already
+          if (!fetchedRef.current.has(key) && season.start_ktc > 0 && season.games_played > 0) {
+            requests.push({ key, player, season });
+          }
+        });
+      });
+
+      if (requests.length === 0) return;
+
+      setLoadingPredictions(true);
+      const newPredictions = new Map(modelPredictions);
+
+      // Batch fetch predictions (limit concurrency to avoid rate limits)
+      const batchSize = 10;
+      for (let i = 0; i < requests.length; i += batchSize) {
+        const batch = requests.slice(i, i + batchSize);
+        const results = await Promise.all(
+          batch.map(async ({ key, player, season }) => {
+            try {
+              const pred = await predictEos({
+                position: player.position,
+                start_ktc: season.start_ktc,
+                games_played: season.games_played,
+                ppg: season.ppg ?? season.fantasy_points / Math.max(1, season.games_played),
+                age: season.age,
+              });
+              return { key, value: pred?.predicted_end_ktc ?? null };
+            } catch {
+              return { key, value: null };
+            }
+          })
+        );
+
+        results.forEach(({ key, value }) => {
+          fetchedRef.current.add(key);
+          if (value !== null) {
+            newPredictions.set(key, value);
+          }
+        });
+      }
+
+      setModelPredictions(newPredictions);
+      setLoadingPredictions(false);
+    };
+
+    fetchPredictions();
+  }, [players]);
 
   if (players.length === 0) return null;
 
@@ -58,13 +124,17 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
   players.forEach((p) => (p.seasons ?? []).forEach((s) => allYears.add(s.year)));
   const years = Array.from(allYears).sort((a, b) => a - b);
 
-  // Build data points: { year, PlayerA: ktc, PlayerB: ktc, ... }
+  // Build data points: { year, PlayerA Predicted: ktc, PlayerA Actual: ktc, ... }
   const data = years.map((year) => {
-    const point: Record<string, number> = { year };
+    const point: Record<string, number | undefined> = { year };
     players.forEach((p) => {
       const season = (p.seasons ?? []).find((s) => s.year === year);
       if (season) {
-        point[p.name] = season.end_ktc || season.start_ktc;
+        // Use model prediction if available, otherwise fall back to start_ktc
+        const predKey = `${p.player_id}-${year}`;
+        const modelPred = modelPredictions.get(predKey);
+        point[`${p.name} Predicted`] = modelPred ?? season.start_ktc;
+        point[`${p.name} Actual`] = season.end_ktc;
       }
     });
     return point;
@@ -73,7 +143,7 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
   // Filter data based on zoom
   const filteredData = zoom.isZoomed
     ? data.filter((d) => {
-        const year = d.year;
+        const year = d.year as number;
         return year >= (zoom.left as number) && year <= (zoom.right as number);
       })
     : data;
@@ -94,7 +164,9 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
         )}
       </div>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        Historical KTC values by season {!zoom.isZoomed && '(drag to zoom)'}
+        Dashed = model predicted, solid = actual
+        {loadingPredictions && ' (loading predictions...)'}
+        {!zoom.isZoomed && ' • Drag to zoom'}
       </p>
 
       <ResponsiveContainer width="100%" height={350}>
@@ -125,15 +197,27 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
           <Legend />
 
           {players.map((player, idx) => (
-            <Line
-              key={player.player_id}
-              type="monotone"
-              dataKey={player.name}
-              stroke={COLORS[idx % COLORS.length]}
-              strokeWidth={2}
-              dot={{ r: 4, fill: COLORS[idx % COLORS.length], stroke: '#fff', strokeWidth: 2 }}
-              connectNulls
-            />
+            <Fragment key={player.player_id}>
+              <Line
+                key={`${player.player_id}-predicted`}
+                type="monotone"
+                dataKey={`${player.name} Predicted`}
+                stroke={COLORS[idx % COLORS.length]}
+                strokeWidth={1}
+                strokeDasharray="5 5"
+                dot={{ r: 3 }}
+                connectNulls
+              />
+              <Line
+                key={`${player.player_id}-actual`}
+                type="monotone"
+                dataKey={`${player.name} Actual`}
+                stroke={COLORS[idx % COLORS.length]}
+                strokeWidth={2}
+                dot={{ r: 4, fill: COLORS[idx % COLORS.length], stroke: '#fff', strokeWidth: 2 }}
+                connectNulls
+              />
+            </Fragment>
           ))}
 
           {zoom.refAreaLeft && zoom.refAreaRight && (

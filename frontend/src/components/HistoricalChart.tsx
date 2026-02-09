@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   LineChart,
   Line,
@@ -15,22 +15,29 @@ import {
 import type { PlayerSeason } from '../types/player';
 import { formatKtcTick, KTC_Y_DOMAIN, KTC_Y_TICKS } from '../lib/format';
 import { useChartZoom } from '../hooks/useChartZoom';
+import { predictEos } from '../lib/api';
 
 interface HistoricalChartProps {
   seasons: PlayerSeason[];
+  position: string;
 }
 
 type ViewType = 'ktc' | 'fantasy' | 'weekly';
 
+// Cache for model predictions keyed by year
+type PredictionCache = Map<number, number>;
+
 // Custom legend for KTC view showing dashed vs solid line styles
-function KTCLegend() {
+function KTCLegend({ loading }: { loading?: boolean }) {
   return (
     <div className="flex justify-center gap-6 text-sm mt-2">
       <div className="flex items-center gap-2">
         <svg width="24" height="12">
           <line x1="0" y1="6" x2="24" y2="6" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5 5" />
         </svg>
-        <span className="text-gray-600 dark:text-gray-400">Predicted KTC</span>
+        <span className="text-gray-600 dark:text-gray-400">
+          Model Predicted{loading && ' (loading...)'}
+        </span>
       </div>
       <div className="flex items-center gap-2">
         <svg width="24" height="12">
@@ -42,13 +49,68 @@ function KTCLegend() {
   );
 }
 
-export default function HistoricalChart({ seasons }: HistoricalChartProps) {
+export default function HistoricalChart({ seasons, position }: HistoricalChartProps) {
   const [view, setView] = useState<ViewType>('ktc');
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const { zoom, handleMouseDown, handleMouseMove, handleMouseUp, resetZoom } = useChartZoom();
+  const [modelPredictions, setModelPredictions] = useState<PredictionCache>(new Map());
+  const [loadingPredictions, setLoadingPredictions] = useState(false);
+  const fetchedRef = useRef<Set<number>>(new Set());
 
   const sortedSeasons = [...seasons].sort((a, b) => a.year - b.year);
   const years = sortedSeasons.map((s) => s.year);
+
+  // Fetch model predictions for all historical seasons
+  useEffect(() => {
+    if (seasons.length === 0 || !position) return;
+
+    const fetchPredictions = async () => {
+      const requests: { year: number; season: PlayerSeason }[] = [];
+
+      sortedSeasons.forEach((season) => {
+        // Only fetch if we haven't already and season has valid data
+        if (!fetchedRef.current.has(season.year) && season.start_ktc > 0 && season.games_played > 0) {
+          requests.push({ year: season.year, season });
+        }
+      });
+
+      if (requests.length === 0) return;
+
+      setLoadingPredictions(true);
+      const newPredictions = new Map(modelPredictions);
+
+      // Fetch predictions in parallel
+      const results = await Promise.all(
+        requests.map(async ({ year, season }) => {
+          try {
+            const ppg = season.ppg ?? season.fantasy_points / Math.max(1, season.games_played);
+            const pred = await predictEos({
+              position,
+              start_ktc: season.start_ktc,
+              games_played: season.games_played,
+              ppg,
+              age: season.age,
+            });
+            return { year, value: pred?.predicted_end_ktc ?? null };
+          } catch {
+            return { year, value: null };
+          }
+        })
+      );
+
+      results.forEach(({ year, value }) => {
+        fetchedRef.current.add(year);
+        if (value !== null) {
+          newPredictions.set(year, value);
+        }
+      });
+
+      setModelPredictions(newPredictions);
+      setLoadingPredictions(false);
+    };
+
+    fetchPredictions();
+  }, [seasons, position]);
 
   const getChartData = () => {
     if (view === 'weekly' && selectedYear) {
@@ -62,13 +124,17 @@ export default function HistoricalChart({ seasons }: HistoricalChartProps) {
       }));
     }
 
-    return sortedSeasons.map((s) => ({
-      year: s.year,
-      predicted_ktc: s.start_ktc,  // Start of season = market prediction
-      actual_ktc: s.end_ktc,       // End of season = actual result
-      fantasy_points: s.fantasy_points,
-      games: s.games_played,
-    }));
+    return sortedSeasons.map((s) => {
+      // Use model prediction if available, otherwise fall back to start_ktc
+      const modelPred = modelPredictions.get(s.year);
+      return {
+        year: s.year,
+        predicted_ktc: modelPred ?? s.start_ktc,
+        actual_ktc: s.end_ktc,
+        fantasy_points: s.fantasy_points,
+        games: s.games_played,
+      };
+    });
   };
 
   const data = getChartData();
@@ -243,7 +309,7 @@ export default function HistoricalChart({ seasons }: HistoricalChartProps) {
         </LineChart>
       </ResponsiveContainer>
 
-      {view === 'ktc' && <KTCLegend />}
+      {view === 'ktc' && <KTCLegend loading={loadingPredictions} />}
       {!zoom.isZoomed && (
         <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-2">
           Drag to zoom

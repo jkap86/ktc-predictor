@@ -27,15 +27,23 @@
     {
       "type": "band",
       "low_ktc": 4000,
-      "high_ktc": 10000,
-      "offset": 0.04
+      "high_ktc": 5000,
+      "offset": 0.04,
+      "comment": "Lower mid-tier: modest boost"
+    },
+    {
+      "type": "band",
+      "low_ktc": 5000,
+      "high_ktc": 6000,
+      "offset": 0.12,
+      "comment": "Breakout zone: worst tier for QB risers (bias +1279)"
     },
     {
       "type": "band",
       "low_ktc": 6000,
       "high_ktc": 10000,
-      "offset": 0.08,
-      "comment": "Elite tier correction: all 6k+ QBs get +0.08 log-ratio boost (~+550 at 7k)"
+      "offset": 0.14,
+      "comment": "Elite tier: increased from 0.08 based on -842 mean bias"
     }
   ]
 }

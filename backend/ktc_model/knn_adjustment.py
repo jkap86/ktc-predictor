@@ -168,8 +168,12 @@ class EliteKNNAdjuster:
         float
             Adjusted log_ratio prediction.
         """
+        # QB gets a lower threshold to catch 5.5k-6k "breakout zone" players
+        # This tier has the worst riser under-prediction for QB
+        effective_threshold = 5500 if position == "QB" else self.elite_threshold
+
         # No adjustment for non-elite tier
-        if start_ktc < self.elite_threshold:
+        if start_ktc < effective_threshold:
             return model_log_ratio
 
         # No KNN data for this position
@@ -264,7 +268,10 @@ class EliteKNNAdjuster:
         list[dict] or None
             List of neighbor info dicts, or None if not applicable.
         """
-        if start_ktc < self.elite_threshold:
+        # QB gets a lower threshold (matching adjust() logic)
+        effective_threshold = 5500 if position == "QB" else self.elite_threshold
+
+        if start_ktc < effective_threshold:
             return None
 
         if position not in self.indices:
