@@ -12,7 +12,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import type { Player } from '../types/player';
-import { formatKtc, formatKtcTick, clampKtc, generateKtcTicks } from '../lib/format';
+import { formatKtc, formatKtcTick, KTC_Y_DOMAIN, KTC_Y_TICKS } from '../lib/format';
 import { useChartZoom } from '../hooks/useChartZoom';
 
 interface ComparisonKTCChartProps {
@@ -78,23 +78,7 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
       })
     : data;
 
-  // Find min/max KTC for scaling (based on filtered data when zoomed)
-  let minKtc = Infinity;
-  let maxKtc = -Infinity;
-  const dataToAnalyze = zoom.isZoomed ? filteredData : data;
-  players.forEach((p) => {
-    dataToAnalyze.forEach((d) => {
-      const ktc = d[p.name];
-      if (ktc && ktc > 0) {
-        minKtc = Math.min(minKtc, clampKtc(ktc));
-        maxKtc = Math.max(maxKtc, clampKtc(ktc));
-      }
-    });
-  });
-  const padding = (maxKtc - minKtc) * 0.15 || 500;
-  const yMin = Math.max(0, minKtc - padding);
-  const yMax = maxKtc + padding;
-  const yTicks = generateKtcTicks(yMin, yMax);
+  // Use fixed Y-axis domain [0, 9999] for all KTC charts
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
@@ -130,8 +114,8 @@ export default function ComparisonKTCChart({ players }: ComparisonKTCChartProps)
           />
           <YAxis
             tickFormatter={formatKtcTick}
-            domain={[yMin, yMax]}
-            ticks={yTicks}
+            domain={KTC_Y_DOMAIN}
+            ticks={KTC_Y_TICKS}
             tick={{ fontSize: 12 }}
             width={60}
             label={{ value: 'KTC Value', angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}

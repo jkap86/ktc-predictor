@@ -13,7 +13,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import type { Player } from '../types/player';
-import { formatKtcTick, clampKtc, generateKtcTicks } from '../lib/format';
+import { formatKtcTick, KTC_Y_DOMAIN, KTC_Y_TICKS } from '../lib/format';
 import { useChartZoom } from '../hooks/useChartZoom';
 import { predictEos } from '../lib/api';
 
@@ -158,35 +158,7 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
     return 'Fantasy Points';
   };
 
-  // Calculate Y domain for KTC view for better zoom
-  let minY = Infinity;
-  let maxY = -Infinity;
-  if (view === 'ktc') {
-    const dataToAnalyze = zoom.isZoomed ? filteredData : data;
-    players.forEach((p) => {
-      dataToAnalyze.forEach((d) => {
-        const predicted = d[`${p.name} Predicted`];
-        const actual = d[`${p.name} Actual`];
-        if (predicted && predicted > 0) {
-          const clamped = clampKtc(predicted as number);
-          minY = Math.min(minY, clamped);
-          maxY = Math.max(maxY, clamped);
-        }
-        if (actual && actual > 0) {
-          const clamped = clampKtc(actual as number);
-          minY = Math.min(minY, clamped);
-          maxY = Math.max(maxY, clamped);
-        }
-      });
-    });
-  }
-  const yPadding = isFinite(minY) ? (maxY - minY) * 0.15 : 0;
-  const yMin = isFinite(minY) ? Math.max(0, minY - yPadding) : 0;
-  const yMax = isFinite(maxY) ? maxY + yPadding : 10000;
-  const yDomain: [number, number] | undefined = isFinite(minY)
-    ? [yMin, yMax]
-    : undefined;
-  const yTicks = view === 'ktc' && isFinite(minY) ? generateKtcTicks(yMin, yMax) : undefined;
+  // Use fixed Y-axis domain [0, 9999] for KTC view
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
@@ -276,8 +248,8 @@ export default function ComparisonHistoricalChart({ players }: ComparisonHistori
             tickFormatter={view === 'ktc' ? formatKtcTick : undefined}
             tick={{ fontSize: 12 }}
             width={60}
-            domain={view === 'ktc' ? yDomain : undefined}
-            ticks={yTicks}
+            domain={view === 'ktc' ? KTC_Y_DOMAIN : undefined}
+            ticks={view === 'ktc' ? KTC_Y_TICKS : undefined}
             label={{ value: getYAxisLabel(), angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}
             allowDataOverflow
           />

@@ -13,7 +13,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import type { PlayerSeason } from '../types/player';
-import { formatKtcTick, clampKtc, generateKtcTicks } from '../lib/format';
+import { formatKtcTick, KTC_Y_DOMAIN, KTC_Y_TICKS } from '../lib/format';
 import { useChartZoom } from '../hooks/useChartZoom';
 
 interface HistoricalChartProps {
@@ -82,32 +82,7 @@ export default function HistoricalChart({ seasons }: HistoricalChartProps) {
       })
     : data;
 
-  // Calculate Y domain for KTC view
-  let minKtc = Infinity;
-  let maxKtc = -Infinity;
-  if (view === 'ktc') {
-    const dataToAnalyze = zoom.isZoomed ? filteredData : data;
-    dataToAnalyze.forEach((d) => {
-      const record = d as Record<string, number | undefined>;
-      const predicted = record.predicted_ktc;
-      const actual = record.actual_ktc;
-      if (predicted && predicted > 0) {
-        const clamped = clampKtc(predicted);
-        minKtc = Math.min(minKtc, clamped);
-        maxKtc = Math.max(maxKtc, clamped);
-      }
-      if (actual && actual > 0) {
-        const clamped = clampKtc(actual);
-        minKtc = Math.min(minKtc, clamped);
-        maxKtc = Math.max(maxKtc, clamped);
-      }
-    });
-  }
-  const yPadding = isFinite(minKtc) ? (maxKtc - minKtc) * 0.15 : 0;
-  const yMin = isFinite(minKtc) ? Math.max(0, minKtc - yPadding) : 0;
-  const yMax = isFinite(maxKtc) ? maxKtc + yPadding : 10000;
-  const yTicks = view === 'ktc' && isFinite(minKtc) ? generateKtcTicks(yMin, yMax) : undefined;
-  const yDomain: [number, number] | undefined = view === 'ktc' && isFinite(minKtc) ? [yMin, yMax] : undefined;
+  // Use fixed Y-axis domain [0, 9999] for KTC view
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
@@ -191,8 +166,8 @@ export default function HistoricalChart({ seasons }: HistoricalChartProps) {
             yAxisId="left"
             orientation="left"
             tickFormatter={view === 'ktc' ? formatKtcTick : undefined}
-            domain={yDomain}
-            ticks={yTicks}
+            domain={view === 'ktc' ? KTC_Y_DOMAIN : undefined}
+            ticks={view === 'ktc' ? KTC_Y_TICKS : undefined}
             allowDataOverflow
           />
           {view !== 'fantasy' && <YAxis yAxisId="right" orientation="right" allowDataOverflow />}

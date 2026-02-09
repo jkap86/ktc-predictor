@@ -14,7 +14,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import { predictEos } from '../lib/api';
-import { formatKtc, formatKtcTick, clampKtc, generateKtcTicks, KTC_MAX } from '../lib/format';
+import { formatKtc, formatKtcTick, clampKtc, KTC_Y_DOMAIN, KTC_Y_TICKS } from '../lib/format';
 import type { EOSPrediction, Player } from '../types/player';
 import { useChartZoom } from '../hooks/useChartZoom';
 
@@ -24,7 +24,7 @@ const PPG_RANGE = Array.from({ length: 13 }, (_, i) => i * 2); // 0, 2, 4, ... 2
 interface ComparisonPredictionChartProps {
   predictions: EOSPrediction[];
   players: Player[];
-  whatIfGames: number;
+  playerGames: Record<string, number>;
 }
 
 interface ChartDataPoint {
@@ -68,7 +68,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 export default function ComparisonPredictionChart({
   predictions,
   players,
-  whatIfGames,
+  playerGames,
 }: ComparisonPredictionChartProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -104,18 +104,19 @@ export default function ComparisonPredictionChart({
           );
           const age = latestSeason?.age;
 
+          const games = playerGames[pred.player_id!] ?? 17;
           const results = await Promise.all(
             PPG_RANGE.map((ppg) =>
               predictEos({
                 position: pred.position,
                 start_ktc: pred.start_ktc,
-                games_played: whatIfGames,
+                games_played: games,
                 ppg: ppg,
                 age: age,
               })
             )
           );
-          return { name: pred.name || 'Unknown', results };
+          return { name: pred.name || 'Unknown', playerId: pred.player_id, games, results };
         })
       );
 
@@ -145,7 +146,7 @@ export default function ComparisonPredictionChart({
     } finally {
       setLoading(false);
     }
-  }, [whatIfGames, players]);
+  }, [playerGames, players]);
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -180,29 +181,7 @@ export default function ComparisonPredictionChart({
       })
     : chartData;
 
-  // Compute Y-axis domain from chart data (filtered when zoomed)
-  let minKtc = Infinity;
-  let maxKtc = -Infinity;
-  const dataToAnalyze = zoom.isZoomed ? filteredData : chartData;
-  dataToAnalyze.forEach((point) => {
-    predictions.forEach((pred) => {
-      const name = pred.name || 'Unknown';
-      const val = point[name];
-      const low = point[`${name}_low`];
-      const high = point[`${name}_high`];
-      if (typeof val === 'number') {
-        minKtc = Math.min(minKtc, val);
-        maxKtc = Math.max(maxKtc, val);
-      }
-      if (typeof low === 'number') minKtc = Math.min(minKtc, low);
-      if (typeof high === 'number') maxKtc = Math.max(maxKtc, high);
-    });
-  });
-  if (!isFinite(minKtc)) { minKtc = 0; maxKtc = 10000; }
-  const yPadding = (maxKtc - minKtc) * 0.1 || 500;
-  const yMin = Math.max(0, minKtc - yPadding);
-  const yMax = Math.min(KTC_MAX, maxKtc + yPadding);
-  const yTicks = generateKtcTicks(yMin, yMax);
+  // Use fixed Y-axis domain [0, 9999] for all KTC charts
 
 
   return (
@@ -221,7 +200,13 @@ export default function ComparisonPredictionChart({
         )}
       </div>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        At {whatIfGames} games played — {!zoom.isZoomed ? 'drag to zoom, ' : ''}hover to compare values
+        {predictions.map((p, i) => (
+          <span key={p.player_id}>
+            {i > 0 && ', '}
+            <span className="font-medium">{p.name}</span>: {playerGames[p.player_id!] ?? 17}G
+          </span>
+        ))}
+        {' — '}{!zoom.isZoomed ? 'drag to zoom, ' : ''}hover to compare values
       </p>
 
       <div className="relative">
@@ -251,8 +236,8 @@ export default function ComparisonPredictionChart({
             />
             <YAxis
               tickFormatter={formatKtcTick}
-              domain={[yMin, yMax]}
-              ticks={yTicks}
+              domain={KTC_Y_DOMAIN}
+              ticks={KTC_Y_TICKS}
               tick={{ fontSize: 12 }}
               width={60}
               label={{ value: 'Predicted EOS KTC', angle: -90, position: 'insideLeft', fontSize: 12, dx: -5 }}

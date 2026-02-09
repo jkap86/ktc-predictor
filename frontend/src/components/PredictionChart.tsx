@@ -11,7 +11,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import type { PlayerSeason } from '../types/player';
-import { formatKtc, formatKtcTick, clampKtc, generateKtcTicks } from '../lib/format';
+import { formatKtc, formatKtcTick, clampKtc, KTC_Y_DOMAIN, KTC_Y_TICKS } from '../lib/format';
 import { useChartZoom } from '../hooks/useChartZoom';
 
 interface PredictionChartProps {
@@ -36,20 +36,7 @@ export default function PredictionChart({ seasons }: PredictionChartProps) {
       })
     : data;
 
-  // Calculate Y domain for better ticks
-  let minKtc = Infinity;
-  let maxKtc = -Infinity;
-  const dataToAnalyze = zoom.isZoomed ? filteredData : data;
-  dataToAnalyze.forEach((d) => {
-    if (d.ktc > 0) {
-      minKtc = Math.min(minKtc, d.ktc);
-      maxKtc = Math.max(maxKtc, d.ktc);
-    }
-  });
-  const yPadding = isFinite(minKtc) ? (maxKtc - minKtc) * 0.15 : 500;
-  const yMin = isFinite(minKtc) ? Math.max(0, minKtc - yPadding) : 0;
-  const yMax = isFinite(maxKtc) ? maxKtc + yPadding : 10000;
-  const yTicks = isFinite(minKtc) ? generateKtcTicks(yMin, yMax) : undefined;
+  // Use fixed Y-axis domain [0, 9999] for all KTC charts
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
@@ -74,8 +61,8 @@ export default function PredictionChart({ seasons }: PredictionChartProps) {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="year" allowDataOverflow />
           <YAxis
-            domain={[yMin, yMax]}
-            ticks={yTicks}
+            domain={KTC_Y_DOMAIN}
+            ticks={KTC_Y_TICKS}
             tickFormatter={formatKtcTick}
             allowDataOverflow
           />

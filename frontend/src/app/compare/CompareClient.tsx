@@ -23,11 +23,37 @@ export default function CompareClient() {
   const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // What-If sliders
-  const [whatIfGames, setWhatIfGames] = useState(17);
+  // What-If sliders - per-player games values
+  const [playerGames, setPlayerGames] = useState<Record<string, number>>({});
   const [whatIfResults, setWhatIfResults] = useState<EOSPrediction[]>([]);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Initialize games for new players (default to 17)
+  useEffect(() => {
+    const newGames = { ...playerGames };
+    let changed = false;
+    selectedIds.forEach((id) => {
+      if (!(id in newGames)) {
+        newGames[id] = 17;
+        changed = true;
+      }
+    });
+    // Clean up removed players
+    Object.keys(newGames).forEach((id) => {
+      if (!selectedIds.includes(id)) {
+        delete newGames[id];
+        changed = true;
+      }
+    });
+    if (changed) {
+      setPlayerGames(newGames);
+    }
+  }, [selectedIds]);
+
+  const updatePlayerGames = (playerId: string, games: number) => {
+    setPlayerGames((prev) => ({ ...prev, [playerId]: games }));
+  };
 
   // Fetch all players on mount (sorted by KTC descending)
   useEffect(() => {
@@ -91,7 +117,7 @@ export default function CompareClient() {
     router.replace(newUrl, { scroll: false });
   }, [selectedIds, router]);
 
-  // Debounced what-if predictions for all selected players
+  // Debounced what-if predictions for all selected players (with per-player games)
   const fetchWhatIf = useCallback(async () => {
     if (predictions.length === 0) return;
     setWhatIfLoading(true);
@@ -101,7 +127,7 @@ export default function CompareClient() {
           predictEos({
             position: pred.position,
             start_ktc: pred.start_ktc,
-            games_played: whatIfGames,
+            games_played: playerGames[pred.player_id!] ?? 17,
             ppg: 15, // Default PPG for what-if cards
           })
         )
@@ -113,7 +139,7 @@ export default function CompareClient() {
     } finally {
       setWhatIfLoading(false);
     }
-  }, [predictions, whatIfGames]);
+  }, [predictions, playerGames]);
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -224,46 +250,71 @@ export default function CompareClient() {
         )}
       </div>
 
-      {/* EOS Prediction Cards Side-by-Side */}
-      {!loading && predictions.length >= 1 && (
+      {/* Player Stats Cards */}
+      {!loading && players.length >= 1 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {predictions.map((pred) => (
-            <div
-              key={pred.player_id}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700 p-4"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-900 dark:text-white truncate">
-                  {pred.name}
-                </h3>
-                <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full">
-                  {pred.position}
-                </span>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Current</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{formatKtc(pred.start_ktc)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Predicted EOS</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{formatKtc(pred.predicted_end_ktc)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Change</span>
-                  <span className={`font-medium ${pred.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {pred.predicted_delta_ktc >= 0 ? '+' : ''}{pred.predicted_delta_ktc.toLocaleString()} ({pred.predicted_pct_change >= 0 ? '+' : ''}{pred.predicted_pct_change.toFixed(1)}%)
+          {players.map((player, idx) => {
+            const pred = predictions[idx];
+            const seasons = player.seasons ?? [];
+            const lastSeason = seasons.length > 0
+              ? seasons.reduce((a, b) => (a.year > b.year ? a : b))
+              : null;
+
+            // Career averages
+            const totalGames = seasons.reduce((sum, s) => sum + s.games_played, 0);
+            const totalFp = seasons.reduce((sum, s) => sum + s.fantasy_points, 0);
+            const careerAvgGames = seasons.length > 0 ? totalGames / seasons.length : 0;
+            const careerPpg = totalGames > 0 ? totalFp / totalGames : 0;
+
+            // Last season stats
+            const lastSeasonGames = lastSeason?.games_played ?? 0;
+            const lastSeasonPpg = lastSeason && lastSeason.games_played > 0
+              ? lastSeason.fantasy_points / lastSeason.games_played
+              : 0;
+
+            return (
+              <div
+                key={player.player_id}
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700 p-4"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+                    {player.name}
+                  </h3>
+                  <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full">
+                    {player.position}
                   </span>
                 </div>
-              </div>
-              {pred.anchor_year && (
-                <div className="mt-2 text-xs text-gray-400 dark:text-gray-500">
-                  Anchor: {pred.anchor_year} {pred.anchor_source === 'end_ktc' ? 'end' : 'start'}
-                  {pred.baseline_year && <span> | Stats: {pred.baseline_year}</span>}
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Current KTC</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{formatKtc(pred?.start_ktc)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Career Avg Games</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{careerAvgGames.toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Career PPG</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{careerPpg.toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Last Season Games</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{lastSeasonGames}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Last Season PPG</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{lastSeasonPpg.toFixed(1)}</span>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+                {lastSeason && (
+                  <div className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                    {seasons.length} season{seasons.length !== 1 ? 's' : ''} of data ({seasons[0]?.year}–{lastSeason.year})
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -274,22 +325,26 @@ export default function CompareClient() {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               What-If Scenario
             </h3>
-            <div className="flex items-center gap-4">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">
-                Games:
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="17"
-                step="1"
-                value={whatIfGames}
-                onChange={(e) => setWhatIfGames(parseInt(e.target.value))}
-                className="flex-1"
-              />
-              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">
-                {whatIfGames}
-              </span>
+            <div className="space-y-4">
+              {predictions.map((pred) => (
+                <div key={pred.player_id} className="flex items-center gap-4">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-32 truncate">
+                    {pred.name}:
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="17"
+                    step="1"
+                    value={playerGames[pred.player_id!] ?? 17}
+                    onChange={(e) => updatePlayerGames(pred.player_id!, parseInt(e.target.value))}
+                    className="flex-1"
+                  />
+                  <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">
+                    {playerGames[pred.player_id!] ?? 17}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -297,7 +352,7 @@ export default function CompareClient() {
             <ComparisonPredictionChart
               predictions={predictions}
               players={players}
-              whatIfGames={whatIfGames}
+              playerGames={playerGames}
             />
           )}
 
@@ -309,13 +364,14 @@ export default function CompareClient() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {whatIfResults.map((result, i) => {
                 if (!result) return null;
+                const games = playerGames[predictions[i]?.player_id!] ?? 17;
                 return (
                   <div key={predictions[i]?.player_id || i} className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-100 dark:border-gray-700">
                     <div className="font-medium text-sm text-gray-900 dark:text-white mb-1 truncate">
                       {predictions[i]?.name}
                     </div>
                     <div className="text-sm">
-                      <span className="text-gray-500 dark:text-gray-400">EOS ({whatIfGames} games): </span>
+                      <span className="text-gray-500 dark:text-gray-400">EOS ({games} games): </span>
                       <span className="font-medium text-gray-900 dark:text-white">{formatKtc(result.predicted_end_ktc)}</span>
                       <span className={`ml-2 ${result.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         ({result.predicted_pct_change >= 0 ? '+' : ''}{result.predicted_pct_change.toFixed(1)}%)

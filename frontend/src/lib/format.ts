@@ -1,8 +1,14 @@
-export const KTC_MIN = 1;
+export const KTC_MIN = 0;
 export const KTC_MAX = 9999;
 
+/** Fixed Y-axis domain for all KTC charts [0, 9999] */
+export const KTC_Y_DOMAIN: [number, number] = [KTC_MIN, KTC_MAX];
+
+/** Fixed Y-axis ticks for all KTC charts */
+export const KTC_Y_TICKS: number[] = [0, 2000, 4000, 6000, 8000, 10000];
+
 /**
- * Clamp a KTC value to valid domain [1, 9999].
+ * Clamp a KTC value to valid domain [0, 9999].
  */
 export function clampKtc(value: number): number {
   if (!Number.isFinite(value)) return KTC_MIN;
