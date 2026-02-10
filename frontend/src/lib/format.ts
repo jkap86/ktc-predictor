@@ -36,22 +36,3 @@ export function formatKtcTick(value: number): string {
   return Math.round(clamped).toString();
 }
 
-/**
- * Generate clean Y-axis tick values for KTC charts based on the data range.
- * Uses round increments (250, 500, 1000, 2000) for readability.
- */
-export function generateKtcTicks(min: number, max: number): number[] {
-  const range = max - min;
-  let step: number;
-  if (range <= 2000) step = 250;
-  else if (range <= 5000) step = 500;
-  else if (range <= 10000) step = 1000;
-  else step = 2000;
-
-  const start = Math.floor(min / step) * step;
-  const ticks: number[] = [];
-  for (let t = start; t <= max + step; t += step) {
-    if (t >= 0) ticks.push(t);
-  }
-  return ticks;
-}

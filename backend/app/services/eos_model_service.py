@@ -3,6 +3,7 @@
 import asyncio
 import concurrent.futures
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from app.services.ktc_utils import (
 from ktc_model.io import load_bundle
 from ktc_model.predict import predict_end_ktc, validate_feature_contract
 
+logger = logging.getLogger(__name__)
+
 
 def get_live_ktc_sync(player_id: str) -> dict | None:
     """Synchronous wrapper to fetch live KTC from database.
@@ -32,8 +35,8 @@ def get_live_ktc_sync(player_id: str) -> dict | None:
         with concurrent.futures.ThreadPoolExecutor() as pool:
             future = pool.submit(asyncio.run, get_latest_ktc(player_id))
             return future.result(timeout=5)
-    except Exception:
-        # Fall back to None if database unavailable
+    except Exception as e:
+        logger.warning("Failed to fetch live KTC for player %s: %s", player_id, e)
         return None
 
 

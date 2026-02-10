@@ -3,7 +3,6 @@ import type {
   PlayerList,
   EOSPrediction,
   EOSPredictRequest,
-  CompareResponse,
 } from '../types/player';
 
 const API_BASE = '/api';
@@ -95,20 +94,6 @@ export async function predictEos(payload: EOSPredictRequest): Promise<EOSPredict
   }
 
   return data;
-}
-
-export async function comparePlayers(
-  playerIds: string[],
-  blendWeekly: boolean = false
-): Promise<CompareResponse> {
-  return fetchApi<CompareResponse>('/compare', {
-    method: 'POST',
-    body: JSON.stringify({ player_ids: playerIds, blend_weekly: blendWeekly }),
-  });
-}
-
-export async function getPositions(): Promise<{ positions: string[] }> {
-  return fetchApi<{ positions: string[] }>('/players/positions');
 }
 
 // Live KTC from database (cached hourly on backend)

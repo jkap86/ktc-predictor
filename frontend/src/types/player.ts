@@ -83,23 +83,3 @@ export interface EOSPredictRequest {
   years_remaining?: number;
 }
 
-export interface PlayerComparison {
-  player_id: string;
-  name: string;
-  position: string;
-  start_ktc: number;
-  predicted_end_ktc: number;
-  predicted_delta_ktc: number;
-  predicted_pct_change: number;
-  low_end_ktc?: number;
-  high_end_ktc?: number;
-  model_version: string;
-  anchor_year?: number;
-  anchor_source?: string;
-  baseline_year?: number;
-  seasons: PlayerSeason[];
-}
-
-export interface CompareResponse {
-  players: PlayerComparison[];
-}

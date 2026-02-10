@@ -32,5 +32,13 @@ Thumbs.db
 # backend/trained_models/*.joblib
 # backend/data/training-data.json
 
+# Temp / artifacts
+catboost_info/
+nul
+openapi_temp.json
+=*
+backend/models_pct/
+frontend/tsconfig.tsbuildinfo
+
 # Claude
 .claude/
