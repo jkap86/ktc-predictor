@@ -363,7 +363,7 @@ def predict_end_ktc(
     if gp < 0:
         raise ValueError(f"games_played must be >= 0, got {gp}")
     if ppg < 0:
-        raise ValueError(f"ppg must be >= 0, got {ppg}")
+        ppg = 0.0
     if start_ktc <= 0:
         raise ValueError(f"start_ktc must be > 0, got {start_ktc}")
     if age is not None and age < 0:
