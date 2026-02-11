@@ -17,6 +17,9 @@ def select_anchor_ktc(
     or ``"start_ktc"``, or ``None`` if nothing valid is found.
     """
     for season in sorted(seasons, key=lambda s: s["year"], reverse=True):
+        # Skip pre-draft seasons (college data)
+        if (season.get("years_exp") or 0) < 0:
+            continue
         end = season.get("end_ktc")
         if _is_valid_ktc(end):
             return (end, season["year"], "end_ktc")
@@ -76,6 +79,10 @@ def compute_prior_ktc_features(
         if year >= anchor_year:
             # Stop at anchor year - we only want prior seasons
             break
+
+        # Skip pre-draft seasons (college data)
+        if (season.get("years_exp") or 0) < 0:
+            continue
 
         end_ktc = season.get("end_ktc")
         if _is_valid_ktc(end_ktc):

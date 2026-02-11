@@ -90,6 +90,7 @@ class DataLoader:
         self._raw_data: Optional[dict] = None
         self._players_df: Optional[pd.DataFrame] = None
         self._seasons_df: Optional[pd.DataFrame] = None
+        self._player_index: Optional[dict[str, dict]] = None
 
     def load(self) -> dict:
         """Load raw JSON data."""
@@ -104,11 +105,10 @@ class DataLoader:
         return data.get("players", [])
 
     def get_player_by_id(self, player_id: str) -> Optional[dict]:
-        """Get a single player by ID."""
-        for player in self.get_players():
-            if player["player_id"] == player_id:
-                return player
-        return None
+        """Get a single player by ID (O(1) lookup via index)."""
+        if self._player_index is None:
+            self._player_index = {p["player_id"]: p for p in self.get_players()}
+        return self._player_index.get(player_id)
 
     def get_training_dataframe(self) -> pd.DataFrame:
         """Convert data to DataFrame for ML training."""
@@ -120,6 +120,10 @@ class DataLoader:
 
         for player in players:
             for season in player.get("seasons", []):
+                # Skip pre-draft seasons (college data)
+                if season.get("years_exp", 0) < 0:
+                    continue
+
                 # Calculate derived features from weekly data
                 derived = calculate_derived_features(season)
 
@@ -192,6 +196,10 @@ class DataLoader:
 
                 # Skip invalid KTC values
                 if current_season["end_ktc"] <= 0 or next_season["end_ktc"] <= 0:
+                    continue
+
+                # Skip if current season has no NFL games (pre-season KTC only)
+                if current_season["games_played"] <= 0:
                     continue
 
                 # Look up prior prediction if available
@@ -331,6 +339,10 @@ class DataLoader:
                 weekly_ktc = season.get("weekly_ktc", [])
                 age = season.get("age", 25)
                 years_exp = season.get("years_exp", 0)
+
+                # Skip pre-draft seasons (college data)
+                if years_exp < 0:
+                    continue
 
                 # Need matching weekly data
                 if not weekly_stats or not weekly_ktc:

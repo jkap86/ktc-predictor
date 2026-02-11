@@ -2,140 +2,140 @@
   "positions": {
     "QB": {
       "n": 784,
-      "mae": 744.8,
-      "bias": 342.9,
+      "mae": 1305.2,
+      "bias": 503.5,
       "tiers": {
         "0-2k": {
           "n": 229,
-          "mae": 371.0,
-          "bias": 195.4
+          "mae": 484.7,
+          "bias": 170.7
         },
         "2k-4k": {
           "n": 236,
-          "mae": 886.8,
-          "bias": 250.2
+          "mae": 2357.5,
+          "bias": 1573.8
         },
         "4k-6k": {
           "n": 131,
-          "mae": 829.5,
-          "bias": 610.9,
-          "riser_bias": 1278.6,
+          "mae": 1032.3,
+          "bias": 83.2,
+          "riser_bias": 561.4,
           "riser_n": 65,
-          "faller_bias": -46.6,
+          "faller_bias": -387.8,
           "faller_n": 66
         },
         "6k+": {
           "n": 188,
-          "mae": 962.8,
-          "bias": 452.2,
-          "riser_bias": 705.5,
+          "mae": 1173.9,
+          "bias": -141.9,
+          "riser_bias": 581.7,
           "riser_n": 96,
-          "faller_bias": 187.9,
+          "faller_bias": -897.0,
           "faller_n": 92
         }
       }
     },
     "RB": {
       "n": 1145,
-      "mae": 561.0,
-      "bias": 281.2,
+      "mae": 847.9,
+      "bias": 32.3,
       "tiers": {
         "0-2k": {
           "n": 291,
-          "mae": 217.4,
-          "bias": -24.6
+          "mae": 683.5,
+          "bias": -471.9
         },
         "2k-4k": {
           "n": 442,
-          "mae": 617.0,
-          "bias": 379.6
+          "mae": 894.3,
+          "bias": 703.4
         },
         "4k-6k": {
           "n": 251,
-          "mae": 601.4,
-          "bias": 173.9,
-          "riser_bias": 960.5,
+          "mae": 724.9,
+          "bias": -325.6,
+          "riser_bias": 613.2,
           "riser_n": 60,
-          "faller_bias": -73.3,
+          "faller_bias": -620.6,
           "faller_n": 191
         },
         "6k+": {
           "n": 161,
-          "mae": 965.3,
-          "bias": 730.8,
-          "riser_bias": 1164.2,
+          "mae": 1209.4,
+          "bias": -340.6,
+          "riser_bias": 344.9,
           "riser_n": 99,
-          "faller_bias": 38.6,
+          "faller_bias": -1435.0,
           "faller_n": 62
         }
       }
     },
     "WR": {
       "n": 1632,
-      "mae": 387.0,
-      "bias": 19.8,
+      "mae": 462.3,
+      "bias": -104.3,
       "tiers": {
         "0-2k": {
           "n": 588,
-          "mae": 266.3,
-          "bias": 77.5
+          "mae": 347.2,
+          "bias": 40.1
         },
         "2k-4k": {
           "n": 511,
-          "mae": 300.9,
-          "bias": -48.6
+          "mae": 352.8,
+          "bias": -39.9
         },
         "4k-6k": {
           "n": 267,
-          "mae": 499.3,
-          "bias": -114.4,
-          "riser_bias": 416.7,
+          "mae": 607.1,
+          "bias": -35.3,
+          "riser_bias": 858.6,
           "riser_n": 84,
-          "faller_bias": -358.2,
+          "faller_bias": -445.6,
           "faller_n": 183
         },
         "6k+": {
           "n": 266,
-          "mae": 706.4,
-          "bias": 158.3,
-          "riser_bias": -144.2,
+          "mae": 781.8,
+          "bias": -616.5,
+          "riser_bias": -168.0,
           "riser_n": 132,
-          "faller_bias": 456.2,
+          "faller_bias": -1058.2,
           "faller_n": 134
         }
       }
     },
     "TE": {
       "n": 1000,
-      "mae": 455.1,
-      "bias": 5.0,
+      "mae": 607.3,
+      "bias": -92.7,
       "tiers": {
         "0-2k": {
           "n": 433,
-          "mae": 349.3,
-          "bias": 30.3
+          "mae": 423.4,
+          "bias": 54.6
         },
         "2k-4k": {
           "n": 343,
-          "mae": 462.7,
-          "bias": -17.2
+          "mae": 532.3,
+          "bias": -18.2
         },
         "4k-6k": {
           "n": 113,
-          "mae": 702.4,
-          "bias": 268.7,
-          "riser_bias": 735.5,
+          "mae": 1141.3,
+          "bias": 19.1,
+          "riser_bias": 1017.6,
           "riser_n": 49,
-          "faller_bias": -88.7,
+          "faller_bias": -745.4,
           "faller_n": 64
         },
         "6k+": {
           "n": 111,
-          "mae": 592.8,
-          "bias": -293.0,
-          "riser_bias": -620.0,
+          "mae": 1012.4,
+          "bias": -1011.2,
+          "riser_bias": -1935.0,
           "riser_n": 17,
-          "faller_bias": -233.9,
+          "faller_bias": -844.1,
           "faller_n": 94
         }
       }

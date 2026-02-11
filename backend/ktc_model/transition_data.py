@@ -60,6 +60,10 @@ def build_transition_df(
             continue
 
         for season in player.get("seasons", []):
+            # Skip pre-draft seasons (college data)
+            if (season.get("years_exp") or 0) < 0:
+                continue
+
             year = season["year"]
             age = season.get("age")
             weekly_ktc = season.get("weekly_ktc", [])

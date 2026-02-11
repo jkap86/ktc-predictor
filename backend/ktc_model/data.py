@@ -115,8 +115,11 @@ def _compute_prior_season_features(players: list[dict]) -> dict[tuple[str, int],
         if len(seasons) < 2:
             continue
 
-        # Sort seasons by year to ensure correct ordering
-        sorted_seasons = sorted(seasons, key=lambda s: s["year"])
+        # Sort seasons by year, excluding pre-draft (college) data
+        sorted_seasons = sorted(
+            [s for s in seasons if (s.get("years_exp") or 0) >= 0],
+            key=lambda s: s["year"],
+        )
 
         # Track running max of end_ktc values seen so far
         max_ktc_so_far = 0.0
@@ -285,6 +288,10 @@ def _compute_offseason_features(players: list[dict]) -> dict[tuple[str, int], di
         pid = player["player_id"]
 
         for season in player.get("seasons", []):
+            # Skip pre-draft seasons (college data)
+            if (season.get("years_exp") or 0) < 0:
+                continue
+
             offseason_ktc = season.get("offseason_ktc", [])
             start_ktc = season.get("start_ktc")
 
@@ -389,6 +396,10 @@ def build_weekly_snapshot_df(
             continue
 
         for season in player["seasons"]:
+            # Skip pre-draft seasons (college data)
+            if (season.get("years_exp") or 0) < 0:
+                continue
+
             end_ktc = season.get("end_ktc")
             if end_ktc is None:
                 continue

@@ -388,16 +388,10 @@ def _try_xgb(seed: int, position: str = "WR"):
 
 
 def _build_monotonic_constraints(position: str) -> list[int]:
-    """Build monotonic constraints for a given position.
+    """Build monotonic constraints matching get_features_for_position() layout.
 
     Constraint values: 0 = no constraint, 1 = positive monotonic, -1 = negative monotonic.
-
-    Feature layout:
-    - Core features (8): games_played_so_far, ppg_so_far, weeks_missed_so_far, draft_pick,
-                         years_remaining, start_ktc_quartile, age_prime_distance, is_breakout_candidate
-    - Base linear (2): start_ktc, start_ktc_was_sentinel
-    - QB/WR/TE prior KTC (3): ktc_yoy_log, ktc_peak_drawdown, has_prior_season
-    - QB/WR/TE prior PPG (3): prior_ppg, ppg_yoy_log, has_prior_ppg
+    Must stay in sync with get_features_for_position() feature order.
     """
     # Core features constraints (8 features)
     # ppg_so_far (idx 1): positive monotonic - higher PPG should predict higher KTC
@@ -405,20 +399,29 @@ def _build_monotonic_constraints(position: str) -> list[int]:
     core_constraints = [0, 1, 0, 0, 0, 0, 0, 1]
 
     # Base linear features constraints (2 features)
-    # start_ktc (idx 8): positive monotonic - higher start should predict higher end
-    # start_ktc_was_sentinel (idx 9): no constraint
+    # start_ktc: positive monotonic - higher start should predict higher end
+    # start_ktc_was_sentinel: no constraint
     linear_constraints = [1, 0]
 
     # Prior-season features for stable trajectory positions (QB, WR, TE)
     # RB excluded due to high variance at elite tier
     if position in ("QB", "WR", "TE"):
         # Prior KTC features (3): ktc_yoy_log, ktc_peak_drawdown, has_prior_season
-        # ktc_yoy_log: positive = rose into tier, should predict higher
         linear_constraints.extend([1, 0, 0])
-
         # Prior PPG features (3): prior_ppg, ppg_yoy_log, has_prior_ppg
-        # ppg_yoy_log: positive = performing better, should predict higher
         linear_constraints.extend([0, 1, 0])
+
+    # Contract features (4): apy_cap_pct, is_contract_year, apy_position_rank, has_contract_data
+    if USE_CONTRACT_FEATURES:
+        linear_constraints.extend([0, 0, 0, 0])
+
+    # PFF features (4): pff_overall_grade, pff_grade_tier, pff_position_grade, has_pff_data
+    if USE_PFF_FEATURES:
+        linear_constraints.extend([0, 0, 0, 0])
+
+    # Team features (3): qb_ktc, team_total_ktc, positional_competition
+    if USE_TEAM_FEATURES:
+        linear_constraints.extend([0, 0, 0])
 
     return core_constraints + linear_constraints
 
@@ -673,6 +676,18 @@ def _monotonic_smoke_test(model, position: str) -> bool:
             row.extend([0.0, 0.0, 1])
             # Prior PPG features (3): prior_ppg, ppg_yoy_log, has_prior_ppg
             row.extend([15.0, np.log((ppg + 0.1) / (15 + 0.1)), 1])
+
+        # Contract features (4): apy_cap_pct, is_contract_year, apy_position_rank, has_contract_data
+        if USE_CONTRACT_FEATURES:
+            row.extend([0.05, 0, 0.5, 1])
+
+        # PFF features (4): pff_overall_grade, pff_grade_tier, pff_position_grade, has_pff_data
+        if USE_PFF_FEATURES:
+            row.extend([70.0, 1, 70.0, 1])
+
+        # Team features (3): qb_ktc, team_total_ktc, positional_competition
+        if USE_TEAM_FEATURES:
+            row.extend([5000, 30000, 3000])
 
         X_test.append(row)
 
