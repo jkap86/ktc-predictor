@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getPlayer, getPrediction, predictEos } from '../../../lib/api';
 import { formatKtc } from '../../../lib/format';
 import { useModel } from '../../../context/ModelContext';
+import WhatIfChart from '../../../components/WhatIfChart';
 import type { Player, EOSPrediction } from '../../../types/player';
 
 function ConfidenceBand({ prediction }: { prediction: EOSPrediction }) {
@@ -315,6 +316,18 @@ export default function PlayerPage() {
               </div>
             </div>
           )}
+
+          <WhatIfChart
+            position={prediction.position}
+            startKtc={prediction.start_ktc}
+            gamesPlayed={whatIfGames}
+            currentPpg={whatIfPpg}
+            modelId={selectedModelId}
+            age={advAge}
+            draftPick={advDraftPick}
+            yearsRemaining={advYearsLeft}
+            weeksMissed={advWeeksMissed}
+          />
 
           {whatIfLoading ? (
             <div className="flex justify-center items-center py-6">
