@@ -7,7 +7,8 @@ import { getPlayer, getPrediction, predictEos } from '../../../lib/api';
 import { formatKtc } from '../../../lib/format';
 import { useModel } from '../../../context/ModelContext';
 import WhatIfChart from '../../../components/WhatIfChart';
-import type { Player, EOSPrediction } from '../../../types/player';
+import ComparePlayerPicker from '../../../components/ComparePlayerPicker';
+import type { Player, PlayerSummary, EOSPrediction } from '../../../types/player';
 
 function ConfidenceBand({ prediction }: { prediction: EOSPrediction }) {
   if (!prediction.low_end_ktc || !prediction.high_end_ktc) return null;
@@ -58,6 +59,11 @@ export default function PlayerPage() {
   const [advYearsLeft, setAdvYearsLeft] = useState<number | undefined>(undefined);
   const [advWeeksMissed, setAdvWeeksMissed] = useState<number | undefined>(undefined);
 
+  // Compare player
+  const [comparePlayer, setComparePlayer] = useState<PlayerSummary | null>(null);
+  const [compareData, setCompareData] = useState<Player | null>(null);
+  const [compareResult, setCompareResult] = useState<EOSPrediction | null>(null);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -88,6 +94,53 @@ export default function PlayerPage() {
 
     fetchData();
   }, [playerId, selectedModelId]);
+
+  // Fetch compare player details when selected
+  useEffect(() => {
+    if (!comparePlayer) {
+      setCompareData(null);
+      setCompareResult(null);
+      return;
+    }
+    (async () => {
+      try {
+        const pd = await getPlayer(comparePlayer.player_id);
+        setCompareData(pd);
+      } catch {
+        setCompareData(null);
+      }
+    })();
+  }, [comparePlayer]);
+
+  // Run what-if for compare player whenever inputs change
+  useEffect(() => {
+    if (!compareData || !prediction) {
+      setCompareResult(null);
+      return;
+    }
+    const latestCompare = compareData.seasons.length > 0
+      ? compareData.seasons.reduce((a, b) => (a.year > b.year ? a : b))
+      : null;
+    const compareStartKtc = comparePlayer?.latest_ktc ?? prediction.start_ktc;
+
+    (async () => {
+      try {
+        const result = await predictEos(
+          {
+            position: compareData.position,
+            start_ktc: compareStartKtc,
+            games_played: whatIfGames,
+            ppg: whatIfPpg,
+            age: latestCompare?.age,
+          },
+          selectedModelId,
+        );
+        setCompareResult(result);
+      } catch {
+        setCompareResult(null);
+      }
+    })();
+  }, [compareData, comparePlayer, prediction, whatIfGames, whatIfPpg, selectedModelId]);
 
   // Debounced what-if prediction
   const fetchWhatIf = useCallback(async () => {
@@ -246,9 +299,18 @@ export default function PlayerPage() {
 
       {prediction && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            What-If Scenario
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              What-If Scenario
+            </h3>
+            <div className="w-64">
+              <ComparePlayerPicker
+                position={player.position}
+                selected={comparePlayer}
+                onSelect={setComparePlayer}
+              />
+            </div>
+          </div>
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">Games:</label>
@@ -327,6 +389,14 @@ export default function PlayerPage() {
             draftPick={advDraftPick}
             yearsRemaining={advYearsLeft}
             weeksMissed={advWeeksMissed}
+            compare={compareData && comparePlayer ? {
+              name: comparePlayer.name,
+              position: compareData.position,
+              startKtc: comparePlayer.latest_ktc ?? prediction.start_ktc,
+              age: compareData.seasons.length > 0
+                ? compareData.seasons.reduce((a, b) => (a.year > b.year ? a : b)).age
+                : undefined,
+            } : undefined}
           />
 
           {whatIfLoading ? (
@@ -334,28 +404,62 @@ export default function PlayerPage() {
               <div className="w-6 h-6 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
             </div>
           ) : whatIfResult ? (
-            <div className="mt-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div className="text-xl font-bold text-gray-900 dark:text-white">
-                    {formatKtc(whatIfResult.predicted_end_ktc)}
+            <div className="mt-4 space-y-3">
+              {/* Primary player results */}
+              <div>
+                {comparePlayer && (
+                  <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">{player.name}</div>
+                )}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="text-xl font-bold text-gray-900 dark:text-white">
+                      {formatKtc(whatIfResult.predicted_end_ktc)}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
-                </div>
-                <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div className={`text-xl font-bold ${whatIfResult.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {whatIfResult.predicted_delta_ktc >= 0 ? '+' : ''}{whatIfResult.predicted_delta_ktc.toLocaleString()}
+                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className={`text-xl font-bold ${whatIfResult.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {whatIfResult.predicted_delta_ktc >= 0 ? '+' : ''}{whatIfResult.predicted_delta_ktc.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Delta</div>
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Delta</div>
-                </div>
-                <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div className={`text-xl font-bold ${whatIfResult.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {whatIfResult.predicted_pct_change >= 0 ? '+' : ''}{whatIfResult.predicted_pct_change.toFixed(1)}%
+                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className={`text-xl font-bold ${whatIfResult.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {whatIfResult.predicted_pct_change >= 0 ? '+' : ''}{whatIfResult.predicted_pct_change.toFixed(1)}%
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">% Change</div>
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">% Change</div>
                 </div>
+                <ConfidenceBand prediction={whatIfResult} />
               </div>
-              <ConfidenceBand prediction={whatIfResult} />
+
+              {/* Comparison player results */}
+              {compareResult && comparePlayer && (
+                <div>
+                  <div className="text-xs font-medium text-orange-500 dark:text-orange-400 mb-1">{comparePlayer.name}</div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800/30">
+                      <div className="text-xl font-bold text-gray-900 dark:text-white">
+                        {formatKtc(compareResult.predicted_end_ktc)}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
+                    </div>
+                    <div className="text-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800/30">
+                      <div className={`text-xl font-bold ${compareResult.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {compareResult.predicted_delta_ktc >= 0 ? '+' : ''}{compareResult.predicted_delta_ktc.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Delta</div>
+                    </div>
+                    <div className="text-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800/30">
+                      <div className={`text-xl font-bold ${compareResult.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {compareResult.predicted_pct_change >= 0 ? '+' : ''}{compareResult.predicted_pct_change.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">% Change</div>
+                    </div>
+                  </div>
+                  <ConfidenceBand prediction={compareResult} />
+                </div>
+              )}
             </div>
           ) : null}
         </div>

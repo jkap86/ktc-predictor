@@ -15,6 +15,15 @@ import {
 import { predictEos } from '../lib/api';
 import { formatKtc } from '../lib/format';
 
+interface PlayerCurveConfig {
+  position: string;
+  startKtc: number;
+  age?: number;
+  draftPick?: number;
+  yearsRemaining?: number;
+  weeksMissed?: number;
+}
+
 interface WhatIfChartProps {
   position: string;
   startKtc: number;
@@ -25,6 +34,8 @@ interface WhatIfChartProps {
   draftPick?: number;
   yearsRemaining?: number;
   weeksMissed?: number;
+  /** Optional comparison player config */
+  compare?: PlayerCurveConfig & { name: string };
 }
 
 interface ChartPoint {
@@ -32,9 +43,52 @@ interface ChartPoint {
   predictedEos: number | null;
   low: number | null;
   high: number | null;
+  compareEos: number | null;
+  compareLow: number | null;
+  compareHigh: number | null;
 }
 
 const PPG_STEPS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40];
+
+async function fetchCurveForPlayer(
+  config: PlayerCurveConfig,
+  gamesPlayed: number,
+  modelId: string | null,
+): Promise<Map<number, { eos: number | null; low: number | null; high: number | null }>> {
+  const results = new Map<number, { eos: number | null; low: number | null; high: number | null }>();
+
+  const promises = PPG_STEPS.map(async (ppg) => {
+    try {
+      const result = await predictEos(
+        {
+          position: config.position,
+          start_ktc: config.startKtc,
+          games_played: gamesPlayed,
+          ppg,
+          age: config.age,
+          draft_pick: config.draftPick,
+          years_remaining: config.yearsRemaining,
+          weeks_missed: config.weeksMissed,
+        },
+        modelId,
+      );
+      return {
+        ppg,
+        eos: result?.predicted_end_ktc ?? null,
+        low: result?.low_end_ktc ?? null,
+        high: result?.high_end_ktc ?? null,
+      };
+    } catch {
+      return { ppg, eos: null, low: null, high: null };
+    }
+  });
+
+  const settled = await Promise.all(promises);
+  for (const pt of settled) {
+    results.set(pt.ppg, { eos: pt.eos, low: pt.low, high: pt.high });
+  }
+  return results;
+}
 
 export default function WhatIfChart({
   position,
@@ -46,57 +100,59 @@ export default function WhatIfChart({
   draftPick,
   yearsRemaining,
   weeksMissed,
+  compare,
 }: WhatIfChartProps) {
   const [data, setData] = useState<ChartPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const abortRef = useRef(0);
 
+  const primaryConfig: PlayerCurveConfig = {
+    position, startKtc, age, draftPick, yearsRemaining, weeksMissed,
+  };
+
   useEffect(() => {
     const generation = ++abortRef.current;
 
-    async function fetchCurve() {
+    async function fetchCurves() {
       setLoading(true);
-      const results: ChartPoint[] = [];
 
-      // Fire all requests in parallel; swallow individual failures
-      const promises = PPG_STEPS.map(async (ppg): Promise<ChartPoint> => {
-        try {
-          const result = await predictEos(
-            {
-              position,
-              start_ktc: startKtc,
-              games_played: gamesPlayed,
-              ppg,
-              age,
-              draft_pick: draftPick,
-              years_remaining: yearsRemaining,
-              weeks_missed: weeksMissed,
-            },
-            modelId,
-          );
-          return {
-            ppg,
-            predictedEos: result?.predicted_end_ktc ?? null,
-            low: result?.low_end_ktc ?? null,
-            high: result?.high_end_ktc ?? null,
-          };
-        } catch {
-          return { ppg, predictedEos: null, low: null, high: null };
-        }
+      const fetches: [Promise<Map<number, { eos: number | null; low: number | null; high: number | null }>>, Promise<Map<number, { eos: number | null; low: number | null; high: number | null }>> | null] = [
+        fetchCurveForPlayer(primaryConfig, gamesPlayed, modelId),
+        compare ? fetchCurveForPlayer(compare, gamesPlayed, modelId) : null,
+      ];
+
+      const [primaryMap, compareMap] = await Promise.all([
+        fetches[0],
+        fetches[1] ?? Promise.resolve(null),
+      ]);
+
+      if (generation !== abortRef.current) return;
+
+      const merged: ChartPoint[] = PPG_STEPS.map((ppg) => {
+        const p = primaryMap.get(ppg);
+        const c = compareMap?.get(ppg);
+        return {
+          ppg,
+          predictedEos: p?.eos ?? null,
+          low: p?.low ?? null,
+          high: p?.high ?? null,
+          compareEos: c?.eos ?? null,
+          compareLow: c?.low ?? null,
+          compareHigh: c?.high ?? null,
+        };
       });
 
-      const settled = await Promise.all(promises);
-      if (generation !== abortRef.current) return; // stale
-
-      settled.sort((a, b) => a.ppg - b.ppg);
-      setData(settled);
+      setData(merged);
       setLoading(false);
     }
 
-    fetchCurve();
-  }, [position, startKtc, gamesPlayed, modelId, age, draftPick, yearsRemaining, weeksMissed]);
+    fetchCurves();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    position, startKtc, gamesPlayed, modelId, age, draftPick, yearsRemaining, weeksMissed,
+    compare?.position, compare?.startKtc, compare?.age,
+  ]);
 
-  // Find the data point closest to currentPpg for the reference dot
   const currentPoint = data.reduce<ChartPoint | null>((best, pt) => {
     if (pt.predictedEos === null) return best;
     if (!best) return pt;
@@ -104,6 +160,7 @@ export default function WhatIfChart({
   }, null);
 
   const hasBands = data.some((d) => d.low !== null && d.high !== null);
+  const hasCompare = data.some((d) => d.compareEos !== null);
 
   if (loading && data.length === 0) {
     return (
@@ -124,9 +181,19 @@ export default function WhatIfChart({
             ({gamesPlayed} games)
           </span>
         </h4>
-        {loading && (
-          <div className="w-4 h-4 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
-        )}
+        <div className="flex items-center gap-3">
+          {hasCompare && compare && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <span className="inline-block w-3 h-0.5 bg-blue-500 rounded"></span>
+              Primary
+              <span className="inline-block w-3 h-0.5 bg-orange-500 rounded ml-2"></span>
+              {compare.name}
+            </div>
+          )}
+          {loading && (
+            <div className="w-4 h-4 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
+          )}
+        </div>
       </div>
       <ResponsiveContainer width="100%" height={280}>
         <ComposedChart data={data} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
@@ -153,19 +220,19 @@ export default function WhatIfChart({
             labelStyle={{ color: '#d1d5db', fontWeight: 600 }}
             labelFormatter={(v) => `PPG: ${v}`}
             formatter={(value, name) => {
-              const label =
-                name === 'predictedEos'
-                  ? 'Predicted EOS'
-                  : name === 'high'
-                    ? 'p80'
-                    : name === 'low'
-                      ? 'p20'
-                      : String(name);
-              return [formatKtc(Number(value)), label];
+              const labels: Record<string, string> = {
+                predictedEos: 'Predicted EOS',
+                high: 'p80',
+                low: 'p20',
+                compareEos: compare?.name ?? 'Compare',
+                compareHigh: `${compare?.name ?? 'Compare'} p80`,
+                compareLow: `${compare?.name ?? 'Compare'} p20`,
+              };
+              return [formatKtc(Number(value)), labels[String(name)] ?? String(name)];
             }}
           />
 
-          {/* Start KTC reference line */}
+          {/* Start KTC reference line (primary) */}
           <ReferenceLine
             y={startKtc}
             stroke="#9ca3af"
@@ -178,30 +245,73 @@ export default function WhatIfChart({
             }}
           />
 
-          {/* Main prediction curve */}
+          {/* Comparison player start KTC reference */}
+          {hasCompare && compare && (
+            <ReferenceLine
+              y={compare.startKtc}
+              stroke="#f97316"
+              strokeDasharray="6 3"
+              strokeOpacity={0.5}
+            />
+          )}
+
+          {/* Primary prediction curve */}
           <Line
             dataKey="predictedEos"
             stroke="#3b82f6"
             strokeWidth={2.5}
             dot={false}
             isAnimationActive={false}
+            name="predictedEos"
           />
 
-          {/* Band boundaries */}
+          {/* Primary band boundaries */}
           {hasBands && (
             <>
-              <Line dataKey="high" stroke="#93c5fd" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} />
-              <Line dataKey="low" stroke="#93c5fd" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} />
+              <Line dataKey="high" stroke="#93c5fd" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="high" />
+              <Line dataKey="low" stroke="#93c5fd" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="low" />
             </>
           )}
 
-          {/* Current PPG marker */}
+          {/* Comparison prediction curve */}
+          {hasCompare && (
+            <Line
+              dataKey="compareEos"
+              stroke="#f97316"
+              strokeWidth={2.5}
+              dot={false}
+              isAnimationActive={false}
+              name="compareEos"
+            />
+          )}
+
+          {/* Comparison band boundaries */}
+          {hasCompare && (
+            <>
+              <Line dataKey="compareHigh" stroke="#fdba74" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="compareHigh" />
+              <Line dataKey="compareLow" stroke="#fdba74" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="compareLow" />
+            </>
+          )}
+
+          {/* Current PPG marker (primary) */}
           {currentPoint && currentPoint.predictedEos !== null && (
             <ReferenceDot
               x={currentPoint.ppg}
               y={currentPoint.predictedEos}
               r={6}
               fill="#3b82f6"
+              stroke="white"
+              strokeWidth={2}
+            />
+          )}
+
+          {/* Current PPG marker (comparison) */}
+          {currentPoint && currentPoint.compareEos !== null && (
+            <ReferenceDot
+              x={currentPoint.ppg}
+              y={currentPoint.compareEos}
+              r={6}
+              fill="#f97316"
               stroke="white"
               strokeWidth={2}
             />
