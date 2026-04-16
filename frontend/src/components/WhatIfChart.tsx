@@ -58,27 +58,31 @@ export default function WhatIfChart({
       setLoading(true);
       const results: ChartPoint[] = [];
 
-      // Fire all requests in parallel
-      const promises = PPG_STEPS.map(async (ppg) => {
-        const result = await predictEos(
-          {
-            position,
-            start_ktc: startKtc,
-            games_played: gamesPlayed,
+      // Fire all requests in parallel; swallow individual failures
+      const promises = PPG_STEPS.map(async (ppg): Promise<ChartPoint> => {
+        try {
+          const result = await predictEos(
+            {
+              position,
+              start_ktc: startKtc,
+              games_played: gamesPlayed,
+              ppg,
+              age,
+              draft_pick: draftPick,
+              years_remaining: yearsRemaining,
+              weeks_missed: weeksMissed,
+            },
+            modelId,
+          );
+          return {
             ppg,
-            age,
-            draft_pick: draftPick,
-            years_remaining: yearsRemaining,
-            weeks_missed: weeksMissed,
-          },
-          modelId,
-        );
-        return {
-          ppg,
-          predictedEos: result?.predicted_end_ktc ?? null,
-          low: result?.low_end_ktc ?? null,
-          high: result?.high_end_ktc ?? null,
-        };
+            predictedEos: result?.predicted_end_ktc ?? null,
+            low: result?.low_end_ktc ?? null,
+            high: result?.high_end_ktc ?? null,
+          };
+        } catch {
+          return { ppg, predictedEos: null, low: null, high: null };
+        }
       });
 
       const settled = await Promise.all(promises);

@@ -6,7 +6,7 @@ import type {
 } from '../types/player';
 
 const API_BASE = '/api';
-const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 function fetchWithTimeout(
   url: string,
@@ -14,6 +14,11 @@ function fetchWithTimeout(
   timeoutMs = DEFAULT_TIMEOUT_MS
 ): Promise<Response> {
   const controller = new AbortController();
+  // If the caller already provided a signal (e.g. for cancellation on unmount),
+  // forward its abort to our controller so both timeout and caller can cancel.
+  if (options?.signal) {
+    options.signal.addEventListener('abort', () => controller.abort());
+  }
   const id = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
 }
