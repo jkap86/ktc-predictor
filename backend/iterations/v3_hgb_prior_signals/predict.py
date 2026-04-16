@@ -1,7 +1,8 @@
-"""v3 inference: v1's prediction pipeline extended to 26 features.
+"""v3 inference: v1's pipeline, with 6 prior-behavioral features added ONLY
+for RB and WR. QB and TE use v1's 20-feature vector unchanged.
 
 Duplicates v1's predict_end_ktc (rather than shimming) because v1 builds its
-feature vector inline with a fixed 20-slot layout. The postprocessing steps
+feature vector inline with a fixed layout. Postprocessing steps
 (KNN adjustment, residual correction, extreme shrinkage, clipping, KTC-aware
 bounds, domain clamp) are identical — we import v1's helpers directly.
 """
@@ -59,13 +60,22 @@ _PRIOR_BEHAVIORAL_FEATURES = [
     "has_prior_behavioral",
 ]
 
+# Positions that receive the 6 prior-behavioral features.
+# Must stay in sync with train._POSITIONS_WITH_PRIOR_BEHAVIORAL.
+_POSITIONS_WITH_PRIOR_BEHAVIORAL = {"RB", "WR"}
+
 
 def get_expected_features(position: str) -> list[str]:
-    """Get the expected feature list for v3 (same for all positions)."""
-    return _V1_CORE_FEATURES + _V1_LINEAR_FEATURES + _PRIOR_BEHAVIORAL_FEATURES
+    """Get the expected feature list for v3 for a given position."""
+    base = _V1_CORE_FEATURES + _V1_LINEAR_FEATURES
+    if position in _POSITIONS_WITH_PRIOR_BEHAVIORAL:
+        return base + _PRIOR_BEHAVIORAL_FEATURES
+    return base
 
 
-EXPECTED_FEATURES = get_expected_features("QB")
+# Legacy: a superset for "what's the largest vector we might produce?"
+# Used only by the single-list fallback in validate_feature_contract.
+EXPECTED_FEATURES = get_expected_features("WR")
 
 
 def validate_feature_contract(
@@ -206,16 +216,17 @@ def predict_end_ktc(
         has_contract_data,
     ])
 
-    # v3 prior-behavioral (6)
-    has_prior_behavioral = 1 if prior_weekly_fp_cv is not None else 0
-    linear_features.extend([
-        prior_weekly_fp_cv if prior_weekly_fp_cv is not None else np.nan,
-        prior_boom_rate if prior_boom_rate is not None else np.nan,
-        prior_bust_rate if prior_bust_rate is not None else np.nan,
-        prior_snap_pct if prior_snap_pct is not None else np.nan,
-        prior_ktc_volatility if prior_ktc_volatility is not None else np.nan,
-        has_prior_behavioral,
-    ])
+    # v3 prior-behavioral (6) — RB/WR only
+    if position in _POSITIONS_WITH_PRIOR_BEHAVIORAL:
+        has_prior_behavioral = 1 if prior_weekly_fp_cv is not None else 0
+        linear_features.extend([
+            prior_weekly_fp_cv if prior_weekly_fp_cv is not None else np.nan,
+            prior_boom_rate if prior_boom_rate is not None else np.nan,
+            prior_bust_rate if prior_bust_rate is not None else np.nan,
+            prior_snap_pct if prior_snap_pct is not None else np.nan,
+            prior_ktc_volatility if prior_ktc_volatility is not None else np.nan,
+            has_prior_behavioral,
+        ])
 
     X = np.array([core_features + linear_features])
 

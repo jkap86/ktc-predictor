@@ -1,10 +1,11 @@
-"""v3 training script: v1's 20-feature baseline + 6 prior-season behavioral signals.
+"""v3 training script: v1's 20-feature baseline + 6 prior-season behavioral
+signals applied ONLY to RB and WR.
 
 The 6 additions are all frozen at the player's last completed season, so they
 do not shift when the user moves the What-If slider. This sidesteps the
 plumbing problem that orphaned v2.
 
-New features (position-independent, all stored on season records):
+New features (RB/WR only — QB/TE use v1's 20-feature baseline unchanged):
 - prior_weekly_fp_cv    — consistency of weekly FP last year
 - prior_boom_rate       — upside-week frequency last year
 - prior_bust_rate       — downside-week frequency last year
@@ -12,14 +13,14 @@ New features (position-independent, all stored on season records):
 - prior_ktc_volatility  — KTC bounciness last year
 - has_prior_behavioral  — 1 if prior-season data is usable (>=4 games), else 0
 
-Feature vector layout for a QB-like position (26 features total):
-  Core (8):   v1 core unchanged
-  Linear (18): start_ktc, sentinel,
-               ktc_yoy_log, ktc_peak_drawdown, has_prior_season,
-               prior_ppg, ppg_yoy_log, has_prior_ppg,
-               apy_cap_pct, is_contract_year, apy_position_rank, has_contract_data,
-               prior_weekly_fp_cv, prior_boom_rate, prior_bust_rate,
-               prior_snap_pct, prior_ktc_volatility, has_prior_behavioral
+Scoping to RB/WR was a deliberate choice: the initial v3 (all positions)
+improved RB and WR MAE but made QB and TE *worse*. QBs play near-full snaps
+and consistency signals are dominated by offensive system, not individual
+variance; TE has too few samples for 6 extra features to generalize.
+
+Feature vector layout:
+  QB / TE (20 features): v1's layout unchanged
+  RB / WR (26 features): v1's 20 + 6 prior-behavioral appended
 
 Usage:
     cd backend
@@ -139,10 +140,17 @@ _PRIOR_BEHAVIORAL_FEATURES = [
     "has_prior_behavioral",
 ]
 
+# Positions that receive the 6 prior-behavioral features.
+# Initial v3 applied to all 4; QB/TE were worse than v1, RB/WR improved.
+_POSITIONS_WITH_PRIOR_BEHAVIORAL = {"RB", "WR"}
+
 
 def _v3_get_features_for_position(position: str) -> list[str]:
-    """v1's feature list + 6 prior-behavioral appended at the end."""
-    return _V1_GET_FEATURES_FOR_POSITION(position) + _PRIOR_BEHAVIORAL_FEATURES
+    """v1's feature list + 6 prior-behavioral for RB/WR, unchanged for QB/TE."""
+    base = _V1_GET_FEATURES_FOR_POSITION(position)
+    if position in _POSITIONS_WITH_PRIOR_BEHAVIORAL:
+        return base + _PRIOR_BEHAVIORAL_FEATURES
+    return base
 
 
 v1.get_features_for_position = _v3_get_features_for_position
@@ -159,14 +167,17 @@ _v1_build_monotonic_constraints = v1._build_monotonic_constraints
 
 
 def _v3_build_monotonic_constraints(position: str) -> list[int]:
-    """v1's constraints + 6 zeros for the new prior-behavioral features.
+    """v1's constraints, extended with 6 zeros only for RB/WR.
 
     Conservative: none of the 6 new features get a monotonic constraint.
     prior_snap_pct could arguably be positive (more snaps = stronger role),
     but HGB monotonic constraints are brittle when features interact;
     keep them free here and let the model learn the interaction.
     """
-    return _v1_build_monotonic_constraints(position) + [0, 0, 0, 0, 0, 0]
+    base = _v1_build_monotonic_constraints(position)
+    if position in _POSITIONS_WITH_PRIOR_BEHAVIORAL:
+        return base + [0, 0, 0, 0, 0, 0]
+    return base
 
 
 v1._build_monotonic_constraints = _v3_build_monotonic_constraints
@@ -175,7 +186,7 @@ v1._build_monotonic_constraints = _v3_build_monotonic_constraints
 # ── Patch smoke tests: v3 feature vector has 6 extra trailing values ────
 
 def _v3_monotonic_smoke_test(model, position: str) -> bool:
-    """v1's smoke test with 6 trailing zeros appended to each row."""
+    """v1's smoke test; for RB/WR appends 6 prior-behavioral defaults."""
     ppg_values = [5, 10, 15, 20]
 
     X_test = []
@@ -190,8 +201,9 @@ def _v3_monotonic_smoke_test(model, position: str) -> bool:
             row.extend([70.0, 1, 70.0, 1])
         if v1.USE_TEAM_FEATURES:
             row.extend([5000, 30000, 3000])
-        # v3 prior-behavioral: median-ish defaults
-        row.extend([0.4, 0.25, 0.25, 0.65, 1.0, 1])
+        if position in _POSITIONS_WITH_PRIOR_BEHAVIORAL:
+            # v3 prior-behavioral: median-ish defaults
+            row.extend([0.4, 0.25, 0.25, 0.65, 1.0, 1])
         X_test.append(row)
 
     X_test = np.array(X_test)

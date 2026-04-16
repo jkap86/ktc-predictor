@@ -1,8 +1,8 @@
 {
   "id": "v3_hgb_prior_signals",
-  "name": "HGB v3 (prior-season behavioral signals)",
-  "description": "HGB with 26 features: v1's 20 + 6 prior-season behavioral signals (weekly_fp_cv, boom_rate, bust_rate, snap_pct, ktc_volatility) frozen at the player's last completed season. Fully wired for inference.",
+  "name": "HGB v3 (prior-behavioral RB/WR-only)",
+  "description": "HGB: v1's 20-feature baseline for QB/TE, plus 6 prior-season behavioral signals (weekly_fp_cv, boom_rate, bust_rate, snap_pct, ktc_volatility) for RB/WR only. Prior-behavioral frozen at the player's last completed season.",
   "created": "2026-04-16",
-  "features_count": 26,
+  "features_count": {"QB": 20, "RB": 26, "WR": 26, "TE": 20},
   "positions": ["QB", "RB", "WR", "TE"]
 }
