@@ -89,3 +89,33 @@ def compute_prior_ppg(
         if games >= min_games:
             return fp / games
     return None
+
+
+def compute_prior_behavioral_features(
+    seasons: list[dict],
+    anchor_year: int,
+    min_games: int = 4,
+) -> dict | None:
+    """Pull 5 behavioral aggregates from the most-recent completed season
+    before ``anchor_year``.
+
+    Used by v3_hgb_prior_signals and later iterations that condition on a
+    player's prior-year consistency, upside, and role.
+
+    Returns a dict with weekly_fp_cv / boom_rate / bust_rate / snap_pct /
+    ktc_volatility, or None if no prior season has >= min_games games.
+    """
+    for season in sorted(seasons, key=lambda s: s["year"], reverse=True):
+        if season["year"] >= anchor_year:
+            continue
+        games = season.get("games_played", 0) or 0
+        if games < min_games:
+            continue
+        return {
+            "prior_weekly_fp_cv": float(season.get("weekly_fp_cv") or 0.0),
+            "prior_boom_rate": float(season.get("boom_rate") or 0.0),
+            "prior_bust_rate": float(season.get("bust_rate") or 0.0),
+            "prior_snap_pct": float(season.get("snap_pct") or 0.0),
+            "prior_ktc_volatility": float(season.get("ktc_volatility") or 0.0),
+        }
+    return None

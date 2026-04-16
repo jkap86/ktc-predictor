@@ -319,6 +319,9 @@ def predict_end_ktc(
     residual_correction: dict | None = None,
     target_type: str = "log_ratio",
     knn_adjuster=None,
+    # Accept (and ignore) kwargs added by newer iterations so that
+    # eos_model_service can pass a single kwarg set to any iteration.
+    **_unused_kwargs,
 ) -> dict:
     """Predict end-of-season KTC value.
 

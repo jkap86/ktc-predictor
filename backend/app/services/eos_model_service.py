@@ -7,6 +7,7 @@ import numpy as np
 
 from app.services.ktc_utils import (
     _is_valid_ktc,
+    compute_prior_behavioral_features,
     compute_prior_ktc_features,
     compute_prior_ppg,
     select_anchor_ktc,
@@ -53,6 +54,12 @@ def predict_from_inputs(
     prior_end_ktc: float | None = None,
     max_ktc_prior: float | None = None,
     prior_ppg: float | None = None,
+    # v3+ prior-behavioral signals (ignored by v1 via **_unused_kwargs)
+    prior_weekly_fp_cv: float | None = None,
+    prior_boom_rate: float | None = None,
+    prior_bust_rate: float | None = None,
+    prior_snap_pct: float | None = None,
+    prior_ktc_volatility: float | None = None,
 ) -> dict:
     """Predict EOS KTC using a specific model iteration."""
     result = iteration.predict_end_ktc(
@@ -67,6 +74,11 @@ def predict_from_inputs(
         prior_end_ktc=prior_end_ktc,
         max_ktc_prior=max_ktc_prior,
         prior_ppg=prior_ppg,
+        prior_weekly_fp_cv=prior_weekly_fp_cv,
+        prior_boom_rate=prior_boom_rate,
+        prior_bust_rate=prior_bust_rate,
+        prior_snap_pct=prior_snap_pct,
+        prior_ktc_volatility=prior_ktc_volatility,
     )
 
     effective_ktc = result.get("effective_start_ktc", start_ktc)
@@ -145,6 +157,10 @@ def predict_for_player(
         prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
         prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
 
+    # Prior-season behavioral signals (v3+). Computed for all positions;
+    # older iterations receive them as kwargs and ignore via **_unused_kwargs.
+    prior_behavioral = compute_prior_behavioral_features(seasons, prior_ref_year) or {}
+
     result = predict_from_inputs(
         iteration=iteration,
         position=player["position"],
@@ -155,6 +171,11 @@ def predict_for_player(
         prior_end_ktc=prior_end_ktc,
         max_ktc_prior=max_ktc_prior,
         prior_ppg=prior_ppg,
+        prior_weekly_fp_cv=prior_behavioral.get("prior_weekly_fp_cv"),
+        prior_boom_rate=prior_behavioral.get("prior_boom_rate"),
+        prior_bust_rate=prior_behavioral.get("prior_bust_rate"),
+        prior_snap_pct=prior_behavioral.get("prior_snap_pct"),
+        prior_ktc_volatility=prior_behavioral.get("prior_ktc_volatility"),
     )
     result["player_id"] = player_id
     result["name"] = player["name"]
