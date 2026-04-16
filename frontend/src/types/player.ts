@@ -82,7 +82,7 @@ export interface ModelInfo {
   name: string;
   description: string;
   created: string;
-  features_count?: number;
+  features_count?: number | Record<string, number>;
   positions: string[];
   is_default: boolean;
   metrics: Record<string, unknown>;

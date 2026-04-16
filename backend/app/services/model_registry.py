@@ -83,6 +83,7 @@ class ModelIteration:
             residual_correction=b.get("residual_correction"),
             knn_adjuster=b.get("knn_adjuster"),
             target_type=b.get("target_type", "log_ratio"),
+            quantile_models=b.get("quantile_models"),
             **kwargs,
         )
 

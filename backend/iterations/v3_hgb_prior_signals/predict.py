@@ -135,9 +135,15 @@ def predict_end_ktc(
     residual_correction: dict | None = None,
     target_type: str = "log_ratio",
     knn_adjuster=None,
+    quantile_models: dict | None = None,
     **_unused_kwargs,
 ) -> dict:
-    """Predict end-of-season KTC value using v3's 26-feature model."""
+    """Predict end-of-season KTC value using v3's 26-feature model.
+
+    If ``quantile_models`` is provided (mapping position -> {0.2: model, 0.8: model}),
+    also returns ``p20_end_ktc`` / ``p80_end_ktc`` band values computed by
+    running the quantile models on the same feature vector.
+    """
     if position not in VALID_POSITIONS:
         raise ValueError(
             f"Invalid position '{position}'. Must be one of {sorted(VALID_POSITIONS)}"
@@ -230,7 +236,8 @@ def predict_end_ktc(
 
     X = np.array([core_features + linear_features])
 
-    pred_log_ratio = float(model.predict(X)[0])
+    raw_pred_log_ratio = float(model.predict(X)[0])
+    pred_log_ratio = raw_pred_log_ratio
 
     # KNN elite adjustment
     if knn_adjuster is not None:
@@ -283,10 +290,44 @@ def predict_end_ktc(
     end_ktc = max(KTC_MIN, min(KTC_MAX, raw_end_ktc))
     delta_ktc = end_ktc - start_ktc
 
-    return {
+    result = {
         "delta_ktc": round(delta_ktc, 1),
         "end_ktc": round(end_ktc, 1),
         "effective_start_ktc": round(start_ktc, 1),
         "capped_high": raw_end_ktc > KTC_MAX,
         "capped_low": raw_end_ktc < KTC_MIN,
     }
+
+    # Confidence bands from the p20/p80 quantile models, if available.
+    # The quantile models predict raw log_ratios without the central model's
+    # KNN / residual correction / shrinkage adjustments. To produce a band
+    # that actually brackets the reported central prediction, we preserve the
+    # band WIDTH from the quantile models and SHIFT by the same delta the
+    # central got from its adjustments.
+    if quantile_models and position in quantile_models:
+        q_dict = quantile_models[position]
+        adjustment_delta = pred_log_ratio - raw_pred_log_ratio
+
+        def _bound_end_ktc(q_log: float) -> float:
+            # Apply the central's adjustment shift, then the same clipping / KTC-aware
+            # bounds / domain clamp the central went through.
+            q_log = q_log + adjustment_delta
+            q_log = max(ktc_aware_lower, min(ktc_aware_upper, q_log))
+            if bounds is not None:
+                q_log = max(bounds[0], min(bounds[1], q_log))
+            if target_type == "pct_change":
+                raw = start_ktc * (1 + q_log)
+            else:
+                raw = start_ktc * np.exp(q_log)
+            return max(KTC_MIN, min(KTC_MAX, raw))
+
+        p20_model = q_dict.get(0.2)
+        p80_model = q_dict.get(0.8)
+        if p20_model is not None:
+            p20_log = float(p20_model.predict(X)[0])
+            result["p20_end_ktc"] = round(_bound_end_ktc(p20_log), 1)
+        if p80_model is not None:
+            p80_log = float(p80_model.predict(X)[0])
+            result["p80_end_ktc"] = round(_bound_end_ktc(p80_log), 1)
+
+    return result

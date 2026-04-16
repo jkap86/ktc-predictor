@@ -87,7 +87,10 @@ class ModelInfo(BaseModel):
     name: str
     description: str = ""
     created: str = ""
-    features_count: int | None = None
+    # int for iterations with a single feature count across positions,
+    # dict[str, int] for iterations where positions use different feature sets
+    # (e.g., v3 uses 26 features for RB/WR, 20 for QB/TE).
+    features_count: int | dict[str, int] | None = None
     positions: list[str] = []
     is_default: bool = False
     metrics: dict = {}
