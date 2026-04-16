@@ -1,0 +1,9 @@
+{
+  "id": "v1_hgb_2021",
+  "name": "HGB 2021",
+  "description": "HistGradientBoosting trained on 2021 season only",
+  "created": "2026-02-27",
+  "features_count": 20,
+  "positions": ["QB", "RB", "WR", "TE"],
+  "year_range": {"min": 2021, "max": 2021}
+}

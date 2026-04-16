@@ -1,0 +1,8 @@
+{
+  "id": "v1_hgb_baseline",
+  "name": "HGB Baseline",
+  "description": "HistGradientBoosting with 20 features, extreme shrinkage, sentinel fix, residual correction",
+  "created": "2026-02-26",
+  "features_count": 20,
+  "positions": ["QB", "RB", "WR", "TE"]
+}

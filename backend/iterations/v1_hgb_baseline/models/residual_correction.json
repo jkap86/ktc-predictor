@@ -1,0 +1,49 @@
+{
+  "RB": [
+    {
+      "type": "hinge",
+      "ktc_mean": 3005.75,
+      "ktc_std": 1968.94,
+      "b0": 0.0330,
+      "b1": 0.0412,
+      "b2": -0.0608,
+      "hinge_z": 0.0
+    },
+    {
+      "type": "band",
+      "low_ktc": 2000,
+      "high_ktc": 4000,
+      "offset": 0.1673
+    },
+    {
+      "type": "band",
+      "low_ktc": 6000,
+      "high_ktc": 10000,
+      "offset": 0.15,
+      "comment": "Elite tier correction: all 6k+ RBs get +0.15 log-ratio boost (~+1000 at 7k)"
+    }
+  ],
+  "QB": [
+    {
+      "type": "band",
+      "low_ktc": 4000,
+      "high_ktc": 5000,
+      "offset": 0.04,
+      "comment": "Lower mid-tier: modest boost"
+    },
+    {
+      "type": "band",
+      "low_ktc": 5000,
+      "high_ktc": 6000,
+      "offset": 0.12,
+      "comment": "Breakout zone: worst tier for QB risers (bias +1279)"
+    },
+    {
+      "type": "band",
+      "low_ktc": 6000,
+      "high_ktc": 10000,
+      "offset": 0.14,
+      "comment": "Elite tier: increased from 0.08 based on -842 mean bias"
+    }
+  ]
+}

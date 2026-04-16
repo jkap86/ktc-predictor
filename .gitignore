@@ -29,6 +29,17 @@ Thumbs.db
 
 # Local env overrides
 frontend/.env.local
+backend/.env
+.env.local
+
+# Model artifacts (large binary files)
+*.joblib
+backend/iterations/*/models/test_predictions.csv
+
+# Training data (large)
+backend/data/training-data.json
+backend/data/training-data.zip
+backend/data/pff-grades-*.json
 
 # Shell crash dumps
 *.stackdump

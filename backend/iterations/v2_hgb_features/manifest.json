@@ -1,0 +1,8 @@
+{
+  "id": "v2_hgb_features",
+  "name": "HGB v2 (enhanced features)",
+  "description": "HistGradientBoosting with 29 features: adds boom/bust rate, consistency, snap%, position rank, form, offseason momentum",
+  "created": "2026-02-27",
+  "features_count": 29,
+  "positions": ["QB", "RB", "WR", "TE"]
+}
