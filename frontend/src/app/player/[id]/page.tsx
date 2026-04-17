@@ -319,7 +319,7 @@ export default function PlayerPage() {
             </div>
             <div className="flex items-center gap-4">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">PPG:</label>
-              <input type="range" min="0" max="40" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" />
+              <input type="range" min="0" max="25" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" />
               <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">{whatIfPpg}</span>
             </div>
           </div>
