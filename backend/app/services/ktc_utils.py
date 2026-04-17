@@ -119,3 +119,51 @@ def compute_prior_behavioral_features(
             "prior_ktc_volatility": float(season.get("ktc_volatility") or 0.0),
         }
     return None
+
+
+def compute_prior_position_stats(
+    seasons: list[dict],
+    position: str,
+    anchor_year: int,
+    min_games: int = 4,
+) -> dict | None:
+    """Pull position-specific stats from the most-recent completed season
+    before ``anchor_year``. Used by v4+."""
+    for season in sorted(seasons, key=lambda s: s["year"], reverse=True):
+        if season["year"] >= anchor_year:
+            continue
+        games = season.get("games_played", 0) or 0
+        if games < min_games:
+            continue
+        if position == "QB":
+            return {
+                "prior_passing_tds": float(season.get("passing_tds") or 0),
+                "prior_interceptions": float(season.get("interceptions") or 0),
+            }
+        elif position == "RB":
+            return {
+                "prior_carries": float(season.get("carries") or 0),
+                "prior_red_zone_touches": float(season.get("red_zone_touches") or 0),
+            }
+        elif position in ("WR", "TE"):
+            return {
+                "prior_targets": float(season.get("targets") or 0),
+                "prior_red_zone_targets": float(season.get("red_zone_targets") or 0),
+            }
+    return None
+
+
+def compute_momentum_features(
+    seasons: list[dict],
+    anchor_year: int,
+) -> dict | None:
+    """Pull KTC momentum features from the anchor year's season record."""
+    for season in sorted(seasons, key=lambda s: s["year"], reverse=True):
+        if season["year"] == anchor_year:
+            return {
+                "ktc_30d_trend": float(season.get("ktc_30d_trend") or 0),
+                "ktc_90d_trend": float(season.get("ktc_90d_trend") or 0),
+                "momentum_ratio": float(season.get("momentum_ratio") or 0),
+                "max_games_missed_streak": float(season.get("max_games_missed_streak") or 0),
+            }
+    return None

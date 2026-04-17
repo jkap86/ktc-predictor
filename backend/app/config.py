@@ -8,7 +8,7 @@ ITERATIONS_DIR = BASE_DIR / "iterations"
 TRAINING_DATA_PATH = DATA_DIR / "training-data.json"
 
 # Default model iteration (can be overridden via env var)
-DEFAULT_MODEL_ID = os.environ.get("KTC_DEFAULT_MODEL", "v3_hgb_prior_signals")
+DEFAULT_MODEL_ID = os.environ.get("KTC_DEFAULT_MODEL", "v4_hgb_momentum")
 
 # CORS origins - configurable via environment variable for production
 _default_origins = "http://localhost:3002,http://127.0.0.1:3002"
