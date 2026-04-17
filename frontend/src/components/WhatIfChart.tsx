@@ -11,6 +11,7 @@ import {
   ReferenceLine,
   ReferenceDot,
   ComposedChart,
+  Customized,
 } from 'recharts';
 import { predictEos } from '../lib/api';
 import { formatKtc } from '../lib/format';
@@ -255,6 +256,45 @@ export default function WhatIfChart({
             />
           )}
 
+          {/* Shaded confidence bands rendered as SVG polygons */}
+          <Customized
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            component={({ xAxisMap, yAxisMap }: any) => {
+              const xAxis = xAxisMap && Object.values(xAxisMap)[0];
+              const yAxis = yAxisMap && Object.values(yAxisMap)[0];
+              if (!xAxis?.scale || !yAxis?.scale) return null;
+
+              const toX = (v: number) => xAxis.scale(v);
+              const toY = (v: number) => yAxis.scale(v);
+
+              function bandPath(
+                pts: ChartPoint[],
+                lowKey: keyof ChartPoint,
+                highKey: keyof ChartPoint,
+              ): string | null {
+                const valid = pts.filter((p) => p[lowKey] != null && p[highKey] != null);
+                if (valid.length < 2) return null;
+                const upper = valid.map((p) => `${toX(p.ppg)},${toY(p[highKey] as number)}`).join(' ');
+                const lower = [...valid].reverse().map((p) => `${toX(p.ppg)},${toY(p[lowKey] as number)}`).join(' ');
+                return `${upper} ${lower}`;
+              }
+
+              const primaryPath = hasBands ? bandPath(data, 'low', 'high') : null;
+              const comparePath = hasCompare ? bandPath(data, 'compareLow', 'compareHigh') : null;
+
+              return (
+                <g>
+                  {primaryPath && (
+                    <polygon points={primaryPath} fill="rgba(59,130,246,0.12)" stroke="none" />
+                  )}
+                  {comparePath && (
+                    <polygon points={comparePath} fill="rgba(249,115,22,0.10)" stroke="none" />
+                  )}
+                </g>
+              );
+            }}
+          />
+
           {/* Primary prediction curve */}
           <Line
             dataKey="predictedEos"
@@ -265,11 +305,11 @@ export default function WhatIfChart({
             name="predictedEos"
           />
 
-          {/* Primary band boundaries */}
+          {/* Hidden lines for tooltip display of band values */}
           {hasBands && (
             <>
-              <Line dataKey="high" stroke="#93c5fd" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="high" />
-              <Line dataKey="low" stroke="#93c5fd" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="low" />
+              <Line dataKey="high" stroke="transparent" strokeWidth={0} dot={false} isAnimationActive={false} name="high" />
+              <Line dataKey="low" stroke="transparent" strokeWidth={0} dot={false} isAnimationActive={false} name="low" />
             </>
           )}
 
@@ -285,11 +325,11 @@ export default function WhatIfChart({
             />
           )}
 
-          {/* Comparison band boundaries */}
+          {/* Hidden lines for tooltip display of comparison band values */}
           {hasCompare && (
             <>
-              <Line dataKey="compareHigh" stroke="#fdba74" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="compareHigh" />
-              <Line dataKey="compareLow" stroke="#fdba74" strokeWidth={1} strokeDasharray="4 2" dot={false} isAnimationActive={false} name="compareLow" />
+              <Line dataKey="compareHigh" stroke="transparent" strokeWidth={0} dot={false} isAnimationActive={false} name="compareHigh" />
+              <Line dataKey="compareLow" stroke="transparent" strokeWidth={0} dot={false} isAnimationActive={false} name="compareLow" />
             </>
           )}
 
