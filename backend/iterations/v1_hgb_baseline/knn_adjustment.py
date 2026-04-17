@@ -21,7 +21,17 @@ POSITION_BLEND_MULTIPLIERS = {
     "QB": 1.5,  # 50% more KNN influence for QB
     "RB": 1.0,  # Default for RB (variance too high for stronger reliance)
     "WR": 1.2,  # Slight boost for WR
-    "TE": 1.3,  # Moderate boost for TE (stable like QB)
+    "TE": 1.8,  # Strong boost for TE (6k+ bias was -1011, needs aggressive correction)
+}
+
+# Position-specific elite thresholds
+# TE's elite tier starts lower — most "elite" TEs are 4k-6k, not 6k+
+# QB already has a 5500 override in adjust(); these cover the remaining positions
+POSITION_ELITE_THRESHOLDS = {
+    "QB": 5500,
+    "RB": 6000,
+    "WR": 6000,
+    "TE": 4000,  # Lowered from 6000: TE 4k-6k risers have bias +1018, need KNN correction
 }
 
 
@@ -79,8 +89,9 @@ class EliteKNNAdjuster:
         -------
         self
         """
-        # Filter to elite tier for this position
-        mask = (df["position"] == position) & (df["start_ktc"] >= self.elite_threshold)
+        # Filter to elite tier for this position (position-specific threshold)
+        pos_threshold = POSITION_ELITE_THRESHOLDS.get(position, self.elite_threshold)
+        mask = (df["position"] == position) & (df["start_ktc"] >= pos_threshold)
         elite = df[mask].copy()
 
         if len(elite) < self.k:
@@ -168,9 +179,8 @@ class EliteKNNAdjuster:
         float
             Adjusted log_ratio prediction.
         """
-        # QB gets a lower threshold to catch 5.5k-6k "breakout zone" players
-        # This tier has the worst riser under-prediction for QB
-        effective_threshold = 5500 if position == "QB" else self.elite_threshold
+        # Position-specific thresholds (TE starts at 4k, QB at 5.5k)
+        effective_threshold = POSITION_ELITE_THRESHOLDS.get(position, self.elite_threshold)
 
         # No adjustment for non-elite tier
         if start_ktc < effective_threshold:
@@ -228,8 +238,10 @@ class EliteKNNAdjuster:
         # QB trajectories are more stable/predictable, so trust KNN more
         position_multiplier = POSITION_BLEND_MULTIPLIERS.get(position, 1.0)
 
-        # Elite tier boost: 6k+ players benefit more from KNN due to under-prediction
-        elite_multiplier = 1.5 if start_ktc >= 6000 else 1.0
+        # Elite tier boost: players well above their position threshold benefit
+        # more from KNN due to systematic under-prediction at the top
+        high_elite = effective_threshold * 1.5  # e.g. TE: 6000, QB: 8250, RB/WR: 9000
+        elite_multiplier = 1.5 if start_ktc >= high_elite else 1.0
 
         # Modulate blend weight by neighbor distance, games played, position, AND elite tier
         # Closer neighbors = higher effective weight
@@ -238,10 +250,10 @@ class EliteKNNAdjuster:
         effective_weight = base_weight * np.exp(-avg_distance / self.distance_decay)
 
         # Cap effective weight - higher cap for elite tier
-        if start_ktc >= 6000:
-            max_weight = 0.8  # Higher cap for elite tier
-        elif position == "QB":
-            max_weight = 0.7  # QB is more trustworthy
+        if start_ktc >= high_elite:
+            max_weight = 0.8  # Higher cap for deep elite tier
+        elif position in ("QB", "TE"):
+            max_weight = 0.7  # QB/TE trajectories are more predictable via KNN
         else:
             max_weight = 0.6
         effective_weight = min(max_weight, effective_weight)
@@ -268,8 +280,7 @@ class EliteKNNAdjuster:
         list[dict] or None
             List of neighbor info dicts, or None if not applicable.
         """
-        # QB gets a lower threshold (matching adjust() logic)
-        effective_threshold = 5500 if position == "QB" else self.elite_threshold
+        effective_threshold = POSITION_ELITE_THRESHOLDS.get(position, self.elite_threshold)
 
         if start_ktc < effective_threshold:
             return None
