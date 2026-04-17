@@ -36,6 +36,7 @@ export interface Player {
   name: string;
   position: string;
   seasons: PlayerSeason[];
+  live_ktc?: number;
 }
 
 export interface PlayerSummary {

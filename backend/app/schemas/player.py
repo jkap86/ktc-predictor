@@ -39,6 +39,7 @@ class Player(BaseModel):
     name: str
     position: str
     seasons: list[PlayerSeason] = []
+    live_ktc: float | None = None
 
 
 class PlayerSummary(BaseModel):

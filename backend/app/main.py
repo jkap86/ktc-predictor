@@ -4,9 +4,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from app.config import CORS_ORIGINS, DEFAULT_MODEL_ID
 from app.routers import players_router, predictions_router, models_router
 from app.services.model_registry import get_registry
+from app.services.ktc_db import get_pool, close_pool
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +41,16 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to load default model")
         raise
 
+    # Initialize DB pool for live KTC lookups
+    try:
+        await get_pool()
+        logger.info("Database pool initialized")
+    except Exception:
+        logger.warning("Database pool not available — will use training-data KTC values")
+
     yield
+
+    await close_pool()
     logger.info("Shutting down...")
 
 

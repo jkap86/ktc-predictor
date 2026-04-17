@@ -14,6 +14,7 @@ from app.services.ktc_utils import (
     select_baseline_stats,
 )
 from app.services.model_registry import ModelIteration, get_registry
+from app.services.ktc_db import get_latest_ktc
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ def predict_from_inputs(
     }
 
 
-def predict_for_player(
+async def predict_for_player(
     iteration: ModelIteration,
     player_id: str,
     data_loader,
@@ -144,11 +145,22 @@ def predict_for_player(
     if not seasons:
         return None
 
-    # Anchor KTC from training data
+    # Prefer live KTC from database, fall back to training data
+    live_ktc = None
+    try:
+        live_ktc = await get_latest_ktc(player_id)
+    except Exception:
+        pass
+
     anchor = select_anchor_ktc(seasons)
-    if anchor is None:
+    if live_ktc and live_ktc > 0:
+        start_ktc = live_ktc
+        anchor_year = anchor[1] if anchor else max(s["year"] for s in seasons)
+        anchor_source = "live_db"
+    elif anchor:
+        start_ktc, anchor_year, anchor_source = anchor
+    else:
         return None
-    start_ktc, anchor_year, anchor_source = anchor
 
     # Baseline stats
     latest = max(seasons, key=lambda s: s["year"])

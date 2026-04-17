@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api", tags=["predictions"])
 
 
 @router.get("/players/{player_id}/predict", response_model=EOSPredictionResponse)
-def predict_player(
+async def predict_player(
     player_id: str,
     model: Optional[str] = Query(None, description="Model iteration ID"),
 ):
@@ -28,7 +28,7 @@ def predict_player(
         raise HTTPException(status_code=400, detail=str(e))
 
     data_loader = get_data_loader()
-    result = predict_for_player(iteration, player_id, data_loader)
+    result = await predict_for_player(iteration, player_id, data_loader)
 
     if not result:
         raise HTTPException(status_code=404, detail="Player not found")
