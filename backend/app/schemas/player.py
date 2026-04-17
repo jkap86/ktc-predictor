@@ -99,3 +99,27 @@ class ModelInfo(BaseModel):
 class ModelsListResponse(BaseModel):
     models: list[ModelInfo]
     default_model: str
+
+
+class HistoricalPrediction(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    year: int
+    model_version: str
+    start_ktc: float
+    actual_end_ktc: float | None = None
+    predicted_end_ktc: float
+    predicted_delta_ktc: float
+    predicted_pct_change: float
+    low_end_ktc: float | None = None
+    high_end_ktc: float | None = None
+    error: float | None = None
+    games_played: int
+    ppg: float
+
+
+class HistoricalResponse(BaseModel):
+    player_id: str
+    name: str
+    position: str
+    predictions: list[HistoricalPrediction]

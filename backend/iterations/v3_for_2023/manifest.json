@@ -1,0 +1,21 @@
+{
+  "id": "v3_for_2023",
+  "name": "v3 for 2023",
+  "description": "v3 model trained on \u22642022 to predict 2023 season outcomes",
+  "created": "2026-04-17",
+  "predict_year": 2023,
+  "train_max_year": 2022,
+  "features_count": {
+    "QB": 20,
+    "RB": 26,
+    "WR": 26,
+    "TE": 20
+  },
+  "positions": [
+    "QB",
+    "RB",
+    "WR",
+    "TE"
+  ],
+  "temporal": true
+}

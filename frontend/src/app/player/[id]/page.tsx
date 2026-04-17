@@ -8,6 +8,7 @@ import { formatKtc } from '../../../lib/format';
 import { useModel } from '../../../context/ModelContext';
 import WhatIfChart from '../../../components/WhatIfChart';
 import ComparePlayerPicker from '../../../components/ComparePlayerPicker';
+import HistoricalAccuracy from '../../../components/HistoricalAccuracy';
 import type { Player, PlayerSummary, EOSPrediction } from '../../../types/player';
 
 function ConfidenceBand({ prediction }: { prediction: EOSPrediction }) {
@@ -464,6 +465,8 @@ export default function PlayerPage() {
           ) : null}
         </div>
       )}
+
+      <HistoricalAccuracy playerId={playerId} />
     </div>
   );
 }

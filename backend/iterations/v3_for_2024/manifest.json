@@ -1,0 +1,21 @@
+{
+  "id": "v3_for_2024",
+  "name": "v3 for 2024",
+  "description": "v3 model trained on \u22642023 to predict 2024 season outcomes",
+  "created": "2026-04-17",
+  "predict_year": 2024,
+  "train_max_year": 2023,
+  "features_count": {
+    "QB": 20,
+    "RB": 26,
+    "WR": 26,
+    "TE": 20
+  },
+  "positions": [
+    "QB",
+    "RB",
+    "WR",
+    "TE"
+  ],
+  "temporal": true
+}

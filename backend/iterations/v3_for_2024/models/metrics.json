@@ -1,0 +1,38 @@
+{
+  "QB": {
+    "mae": 854.1,
+    "r2": 0.6395,
+    "n_train": 1800,
+    "n_test": 325,
+    "backend": "HGB",
+    "clip_low": -0.9,
+    "clip_high": 0.9
+  },
+  "RB": {
+    "mae": 752.1,
+    "r2": 0.8116,
+    "n_train": 2218,
+    "n_test": 591,
+    "backend": "HGB",
+    "clip_low": -0.9,
+    "clip_high": 0.8
+  },
+  "WR": {
+    "mae": 592.5,
+    "r2": 0.8304,
+    "n_train": 3906,
+    "n_test": 852,
+    "backend": "HGB",
+    "clip_low": -0.8,
+    "clip_high": 1.0
+  },
+  "TE": {
+    "mae": 601.7,
+    "r2": 0.6683,
+    "n_train": 2010,
+    "n_test": 411,
+    "backend": "HGB",
+    "clip_low": -0.7,
+    "clip_high": 0.9
+  }
+}

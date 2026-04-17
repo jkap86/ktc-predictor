@@ -3,6 +3,7 @@ import type {
   PlayerList,
   EOSPrediction,
   EOSPredictRequest,
+  HistoricalResponse,
 } from '../types/player';
 
 const API_BASE = '/api';
@@ -90,6 +91,14 @@ export async function predictEos(
     body: JSON.stringify(payload),
   });
 
+  if (!response.ok) return null;
+  return response.json();
+}
+
+export async function getHistorical(playerId: string): Promise<HistoricalResponse | null> {
+  const response = await fetchWithTimeout(`${API_BASE}/players/${playerId}/historical`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
   if (!response.ok) return null;
   return response.json();
 }

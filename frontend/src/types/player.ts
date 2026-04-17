@@ -92,3 +92,25 @@ export interface ModelsListResponse {
   models: ModelInfo[];
   default_model: string;
 }
+
+export interface HistoricalPrediction {
+  year: number;
+  model_version: string;
+  start_ktc: number;
+  actual_end_ktc: number | null;
+  predicted_end_ktc: number;
+  predicted_delta_ktc: number;
+  predicted_pct_change: number;
+  low_end_ktc: number | null;
+  high_end_ktc: number | null;
+  error: number | null;
+  games_played: number;
+  ppg: number;
+}
+
+export interface HistoricalResponse {
+  player_id: string;
+  name: string;
+  position: string;
+  predictions: HistoricalPrediction[];
+}

@@ -13,7 +13,7 @@ from app.services.ktc_utils import (
     select_anchor_ktc,
     select_baseline_stats,
 )
-from app.services.model_registry import ModelIteration
+from app.services.model_registry import ModelIteration, get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -200,3 +200,104 @@ def predict_for_player(
     result["anchor_source"] = anchor_source
     result["baseline_year"] = baseline_year
     return result
+
+
+def predict_historical(
+    player_id: str,
+    data_loader,
+) -> list[dict]:
+    """Predict EOS KTC for a player across all available temporal models.
+
+    For each temporal iteration (v3_for_2021, v3_for_2022, etc.), uses
+    the player's actual start_ktc and stats for that year's season,
+    then compares against the actual end_ktc.
+
+    Returns a list of dicts sorted by year, each with the prediction
+    and actual outcome for that season.
+    """
+    registry = get_registry()
+    player = data_loader.get_player_by_id(player_id)
+    if not player:
+        return []
+
+    seasons = player.get("seasons", [])
+    seasons_by_year = {s["year"]: s for s in seasons}
+
+    results = []
+
+    for it_info in registry.list_iterations():
+        if not it_info.get("temporal"):
+            continue
+
+        predict_year = it_info.get("predict_year")
+        if not predict_year or predict_year not in seasons_by_year:
+            continue
+
+        season = seasons_by_year[predict_year]
+        start_ktc = season.get("start_ktc")
+        end_ktc = season.get("end_ktc")
+        games = season.get("games_played", 0) or 0
+        fp = season.get("fantasy_points", 0) or 0
+        ppg = fp / games if games > 0 else 0.0
+        age = season.get("age")
+
+        if not start_ktc or start_ktc <= 0:
+            continue
+
+        try:
+            iteration = registry.get(it_info["id"])
+        except KeyError:
+            continue
+
+        # Prior-season features relative to predict_year
+        prior_end_ktc = None
+        max_ktc_prior = None
+        prior_ppg_val = None
+        if player["position"] in ("QB", "WR", "TE"):
+            prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, predict_year)
+            prior_ppg_val = compute_prior_ppg(seasons, predict_year)
+
+        prior_behavioral = compute_prior_behavioral_features(seasons, predict_year) or {}
+
+        try:
+            pred = predict_from_inputs(
+                iteration=iteration,
+                position=player["position"],
+                start_ktc=start_ktc,
+                games_played=games,
+                ppg=ppg,
+                age=float(age) if age is not None else None,
+                prior_end_ktc=prior_end_ktc,
+                max_ktc_prior=max_ktc_prior,
+                prior_ppg=prior_ppg_val,
+                prior_weekly_fp_cv=prior_behavioral.get("prior_weekly_fp_cv"),
+                prior_boom_rate=prior_behavioral.get("prior_boom_rate"),
+                prior_bust_rate=prior_behavioral.get("prior_bust_rate"),
+                prior_snap_pct=prior_behavioral.get("prior_snap_pct"),
+                prior_ktc_volatility=prior_behavioral.get("prior_ktc_volatility"),
+            )
+        except Exception:
+            continue
+
+        actual_end_ktc = end_ktc if end_ktc and 0 < end_ktc < 9999 else None
+        error = None
+        if actual_end_ktc is not None:
+            error = round(pred["predicted_end_ktc"] - actual_end_ktc, 1)
+
+        results.append({
+            "year": predict_year,
+            "model_version": it_info["id"],
+            "start_ktc": round(start_ktc, 1),
+            "actual_end_ktc": round(actual_end_ktc, 1) if actual_end_ktc else None,
+            "predicted_end_ktc": pred["predicted_end_ktc"],
+            "predicted_delta_ktc": pred["predicted_delta_ktc"],
+            "predicted_pct_change": pred["predicted_pct_change"],
+            "low_end_ktc": pred.get("low_end_ktc"),
+            "high_end_ktc": pred.get("high_end_ktc"),
+            "error": error,
+            "games_played": games,
+            "ppg": round(ppg, 1),
+        })
+
+    results.sort(key=lambda r: r["year"])
+    return results
