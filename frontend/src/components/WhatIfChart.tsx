@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   ResponsiveContainer,
+  Area,
   Line,
   XAxis,
   YAxis,
@@ -11,7 +12,6 @@ import {
   ReferenceLine,
   ReferenceDot,
   ComposedChart,
-  Customized,
 } from 'recharts';
 import { predictEos } from '../lib/api';
 import { formatKtc } from '../lib/format';
@@ -47,6 +47,9 @@ interface ChartPoint {
   compareEos: number | null;
   compareLow: number | null;
   compareHigh: number | null;
+  // For stacked area band rendering: [low, high] tuple
+  bandRange: [number, number] | null;
+  compareBandRange: [number, number] | null;
 }
 
 const PPG_STEPS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40];
@@ -140,6 +143,8 @@ export default function WhatIfChart({
           compareEos: c?.eos ?? null,
           compareLow: c?.low ?? null,
           compareHigh: c?.high ?? null,
+          bandRange: p?.low != null && p?.high != null ? [p.low, p.high] : null,
+          compareBandRange: c?.low != null && c?.high != null ? [c.low, c.high] : null,
         };
       });
 
@@ -256,44 +261,27 @@ export default function WhatIfChart({
             />
           )}
 
-          {/* Shaded confidence bands rendered as SVG polygons */}
-          <Customized
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            component={({ xAxisMap, yAxisMap }: any) => {
-              const xAxis = xAxisMap && Object.values(xAxisMap)[0];
-              const yAxis = yAxisMap && Object.values(yAxisMap)[0];
-              if (!xAxis?.scale || !yAxis?.scale) return null;
-
-              const toX = (v: number) => xAxis.scale(v);
-              const toY = (v: number) => yAxis.scale(v);
-
-              function bandPath(
-                pts: ChartPoint[],
-                lowKey: keyof ChartPoint,
-                highKey: keyof ChartPoint,
-              ): string | null {
-                const valid = pts.filter((p) => p[lowKey] != null && p[highKey] != null);
-                if (valid.length < 2) return null;
-                const upper = valid.map((p) => `${toX(p.ppg)},${toY(p[highKey] as number)}`).join(' ');
-                const lower = [...valid].reverse().map((p) => `${toX(p.ppg)},${toY(p[lowKey] as number)}`).join(' ');
-                return `${upper} ${lower}`;
-              }
-
-              const primaryPath = hasBands ? bandPath(data, 'low', 'high') : null;
-              const comparePath = hasCompare ? bandPath(data, 'compareLow', 'compareHigh') : null;
-
-              return (
-                <g>
-                  {primaryPath && (
-                    <polygon points={primaryPath} fill="rgba(59,130,246,0.12)" stroke="none" />
-                  )}
-                  {comparePath && (
-                    <polygon points={comparePath} fill="rgba(249,115,22,0.10)" stroke="none" />
-                  )}
-                </g>
-              );
-            }}
-          />
+          {/* Shaded confidence bands using Area with [low, high] range */}
+          {hasBands && (
+            <Area
+              dataKey="bandRange"
+              stroke="none"
+              fill="rgba(59,130,246,0.12)"
+              isAnimationActive={false}
+              name="bandRange"
+              tooltipType="none"
+            />
+          )}
+          {hasCompare && (
+            <Area
+              dataKey="compareBandRange"
+              stroke="none"
+              fill="rgba(249,115,22,0.10)"
+              isAnimationActive={false}
+              name="compareBandRange"
+              tooltipType="none"
+            />
+          )}
 
           {/* Primary prediction curve */}
           <Line
