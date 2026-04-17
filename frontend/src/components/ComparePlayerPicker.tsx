@@ -5,8 +5,8 @@ import { searchPlayers } from '../lib/api';
 import type { PlayerSummary } from '../types/player';
 
 interface ComparePlayerPickerProps {
-  /** Position to filter by (only show same-position players) */
-  position: string;
+  /** Position to optionally filter by. If omitted, shows all positions. */
+  position?: string;
   onSelect: (player: PlayerSummary | null) => void;
   selected: PlayerSummary | null;
 }
@@ -30,7 +30,7 @@ export default function ComparePlayerPicker({
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const data = await searchPlayers(query, position, 8, 'ktc', 'desc');
+        const data = await searchPlayers(query, position || undefined, 8, 'ktc', 'desc');
         setResults(data.players);
       } catch {
         setResults([]);

@@ -306,7 +306,6 @@ export default function PlayerPage() {
             </h3>
             <div className="w-64">
               <ComparePlayerPicker
-                position={player.position}
                 selected={comparePlayer}
                 onSelect={setComparePlayer}
               />
