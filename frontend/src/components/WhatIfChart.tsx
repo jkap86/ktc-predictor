@@ -13,7 +13,7 @@ import {
   ReferenceDot,
   ComposedChart,
 } from 'recharts';
-import { predictEos } from '../lib/api';
+import { predictEosBatch } from '../lib/api';
 import { formatKtc } from '../lib/format';
 
 interface PlayerCurveConfig {
@@ -61,36 +61,38 @@ async function fetchCurveForPlayer(
 ): Promise<Map<number, { eos: number | null; low: number | null; high: number | null }>> {
   const results = new Map<number, { eos: number | null; low: number | null; high: number | null }>();
 
-  const promises = PPG_STEPS.map(async (ppg) => {
-    try {
-      const result = await predictEos(
-        {
-          position: config.position,
-          start_ktc: config.startKtc,
-          games_played: gamesPlayed,
-          ppg,
-          age: config.age,
-          draft_pick: config.draftPick,
-          years_remaining: config.yearsRemaining,
-          weeks_missed: config.weeksMissed,
-        },
-        modelId,
-      );
-      return {
-        ppg,
-        eos: result?.predicted_end_ktc ?? null,
-        low: result?.low_end_ktc ?? null,
-        high: result?.high_end_ktc ?? null,
-      };
-    } catch {
-      return { ppg, eos: null, low: null, high: null };
-    }
-  });
+  try {
+    const batch = await predictEosBatch(
+      {
+        position: config.position,
+        start_ktc: config.startKtc,
+        games_played: gamesPlayed,
+        ppg_values: PPG_STEPS,
+        age: config.age,
+        draft_pick: config.draftPick,
+        years_remaining: config.yearsRemaining,
+        weeks_missed: config.weeksMissed,
+      },
+      modelId,
+    );
 
-  const settled = await Promise.all(promises);
-  for (const pt of settled) {
-    results.set(pt.ppg, { eos: pt.eos, low: pt.low, high: pt.high });
+    if (batch) {
+      batch.predictions.forEach((pred, i) => {
+        const ppg = PPG_STEPS[i];
+        results.set(ppg, {
+          eos: pred.predicted_end_ktc || null,
+          low: pred.low_end_ktc ?? null,
+          high: pred.high_end_ktc ?? null,
+        });
+      });
+    }
+  } catch {
+    // Batch failed — fill with nulls
+    for (const ppg of PPG_STEPS) {
+      results.set(ppg, { eos: null, low: null, high: null });
+    }
   }
+
   return results;
 }
 

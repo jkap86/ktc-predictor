@@ -94,6 +94,22 @@ export interface ModelsListResponse {
   default_model: string;
 }
 
+export interface EOSBatchRequest {
+  position: string;
+  start_ktc: number;
+  games_played: number;
+  ppg_values: number[];
+  age?: number;
+  weeks_missed?: number;
+  draft_pick?: number;
+  years_remaining?: number;
+}
+
+export interface EOSBatchResponse {
+  predictions: EOSPrediction[];
+  model_version: string;
+}
+
 export interface HistoricalPrediction {
   year: number;
   model_version: string;

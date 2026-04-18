@@ -3,6 +3,8 @@ import type {
   PlayerList,
   EOSPrediction,
   EOSPredictRequest,
+  EOSBatchRequest,
+  EOSBatchResponse,
   HistoricalResponse,
 } from '../types/player';
 
@@ -93,6 +95,39 @@ export async function predictEos(
 
   if (!response.ok) return null;
   return response.json();
+}
+
+export async function predictEosBatch(
+  payload: EOSBatchRequest,
+  modelId?: string | null,
+): Promise<EOSBatchResponse | null> {
+  const mp = modelParam(modelId);
+  const qs = mp ? `?${mp}` : '';
+  const response = await fetchWithTimeout(`${API_BASE}/predict/eos/batch${qs}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+export interface TopMover {
+  player_id: string;
+  name: string;
+  position: string;
+  start_ktc: number;
+  predicted_end_ktc: number;
+  predicted_delta_ktc: number;
+  predicted_pct_change: number;
+}
+
+export async function getTopMovers(limit: number = 10): Promise<{ risers: TopMover[]; fallers: TopMover[] } | null> {
+  try {
+    return await fetchApi(`/top-movers?limit=${limit}`);
+  } catch {
+    return null;
+  }
 }
 
 export async function getHistorical(playerId: string): Promise<HistoricalResponse | null> {

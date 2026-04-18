@@ -221,6 +221,16 @@ export default function PlayerPage() {
               {player.position}
             </span>
           </div>
+          {(player.live_ktc || prediction) && (
+            <div className="text-right">
+              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                {formatKtc(player.live_ktc ?? prediction?.start_ktc ?? 0)}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {player.live_ktc ? 'Live KTC' : 'KTC Value'}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -300,11 +310,11 @@ export default function PlayerPage() {
 
       {prediction && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               What-If Scenario
             </h3>
-            <div className="w-64">
+            <div className="w-full sm:w-64">
               <ComparePlayerPicker
                 selected={comparePlayer}
                 onSelect={setComparePlayer}

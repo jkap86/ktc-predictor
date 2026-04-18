@@ -102,6 +102,24 @@ class ModelsListResponse(BaseModel):
     default_model: str
 
 
+class EOSBatchRequest(BaseModel):
+    position: Literal["QB", "RB", "WR", "TE"]
+    start_ktc: float = Field(ge=0, le=99999)
+    games_played: int = Field(ge=0, le=17)
+    ppg_values: list[float] = Field(description="List of PPG values to predict for")
+    age: float | None = Field(None, ge=18, le=50)
+    weeks_missed: float | None = Field(None, ge=0, le=17)
+    draft_pick: float | None = Field(None, ge=1, le=260)
+    years_remaining: float | None = Field(None, ge=0, le=6)
+
+
+class EOSBatchResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    predictions: list[EOSPredictionResponse]
+    model_version: str = ""
+
+
 class HistoricalPrediction(BaseModel):
     model_config = {"protected_namespaces": ()}
 

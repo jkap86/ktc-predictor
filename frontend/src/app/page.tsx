@@ -1,6 +1,7 @@
 'use client';
 
 import PlayerSearch from '../components/PlayerSearch';
+import TopMovers from '../components/TopMovers';
 
 export default function Home() {
   return (
@@ -13,6 +14,7 @@ export default function Home() {
           Search for players to see their predicted end-of-season KTC values
         </p>
       </div>
+      <TopMovers />
       <PlayerSearch />
     </div>
   );
