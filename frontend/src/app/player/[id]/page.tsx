@@ -12,27 +12,138 @@ import HistoricalAccuracy from '../../../components/HistoricalAccuracy';
 import PlayerComps from '../../../components/PlayerComps';
 import type { Player, PlayerSummary, EOSPrediction } from '../../../types/player';
 
-function ConfidenceBand({ prediction }: { prediction: EOSPrediction }) {
+function ConfidenceBand({ prediction, color = 'blue' }: { prediction: EOSPrediction; color?: 'blue' | 'orange' }) {
   if (!prediction.low_end_ktc || !prediction.high_end_ktc) return null;
+  const bg = color === 'orange' ? 'bg-orange-50 dark:bg-orange-900/20' : 'bg-blue-50 dark:bg-blue-900/20';
+  const border = color === 'orange' ? 'border-orange-100 dark:border-orange-800' : 'border-blue-100 dark:border-blue-800';
+  const label = color === 'orange' ? 'text-orange-700 dark:text-orange-300' : 'text-blue-700 dark:text-blue-300';
+  const bar = color === 'orange' ? 'bg-orange-100 dark:bg-orange-800' : 'bg-blue-100 dark:bg-blue-800';
+  const dot = color === 'orange' ? 'bg-orange-500 dark:bg-orange-400' : 'bg-blue-500 dark:bg-blue-400';
   return (
-    <div className="mt-3 px-4 py-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-      <div className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">
-        Confidence Range (p20 - p80)
-      </div>
-      <div className="flex items-center gap-3 text-sm">
+    <div className={`mt-2 px-3 py-2 ${bg} rounded-lg border ${border}`}>
+      <div className={`text-xs font-medium ${label} mb-1`}>p20 - p80</div>
+      <div className="flex items-center gap-2 text-xs">
         <span className="text-gray-600 dark:text-gray-400">{formatKtc(prediction.low_end_ktc)}</span>
-        <div className="flex-1 h-2 bg-blue-100 dark:bg-blue-800 rounded-full relative">
+        <div className={`flex-1 h-1.5 ${bar} rounded-full relative`}>
           <div
-            className="absolute h-2 bg-blue-500 dark:bg-blue-400 rounded-full"
+            className={`absolute h-1.5 ${dot} rounded-full`}
             style={{
               left: `${Math.max(0, Math.min(100, ((prediction.predicted_end_ktc - prediction.low_end_ktc) / (prediction.high_end_ktc - prediction.low_end_ktc)) * 100))}%`,
-              width: '4px',
+              width: '3px',
               transform: 'translateX(-50%)',
             }}
           />
         </div>
         <span className="text-gray-600 dark:text-gray-400">{formatKtc(prediction.high_end_ktc)}</span>
       </div>
+    </div>
+  );
+}
+
+function StatCard({ value, label, colored }: { value: string; label: string; colored?: boolean }) {
+  return (
+    <div className="text-center p-2">
+      <div className={`text-lg font-bold ${colored ? '' : 'text-gray-900 dark:text-white'}`}>{value}</div>
+      <div className="text-xs text-gray-500 dark:text-gray-400">{label}</div>
+    </div>
+  );
+}
+
+function PredictionColumn({
+  player,
+  prediction,
+  whatIfResult,
+  whatIfLoading,
+  color = 'blue',
+  latestSeason,
+}: {
+  player: Player;
+  prediction: EOSPrediction | null;
+  whatIfResult: EOSPrediction | null;
+  whatIfLoading: boolean;
+  color?: 'blue' | 'orange';
+  latestSeason: { year: number; fantasy_points: number; games_played: number; age: number; start_position_rank: number } | null;
+}) {
+  const accent = color === 'orange' ? 'text-orange-500 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400';
+  const borderAccent = color === 'orange' ? 'border-orange-200 dark:border-orange-800' : 'border-blue-200 dark:border-blue-800';
+
+  return (
+    <div className="flex-1 min-w-0 space-y-4">
+      {/* Player header */}
+      <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border ${borderAccent} p-4`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className={`text-xl font-bold truncate ${accent}`}>{player.name}</h2>
+            <span className="inline-block px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full mt-1 text-xs font-medium">
+              {player.position}
+            </span>
+          </div>
+          <div className="text-right shrink-0">
+            <div className={`text-2xl font-bold ${accent}`}>
+              {formatKtc(player.live_ktc ?? prediction?.start_ktc ?? 0)}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {player.live_ktc ? 'Live KTC' : 'KTC'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* EOS Prediction */}
+      {prediction && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+          <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">EOS Prediction</div>
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard value={formatKtc(prediction.predicted_end_ktc)} label="Predicted EOS" />
+            <StatCard
+              value={`${prediction.predicted_pct_change >= 0 ? '+' : ''}${prediction.predicted_pct_change.toFixed(1)}%`}
+              label="Change"
+              colored
+            />
+          </div>
+          <ConfidenceBand prediction={prediction} color={color} />
+        </div>
+      )}
+
+      {/* What-If Result */}
+      {whatIfLoading ? (
+        <div className="flex justify-center py-4">
+          <div className="w-5 h-5 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
+        </div>
+      ) : whatIfResult ? (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+          <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">What-If Result</div>
+          <div className="grid grid-cols-3 gap-2">
+            <StatCard value={formatKtc(whatIfResult.predicted_end_ktc)} label="EOS" />
+            <StatCard
+              value={`${whatIfResult.predicted_delta_ktc >= 0 ? '+' : ''}${whatIfResult.predicted_delta_ktc.toLocaleString()}`}
+              label="Delta"
+              colored
+            />
+            <StatCard
+              value={`${whatIfResult.predicted_pct_change >= 0 ? '+' : ''}${whatIfResult.predicted_pct_change.toFixed(1)}%`}
+              label="% Change"
+              colored
+            />
+          </div>
+          <ConfidenceBand prediction={whatIfResult} color={color} />
+        </div>
+      ) : null}
+
+      {/* Season Stats */}
+      {latestSeason && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+          <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+            {latestSeason.year} Season
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard value={latestSeason.fantasy_points.toFixed(1)} label="FP" />
+            <StatCard value={String(latestSeason.games_played)} label="GP" />
+            <StatCard value={String(latestSeason.age)} label="Age" />
+            <StatCard value={`#${latestSeason.start_position_rank}`} label="Pos Rank" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -54,16 +165,10 @@ export default function PlayerPage() {
   const [whatIfLoading, setWhatIfLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Advanced inputs
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [advAge, setAdvAge] = useState<number | undefined>(undefined);
-  const [advDraftPick, setAdvDraftPick] = useState<number | undefined>(undefined);
-  const [advYearsLeft, setAdvYearsLeft] = useState<number | undefined>(undefined);
-  const [advWeeksMissed, setAdvWeeksMissed] = useState<number | undefined>(undefined);
-
   // Compare player
   const [comparePlayer, setComparePlayer] = useState<PlayerSummary | null>(null);
   const [compareData, setCompareData] = useState<Player | null>(null);
+  const [comparePrediction, setComparePrediction] = useState<EOSPrediction | null>(null);
   const [compareResult, setCompareResult] = useState<EOSPrediction | null>(null);
 
   useEffect(() => {
@@ -80,7 +185,6 @@ export default function PlayerPage() {
             ? latest.fantasy_points / latest.games_played
             : 15;
           setWhatIfPpg(Math.round(ppg * 2) / 2);
-          setAdvAge(latest.age);
         }
 
         const predictionData = await getPrediction(playerId, selectedModelId);
@@ -97,10 +201,11 @@ export default function PlayerPage() {
     fetchData();
   }, [playerId, selectedModelId]);
 
-  // Fetch compare player details when selected
+  // Fetch compare player
   useEffect(() => {
     if (!comparePlayer) {
       setCompareData(null);
+      setComparePrediction(null);
       setCompareResult(null);
       return;
     }
@@ -108,22 +213,25 @@ export default function PlayerPage() {
       try {
         const pd = await getPlayer(comparePlayer.player_id);
         setCompareData(pd);
+        const pred = await getPrediction(comparePlayer.player_id, selectedModelId);
+        setComparePrediction(pred);
       } catch {
         setCompareData(null);
+        setComparePrediction(null);
       }
     })();
-  }, [comparePlayer]);
+  }, [comparePlayer, selectedModelId]);
 
-  // Run what-if for compare player whenever inputs change
+  // What-if for compare player
   useEffect(() => {
-    if (!compareData || !prediction) {
+    if (!compareData || !comparePlayer) {
       setCompareResult(null);
       return;
     }
+    const compareStartKtc = comparePlayer.latest_ktc ?? comparePrediction?.start_ktc ?? 5000;
     const latestCompare = compareData.seasons.length > 0
       ? compareData.seasons.reduce((a, b) => (a.year > b.year ? a : b))
       : null;
-    const compareStartKtc = comparePlayer?.latest_ktc ?? prediction.start_ktc;
 
     (async () => {
       try {
@@ -142,9 +250,9 @@ export default function PlayerPage() {
         setCompareResult(null);
       }
     })();
-  }, [compareData, comparePlayer, prediction, whatIfGames, whatIfPpg, selectedModelId]);
+  }, [compareData, comparePlayer, comparePrediction, whatIfGames, whatIfPpg, selectedModelId]);
 
-  // Debounced what-if prediction
+  // Primary what-if
   const fetchWhatIf = useCallback(async () => {
     if (!prediction) return;
     setWhatIfLoading(true);
@@ -155,28 +263,22 @@ export default function PlayerPage() {
           start_ktc: prediction.start_ktc,
           games_played: whatIfGames,
           ppg: whatIfPpg,
-          age: advAge,
-          draft_pick: advDraftPick,
-          years_remaining: advYearsLeft,
-          weeks_missed: advWeeksMissed,
         },
         selectedModelId,
       );
       setWhatIfResult(result);
     } catch {
-      // What-if prediction failed
+      // failed
     } finally {
       setWhatIfLoading(false);
     }
-  }, [prediction, whatIfGames, whatIfPpg, advAge, advDraftPick, advYearsLeft, advWeeksMissed, selectedModelId]);
+  }, [prediction, whatIfGames, whatIfPpg, selectedModelId]);
 
   useEffect(() => {
     if (!prediction) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(fetchWhatIf, 200);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [fetchWhatIf, prediction]);
 
   if (loading) {
@@ -191,206 +293,79 @@ export default function PlayerPage() {
     return (
       <div className="text-center py-12">
         <div className="text-red-500 dark:text-red-400 mb-4">{error || 'Player not found'}</div>
-        <Link href="/" className="text-blue-600 dark:text-blue-400 hover:text-blue-700">
-          Back to search
-        </Link>
+        <Link href="/" className="text-blue-600 dark:text-blue-400 hover:text-blue-700">Back to search</Link>
       </div>
     );
   }
 
-  const latestSeason =
-    player.seasons.length > 0
-      ? player.seasons.reduce((a, b) => (a.year > b.year ? a : b))
-      : null;
+  const latestSeason = player.seasons.length > 0
+    ? player.seasons.reduce((a, b) => (a.year > b.year ? a : b))
+    : null;
+
+  const compareLatest = compareData?.seasons.length
+    ? compareData.seasons.reduce((a, b) => (a.year > b.year ? a : b))
+    : null;
+
+  const hasCompare = !!compareData && !!comparePlayer;
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-4">
+    <div className="space-y-6">
+      {/* Back + Compare picker row */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <Link
           href="/"
-          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 transition-colors"
+          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 transition-colors text-sm"
         >
           &larr; Back
         </Link>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{player.name}</h1>
-            <span className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full mt-2 font-medium">
-              {player.position}
-            </span>
-          </div>
-          {(player.live_ktc || prediction) && (
-            <div className="text-right">
-              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                {formatKtc(player.live_ktc ?? prediction?.start_ktc ?? 0)}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {player.live_ktc ? 'Live KTC' : 'KTC Value'}
-              </div>
-            </div>
-          )}
+        <div className="w-full sm:w-72">
+          <ComparePlayerPicker
+            selected={comparePlayer}
+            onSelect={setComparePlayer}
+          />
         </div>
       </div>
 
+      {/* Side-by-side player columns */}
+      <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 max-w-lg'}`}>
+        <PredictionColumn
+          player={player}
+          prediction={prediction}
+          whatIfResult={whatIfResult}
+          whatIfLoading={whatIfLoading}
+          color="blue"
+          latestSeason={latestSeason}
+        />
+        {hasCompare && compareData && (
+          <PredictionColumn
+            player={compareData}
+            prediction={comparePrediction}
+            whatIfResult={compareResult}
+            whatIfLoading={false}
+            color="orange"
+            latestSeason={compareLatest}
+          />
+        )}
+      </div>
+
+      {/* Shared What-If controls + chart */}
       {prediction && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              End-of-Season Prediction
-            </h3>
-            <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full font-mono">
-              {prediction.model_version}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {formatKtc(prediction.start_ktc)}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Current KTC</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {formatKtc(prediction.predicted_end_ktc)}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className={`text-2xl font-bold ${prediction.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                {prediction.predicted_delta_ktc >= 0 ? '+' : ''}{prediction.predicted_delta_ktc.toLocaleString()}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Delta</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className={`text-2xl font-bold ${prediction.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                {prediction.predicted_pct_change >= 0 ? '+' : ''}{prediction.predicted_pct_change.toFixed(1)}%
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">% Change</div>
-            </div>
-          </div>
-          <ConfidenceBand prediction={prediction} />
-        </div>
-      )}
-
-      {latestSeason && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Latest Season Stats ({latestSeason.year})
+            What-If Scenario
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {latestSeason.fantasy_points.toFixed(1)}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Fantasy Points</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {latestSeason.games_played}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Games Played</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {latestSeason.age}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Age</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                #{latestSeason.start_position_rank}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Position Rank</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <PlayerComps playerId={playerId} />
-
-      {prediction && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              What-If Scenario
-            </h3>
-            <div className="w-full sm:w-64">
-              <ComparePlayerPicker
-                selected={comparePlayer}
-                onSelect={setComparePlayer}
-              />
-            </div>
-          </div>
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">Games:</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-20">Games:</label>
               <input type="range" min="0" max="17" value={whatIfGames} onChange={(e) => setWhatIfGames(parseInt(e.target.value))} className="flex-1" />
-              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">{whatIfGames}</span>
+              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-10 text-center">{whatIfGames}</span>
             </div>
             <div className="flex items-center gap-4">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-24">PPG:</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 w-20">PPG:</label>
               <input type="range" min="0" max="25" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" />
-              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-12 text-center">{whatIfPpg}</span>
+              <span className="text-lg font-bold text-blue-600 dark:text-blue-400 w-10 text-center">{whatIfPpg}</span>
             </div>
           </div>
-
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1"
-          >
-            <svg className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-            Advanced inputs
-          </button>
-
-          {showAdvanced && (
-            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Age</label>
-                <input
-                  type="number" min="18" max="45" step="1"
-                  value={advAge ?? ''}
-                  onChange={(e) => setAdvAge(e.target.value ? Number(e.target.value) : undefined)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                  placeholder="-"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Draft Pick</label>
-                <input
-                  type="number" min="1" max="260" step="1"
-                  value={advDraftPick ?? ''}
-                  onChange={(e) => setAdvDraftPick(e.target.value ? Number(e.target.value) : undefined)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                  placeholder="-"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Contract Yrs</label>
-                <input
-                  type="number" min="0" max="6" step="1"
-                  value={advYearsLeft ?? ''}
-                  onChange={(e) => setAdvYearsLeft(e.target.value ? Number(e.target.value) : undefined)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                  placeholder="-"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Weeks Missed</label>
-                <input
-                  type="number" min="0" max="17" step="1"
-                  value={advWeeksMissed ?? ''}
-                  onChange={(e) => setAdvWeeksMissed(e.target.value ? Number(e.target.value) : undefined)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                  placeholder="-"
-                />
-              </div>
-            </div>
-          )}
 
           <WhatIfChart
             position={prediction.position}
@@ -398,87 +373,31 @@ export default function PlayerPage() {
             gamesPlayed={whatIfGames}
             currentPpg={whatIfPpg}
             modelId={selectedModelId}
-            age={advAge}
-            draftPick={advDraftPick}
-            yearsRemaining={advYearsLeft}
-            weeksMissed={advWeeksMissed}
-            compare={compareData && comparePlayer ? {
+            compare={hasCompare && compareData && comparePlayer ? {
               name: comparePlayer.name,
               position: compareData.position,
               startKtc: comparePlayer.latest_ktc ?? prediction.start_ktc,
-              age: compareData.seasons.length > 0
-                ? compareData.seasons.reduce((a, b) => (a.year > b.year ? a : b)).age
-                : undefined,
+              age: compareLatest?.age,
             } : undefined}
           />
-
-          {whatIfLoading ? (
-            <div className="flex justify-center items-center py-6">
-              <div className="w-6 h-6 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
-            </div>
-          ) : whatIfResult ? (
-            <div className="mt-4 space-y-3">
-              {/* Primary player results */}
-              <div>
-                {comparePlayer && (
-                  <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">{player.name}</div>
-                )}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className="text-xl font-bold text-gray-900 dark:text-white">
-                      {formatKtc(whatIfResult.predicted_end_ktc)}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className={`text-xl font-bold ${whatIfResult.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {whatIfResult.predicted_delta_ktc >= 0 ? '+' : ''}{whatIfResult.predicted_delta_ktc.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Delta</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className={`text-xl font-bold ${whatIfResult.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {whatIfResult.predicted_pct_change >= 0 ? '+' : ''}{whatIfResult.predicted_pct_change.toFixed(1)}%
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">% Change</div>
-                  </div>
-                </div>
-                <ConfidenceBand prediction={whatIfResult} />
-              </div>
-
-              {/* Comparison player results */}
-              {compareResult && comparePlayer && (
-                <div>
-                  <div className="text-xs font-medium text-orange-500 dark:text-orange-400 mb-1">{comparePlayer.name}</div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800/30">
-                      <div className="text-xl font-bold text-gray-900 dark:text-white">
-                        {formatKtc(compareResult.predicted_end_ktc)}
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Predicted EOS</div>
-                    </div>
-                    <div className="text-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800/30">
-                      <div className={`text-xl font-bold ${compareResult.predicted_delta_ktc >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {compareResult.predicted_delta_ktc >= 0 ? '+' : ''}{compareResult.predicted_delta_ktc.toLocaleString()}
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Delta</div>
-                    </div>
-                    <div className="text-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800/30">
-                      <div className={`text-xl font-bold ${compareResult.predicted_pct_change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {compareResult.predicted_pct_change >= 0 ? '+' : ''}{compareResult.predicted_pct_change.toFixed(1)}%
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">% Change</div>
-                    </div>
-                  </div>
-                  <ConfidenceBand prediction={compareResult} />
-                </div>
-              )}
-            </div>
-          ) : null}
         </div>
       )}
 
-      <HistoricalAccuracy playerId={playerId} />
+      {/* Side-by-side Comps */}
+      <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+        <PlayerComps playerId={playerId} />
+        {hasCompare && comparePlayer && (
+          <PlayerComps playerId={comparePlayer.player_id} />
+        )}
+      </div>
+
+      {/* Side-by-side Historical */}
+      <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+        <HistoricalAccuracy playerId={playerId} />
+        {hasCompare && comparePlayer && (
+          <HistoricalAccuracy playerId={comparePlayer.player_id} />
+        )}
+      </div>
     </div>
   );
 }
