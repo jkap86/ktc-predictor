@@ -302,8 +302,8 @@ export default function PlayerPage() {
 
       {/* ── SECTION: Comps ── */}
       <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
-        <PlayerComps playerId={playerId} />
-        {hasCompare && comparePlayer && <PlayerComps playerId={comparePlayer.player_id} />}
+        <PlayerComps playerId={playerId} modelId={selectedModelId} />
+        {hasCompare && comparePlayer && <PlayerComps playerId={comparePlayer.player_id} modelId={selectedModelId} />}
       </div>
 
       {/* ── SECTION: Historical ── */}

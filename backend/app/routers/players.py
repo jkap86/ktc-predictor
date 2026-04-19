@@ -91,6 +91,7 @@ def get_positions():
 async def player_comps(
     player_id: str,
     k: int = Query(10, ge=1, le=25, description="Number of comps"),
+    model: Optional[str] = Query(None, description="Model iteration ID for feature weighting"),
 ):
     """Find historical comparable player-seasons based on model inputs."""
     data_loader = get_data_loader()
@@ -146,7 +147,7 @@ async def player_comps(
     if prior and (prior.get("games_played", 0) or 0) > 0:
         prior_ppg = (prior.get("fantasy_points", 0) or 0) / prior["games_played"]
 
-    comps_index = get_comps_index()
+    comps_index = get_comps_index(model)
     comps = comps_index.find_comps(
         position=pos,
         start_ktc=start_ktc,

@@ -7,9 +7,10 @@ import { formatKtc } from '../lib/format';
 
 interface PlayerCompsProps {
   playerId: string;
+  modelId?: string | null;
 }
 
-export default function PlayerComps({ playerId }: PlayerCompsProps) {
+export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   const [comps, setComps] = useState<CompPlayer[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -17,7 +18,7 @@ export default function PlayerComps({ playerId }: PlayerCompsProps) {
     (async () => {
       setLoading(true);
       try {
-        const data = await getComps(playerId, 10);
+        const data = await getComps(playerId, 10, modelId);
         setComps(data?.comps ?? []);
       } catch {
         setComps([]);
@@ -25,7 +26,7 @@ export default function PlayerComps({ playerId }: PlayerCompsProps) {
         setLoading(false);
       }
     })();
-  }, [playerId]);
+  }, [playerId, modelId]);
 
   if (loading) {
     return (

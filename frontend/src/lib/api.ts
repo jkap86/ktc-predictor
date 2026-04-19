@@ -158,8 +158,10 @@ export interface CompsResponse {
   comps: CompPlayer[];
 }
 
-export async function getComps(playerId: string, k: number = 10): Promise<CompsResponse | null> {
-  const response = await fetchWithTimeout(`${API_BASE}/players/${playerId}/comps?k=${k}`, {
+export async function getComps(playerId: string, k: number = 10, modelId?: string | null): Promise<CompsResponse | null> {
+  const params = new URLSearchParams({ k: k.toString() });
+  if (modelId) params.set('model', modelId);
+  const response = await fetchWithTimeout(`${API_BASE}/players/${playerId}/comps?${params}`, {
     headers: { 'Content-Type': 'application/json' },
   });
   if (!response.ok) return null;
