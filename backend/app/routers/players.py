@@ -125,21 +125,35 @@ async def player_comps(
     if age is None:
         raise HTTPException(status_code=404, detail="No age data")
 
+    # Pull richer features from the latest season for better matching
+    pos = player["position"]
     comps_index = get_comps_index()
     comps = comps_index.find_comps(
-        position=player["position"],
+        position=pos,
         start_ktc=start_ktc,
         ppg=ppg,
         age=float(age),
         games_played=gp,
         k=k,
         exclude_player_id=player_id,
+        start_position_rank=latest.get("start_position_rank"),
+        ktc_30d_trend=latest.get("ktc_30d_trend"),
+        ktc_volatility=latest.get("ktc_volatility"),
+        prior_year_fp=latest.get("prior_year_fp"),
+        boom_rate=latest.get("boom_rate"),
+        bust_rate=latest.get("bust_rate"),
+        passing_tds=latest.get("passing_tds") if pos == "QB" else None,
+        interceptions=latest.get("interceptions") if pos == "QB" else None,
+        carries=latest.get("carries") if pos == "RB" else None,
+        red_zone_touches=latest.get("red_zone_touches") if pos == "RB" else None,
+        targets=latest.get("targets") if pos in ("WR", "TE") else None,
+        red_zone_targets=latest.get("red_zone_targets") if pos in ("WR", "TE") else None,
     )
 
     return {
         "player_id": player_id,
         "name": player["name"],
-        "position": player["position"],
+        "position": pos,
         "query": {
             "start_ktc": round(start_ktc, 1),
             "ppg": round(ppg, 1),

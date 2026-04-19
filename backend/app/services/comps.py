@@ -1,8 +1,8 @@
-"""Find historical comparable players based on model input features.
+"""Find historical comparable players using the same features the model uses.
 
-Given a player's current profile (position, start_ktc, ppg, gp, age),
-finds the most similar player-seasons from prior years in the training
-data and returns their actual outcomes.
+Builds per-position KNN indices over training data using the model's actual
+feature set (position-specific, matching v4's layout). Returns the most
+similar historical player-seasons with their actual outcomes.
 """
 
 import json
@@ -18,13 +18,31 @@ from app.config import TRAINING_DATA_PATH
 
 logger = logging.getLogger(__name__)
 
-# Feature weights — higher = more important in similarity matching
-# start_ktc and ppg matter most for dynasty value trajectory
-_FEATURE_WEIGHTS = {
-    "start_ktc": 2.0,
-    "ppg": 2.0,
-    "age": 1.5,
-    "games_played": 1.0,
+# Features used for comp matching, aligned with the model's inputs.
+# Weights reflect feature importance: higher = more influence on similarity.
+# Grouped: core inputs, KTC trajectory, prior performance, behavioral.
+_COMP_FEATURES = {
+    # Core model inputs (all positions)
+    "start_ktc":         3.0,   # Current dynasty value — strongest signal
+    "ppg":               2.5,   # Per-game production
+    "age":               2.0,   # Career arc position
+    "games_played":      1.0,   # Sample size / health
+    "start_position_rank": 1.5, # Positional tier
+    # KTC trajectory
+    "ktc_30d_trend":     1.5,   # Recent momentum
+    "ktc_volatility":    1.0,   # Value stability
+    # Prior-season performance
+    "prior_year_fp":     1.5,   # Last year's total FP
+    "boom_rate":         1.0,   # Upside frequency
+    "bust_rate":         1.0,   # Downside frequency
+}
+
+# Position-specific extra features (only added when available)
+_POSITION_EXTRA_FEATURES = {
+    "QB": {"passing_tds": 1.5, "interceptions": 1.0},
+    "RB": {"carries": 1.5, "red_zone_touches": 1.0},
+    "WR": {"targets": 1.5, "red_zone_targets": 1.0},
+    "TE": {"targets": 1.5, "red_zone_targets": 1.0},
 }
 
 _comps_index: Optional["CompsIndex"] = None
@@ -34,11 +52,11 @@ class CompsIndex:
     """Pre-built KNN index over all historical player-seasons."""
 
     def __init__(self):
-        self.data: list[dict] = []  # raw season records
-        self.nn: dict[str, NearestNeighbors] = {}  # position -> fitted NN
+        self.nn: dict[str, NearestNeighbors] = {}
         self.scalers: dict[str, StandardScaler] = {}
-        self.features: dict[str, np.ndarray] = {}
-        self.records: dict[str, list[dict]] = {}  # position -> list of season dicts
+        self.feature_names: dict[str, list[str]] = {}
+        self.weights: dict[str, np.ndarray] = {}
+        self.records: dict[str, list[dict]] = {}
 
     def build(self, data_path: Path | None = None):
         """Load training data and build per-position KNN indices."""
@@ -47,10 +65,14 @@ class CompsIndex:
             raw = json.load(f)
 
         players = raw.get("players", [])
-        feature_cols = ["start_ktc", "ppg", "age", "games_played"]
-        weights = np.array([_FEATURE_WEIGHTS[c] for c in feature_cols])
 
         for position in ["QB", "RB", "WR", "TE"]:
+            # Build feature list for this position
+            feat_weights = dict(_COMP_FEATURES)
+            feat_weights.update(_POSITION_EXTRA_FEATURES.get(position, {}))
+            feature_names = list(feat_weights.keys())
+            weights = np.array([feat_weights[f] for f in feature_names])
+
             records = []
             feature_rows = []
 
@@ -73,6 +95,23 @@ class CompsIndex:
                         continue
 
                     ppg = fp / gp
+
+                    # Extract all features, using 0 for missing
+                    row = []
+                    for fname in feature_names:
+                        if fname == "ppg":
+                            row.append(ppg)
+                        elif fname == "games_played":
+                            row.append(gp)
+                        elif fname == "age":
+                            row.append(age)
+                        else:
+                            row.append(float(season.get(fname) or 0))
+
+                    # Skip if too many NaN/zero core features
+                    if row[0] <= 0:  # start_ktc
+                        continue
+
                     records.append({
                         "player_id": player["player_id"],
                         "name": player["name"],
@@ -86,25 +125,38 @@ class CompsIndex:
                         "delta_ktc": round(end_ktc - start_ktc, 1),
                         "pct_change": round((end_ktc - start_ktc) / start_ktc * 100, 1),
                     })
-                    feature_rows.append([start_ktc, ppg, age, gp])
+                    feature_rows.append(row)
 
             if len(records) < 10:
                 continue
 
             X = np.array(feature_rows)
+            # Replace NaN with column median before scaling
+            for col in range(X.shape[1]):
+                mask = np.isnan(X[:, col])
+                if mask.any():
+                    median = np.nanmedian(X[:, col])
+                    X[mask, col] = median
+
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X) * weights
 
-            nn = NearestNeighbors(n_neighbors=min(20, len(records)), metric="euclidean")
+            nn = NearestNeighbors(n_neighbors=min(30, len(records)), metric="euclidean")
             nn.fit(X_scaled)
 
             self.nn[position] = nn
             self.scalers[position] = scaler
-            self.features[position] = X
+            self.feature_names[position] = feature_names
+            self.weights[position] = weights
             self.records[position] = records
 
         total = sum(len(r) for r in self.records.values())
-        logger.info("CompsIndex built: %d player-seasons across %d positions", total, len(self.nn))
+        logger.info(
+            "CompsIndex built: %d player-seasons across %d positions, features per pos: %s",
+            total,
+            len(self.nn),
+            {p: len(f) for p, f in self.feature_names.items()},
+        )
 
     def find_comps(
         self,
@@ -115,26 +167,56 @@ class CompsIndex:
         games_played: int,
         k: int = 10,
         exclude_player_id: str | None = None,
+        # Additional features for richer matching (pass what's available)
+        start_position_rank: int | None = None,
+        ktc_30d_trend: float | None = None,
+        ktc_volatility: float | None = None,
+        prior_year_fp: float | None = None,
+        boom_rate: float | None = None,
+        bust_rate: float | None = None,
+        # Position-specific
+        passing_tds: float | None = None,
+        interceptions: float | None = None,
+        carries: float | None = None,
+        red_zone_touches: float | None = None,
+        targets: float | None = None,
+        red_zone_targets: float | None = None,
     ) -> list[dict]:
-        """Find the k most similar historical player-seasons.
-
-        Returns list of dicts sorted by similarity (closest first), each with
-        player info, season stats, and actual outcome.
-        """
+        """Find the k most similar historical player-seasons."""
         if position not in self.nn:
             return []
 
-        weights = np.array([
-            _FEATURE_WEIGHTS["start_ktc"],
-            _FEATURE_WEIGHTS["ppg"],
-            _FEATURE_WEIGHTS["age"],
-            _FEATURE_WEIGHTS["games_played"],
-        ])
+        feature_names = self.feature_names[position]
+        weights = self.weights[position]
 
-        query = np.array([[start_ktc, ppg, age, games_played]])
-        query_scaled = self.scalers[position].transform(query) * weights
+        # Build query vector matching the feature order
+        local_vars = {
+            "start_ktc": start_ktc,
+            "ppg": ppg,
+            "age": age,
+            "games_played": games_played,
+            "start_position_rank": start_position_rank,
+            "ktc_30d_trend": ktc_30d_trend,
+            "ktc_volatility": ktc_volatility,
+            "prior_year_fp": prior_year_fp,
+            "boom_rate": boom_rate,
+            "bust_rate": bust_rate,
+            "passing_tds": passing_tds,
+            "interceptions": interceptions,
+            "carries": carries,
+            "red_zone_touches": red_zone_touches,
+            "targets": targets,
+            "red_zone_targets": red_zone_targets,
+        }
 
-        # Fetch extra neighbors in case we need to exclude the player
+        query = []
+        for fname in feature_names:
+            val = local_vars.get(fname)
+            query.append(float(val) if val is not None else 0.0)
+
+        query_arr = np.array([query])
+        query_scaled = self.scalers[position].transform(query_arr) * weights
+
         n_fetch = min(k + 20, len(self.records[position]))
         distances, indices = self.nn[position].kneighbors(query_scaled, n_neighbors=n_fetch)
 
