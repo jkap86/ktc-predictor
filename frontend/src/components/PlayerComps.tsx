@@ -44,6 +44,9 @@ export default function PlayerComps({ playerId }: PlayerCompsProps) {
 
   // Summary stats
   const avgChange = comps.reduce((sum, c) => sum + c.pct_change, 0) / comps.length;
+  const avgPpg = comps.reduce((sum, c) => sum + c.ppg, 0) / comps.length;
+  const avgStartKtc = comps.reduce((sum, c) => sum + c.start_ktc, 0) / comps.length;
+  const avgEndKtc = comps.reduce((sum, c) => sum + c.end_ktc, 0) / comps.length;
   const risers = comps.filter((c) => c.pct_change > 0).length;
 
   return (
@@ -52,21 +55,33 @@ export default function PlayerComps({ playerId }: PlayerCompsProps) {
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Historical Comps
         </h3>
-        <div className="flex items-center gap-3">
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-            avgChange >= 0
-              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-          }`}>
-            Avg: {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(1)}%
-          </span>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {risers}/{comps.length} rose
-          </span>
-        </div>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {risers}/{comps.length} rose
+        </span>
       </div>
+
+      {/* Summary row */}
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+          avgChange >= 0
+            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+            : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+        }`}>
+          Avg Change: {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(1)}%
+        </span>
+        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+          Avg PPG: {avgPpg.toFixed(1)}
+        </span>
+        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+          Avg Start: {formatKtc(Math.round(avgStartKtc))}
+        </span>
+        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+          Avg End: {formatKtc(Math.round(avgEndKtc))}
+        </span>
+      </div>
+
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-        Players from prior seasons with similar KTC, PPG, age, and games played. Shows what actually happened to their value.
+        Similar players from prior seasons based on model features. Shows what actually happened to their value.
       </p>
 
       <div className="overflow-x-auto">

@@ -42,11 +42,14 @@ function PlayerHeader({ player, prediction, color = 'blue' }: {
 }) {
   const accent = color === 'orange' ? 'text-orange-500 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400';
   const border = color === 'orange' ? 'border-orange-200 dark:border-orange-800' : 'border-blue-200 dark:border-blue-800';
+  const bg = color === 'orange'
+    ? 'bg-orange-50 dark:bg-orange-950/30'
+    : 'bg-blue-50 dark:bg-blue-950/30';
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border ${border} p-4 flex items-center justify-between gap-2`}>
+    <div className={`${bg} rounded-xl shadow-sm border ${border} p-4 flex items-center justify-between gap-2`}>
       <div className="min-w-0">
         <h2 className={`text-lg font-bold truncate ${accent}`}>{player.name}</h2>
-        <span className="inline-block px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs mt-0.5">
+        <span className="inline-block px-2 py-0.5 bg-white/60 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs mt-0.5">
           {player.position}
         </span>
       </div>
@@ -67,9 +70,13 @@ function PredictionStats({ prediction, label, color = 'blue' }: {
   const pct = prediction.predicted_pct_change;
   const delta = prediction.predicted_delta_ktc;
   const changeColor = pct >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+  const bg = color === 'orange'
+    ? 'bg-orange-50/50 dark:bg-orange-950/20 border border-orange-100 dark:border-orange-900/30'
+    : 'bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30';
+  const labelColor = color === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400';
   return (
-    <div>
-      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</div>
+    <div className={`${bg} rounded-lg p-3`}>
+      <div className={`text-xs font-medium ${labelColor} mb-1`}>{label}</div>
       <div className="flex items-baseline gap-3">
         <span className="text-xl font-bold text-gray-900 dark:text-white">
           {formatKtc(prediction.predicted_end_ktc)}
@@ -229,14 +236,14 @@ export default function PlayerPage() {
           <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">Latest Season</div>
           <div className={`grid gap-4 ${hasCompare ? 'grid-cols-2' : 'grid-cols-1'}`}>
             {latestSeason && (
-              <div>
-                {hasCompare && <div className="text-xs text-blue-600 dark:text-blue-400 mb-1">{player.name}</div>}
+              <div className={hasCompare ? 'bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 rounded-lg p-3' : ''}>
+                {hasCompare && <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">{player.name}</div>}
                 <SeasonRow season={latestSeason} />
               </div>
             )}
             {hasCompare && compareLatest && comparePlayer && (
-              <div>
-                <div className="text-xs text-orange-500 dark:text-orange-400 mb-1">{comparePlayer.name}</div>
+              <div className="bg-orange-50/50 dark:bg-orange-950/20 border border-orange-100 dark:border-orange-900/30 rounded-lg p-3">
+                <div className="text-xs font-medium text-orange-500 dark:text-orange-400 mb-1">{comparePlayer.name}</div>
                 <SeasonRow season={compareLatest} />
               </div>
             )}
