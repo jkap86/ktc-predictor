@@ -9,6 +9,7 @@ import { useModel } from '../../../context/ModelContext';
 import WhatIfChart from '../../../components/WhatIfChart';
 import ComparePlayerPicker from '../../../components/ComparePlayerPicker';
 import HistoricalAccuracy from '../../../components/HistoricalAccuracy';
+import PlayerComps from '../../../components/PlayerComps';
 import type { Player, PlayerSummary, EOSPrediction } from '../../../types/player';
 
 function ConfidenceBand({ prediction }: { prediction: EOSPrediction }) {
@@ -307,6 +308,8 @@ export default function PlayerPage() {
           </div>
         </div>
       )}
+
+      <PlayerComps playerId={playerId} />
 
       {prediction && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">

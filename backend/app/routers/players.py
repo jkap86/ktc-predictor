@@ -6,8 +6,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.data_loader import get_data_loader
-from app.services.ktc_utils import select_anchor_ktc
+from app.services.ktc_utils import select_anchor_ktc, select_baseline_stats
 from app.services.ktc_db import get_latest_ktc, get_latest_ktc_batch
+from app.services.comps import get_comps_index
 from app.schemas.player import Player, PlayerList, PlayerSummary
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,69 @@ async def list_players(
 @router.get("/positions")
 def get_positions():
     return {"positions": ["QB", "RB", "WR", "TE"]}
+
+
+@router.get("/{player_id}/comps")
+async def player_comps(
+    player_id: str,
+    k: int = Query(10, ge=1, le=25, description="Number of comps"),
+):
+    """Find historical comparable player-seasons based on model inputs."""
+    data_loader = get_data_loader()
+    player = data_loader.get_player_by_id(player_id)
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    seasons = player.get("seasons", [])
+    if not seasons:
+        raise HTTPException(status_code=404, detail="No season data")
+
+    # Get current KTC (live preferred)
+    try:
+        live = await get_latest_ktc(player_id)
+    except Exception:
+        live = None
+
+    anchor = select_anchor_ktc(seasons)
+    start_ktc = live if live and live > 0 else (anchor[0] if anchor else None)
+    if not start_ktc:
+        raise HTTPException(status_code=404, detail="No KTC data")
+
+    # Get latest season stats
+    baseline = select_baseline_stats(seasons)
+    if baseline:
+        _, gp, ppg = baseline
+    else:
+        gp, ppg = 0, 0.0
+
+    latest = max(seasons, key=lambda s: s["year"])
+    age = latest.get("age")
+    if age is None:
+        raise HTTPException(status_code=404, detail="No age data")
+
+    comps_index = get_comps_index()
+    comps = comps_index.find_comps(
+        position=player["position"],
+        start_ktc=start_ktc,
+        ppg=ppg,
+        age=float(age),
+        games_played=gp,
+        k=k,
+        exclude_player_id=player_id,
+    )
+
+    return {
+        "player_id": player_id,
+        "name": player["name"],
+        "position": player["position"],
+        "query": {
+            "start_ktc": round(start_ktc, 1),
+            "ppg": round(ppg, 1),
+            "age": age,
+            "games_played": gp,
+        },
+        "comps": comps,
+    }
 
 
 @router.get("/{player_id}", response_model=Player)

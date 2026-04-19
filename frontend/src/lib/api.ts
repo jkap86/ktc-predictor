@@ -130,6 +130,42 @@ export async function getTopMovers(limit: number = 10): Promise<{ risers: TopMov
   }
 }
 
+export interface CompPlayer {
+  player_id: string;
+  name: string;
+  position: string;
+  year: number;
+  age: number;
+  games_played: number;
+  ppg: number;
+  start_ktc: number;
+  end_ktc: number;
+  delta_ktc: number;
+  pct_change: number;
+  similarity: number;
+}
+
+export interface CompsResponse {
+  player_id: string;
+  name: string;
+  position: string;
+  query: {
+    start_ktc: number;
+    ppg: number;
+    age: number;
+    games_played: number;
+  };
+  comps: CompPlayer[];
+}
+
+export async function getComps(playerId: string, k: number = 10): Promise<CompsResponse | null> {
+  const response = await fetchWithTimeout(`${API_BASE}/players/${playerId}/comps?k=${k}`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!response.ok) return null;
+  return response.json();
+}
+
 export async function getHistorical(playerId: string): Promise<HistoricalResponse | null> {
   const response = await fetchWithTimeout(`${API_BASE}/players/${playerId}/historical`, {
     headers: { 'Content-Type': 'application/json' },
