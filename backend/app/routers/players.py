@@ -125,8 +125,27 @@ async def player_comps(
     if age is None:
         raise HTTPException(status_code=404, detail="No age data")
 
-    # Pull richer features from the latest season for better matching
+    # Pull all available features from the latest season for matching.
+    # The comp finder ignores features not in its spec for the position.
     pos = player["position"]
+
+    # Find prior season for prior-behavioral features
+    sorted_seasons = sorted(seasons, key=lambda s: s["year"])
+    prior = None
+    for s in reversed(sorted_seasons):
+        if s["year"] < latest["year"] and (s.get("games_played", 0) or 0) >= 4:
+            prior = s
+            break
+
+    # KTC YoY
+    ktc_yoy_pct = 0.0
+    if prior and (prior.get("end_ktc") or 0) > 0:
+        ktc_yoy_pct = (start_ktc - prior["end_ktc"]) / prior["end_ktc"]
+
+    prior_ppg = 0.0
+    if prior and (prior.get("games_played", 0) or 0) > 0:
+        prior_ppg = (prior.get("fantasy_points", 0) or 0) / prior["games_played"]
+
     comps_index = get_comps_index()
     comps = comps_index.find_comps(
         position=pos,
@@ -136,18 +155,36 @@ async def player_comps(
         games_played=gp,
         k=k,
         exclude_player_id=player_id,
+        # Core features
+        weeks_missed=0,
+        draft_pick=latest.get("draft_pick"),
         start_position_rank=latest.get("start_position_rank"),
+        # KTC trajectory
+        ktc_yoy_pct=ktc_yoy_pct,
         ktc_30d_trend=latest.get("ktc_30d_trend"),
         ktc_volatility=latest.get("ktc_volatility"),
+        # Prior performance
+        prior_ppg=prior_ppg,
         prior_year_fp=latest.get("prior_year_fp"),
+        # Behavioral
         boom_rate=latest.get("boom_rate"),
         bust_rate=latest.get("bust_rate"),
-        passing_tds=latest.get("passing_tds") if pos == "QB" else None,
-        interceptions=latest.get("interceptions") if pos == "QB" else None,
-        carries=latest.get("carries") if pos == "RB" else None,
-        red_zone_touches=latest.get("red_zone_touches") if pos == "RB" else None,
-        targets=latest.get("targets") if pos in ("WR", "TE") else None,
-        red_zone_targets=latest.get("red_zone_targets") if pos in ("WR", "TE") else None,
+        snap_pct=latest.get("snap_pct"),
+        # v3 prior-behavioral
+        prior_weekly_fp_cv=prior.get("weekly_fp_cv") if prior else None,
+        prior_boom_rate=prior.get("boom_rate") if prior else None,
+        prior_bust_rate=prior.get("bust_rate") if prior else None,
+        prior_snap_pct=prior.get("snap_pct") if prior else None,
+        # v4 momentum
+        momentum_ratio=latest.get("momentum_ratio"),
+        max_games_missed_streak=latest.get("max_games_missed_streak"),
+        # Position-specific
+        passing_tds=latest.get("passing_tds"),
+        interceptions=latest.get("interceptions"),
+        carries=latest.get("carries"),
+        red_zone_touches=latest.get("red_zone_touches"),
+        targets=latest.get("targets"),
+        red_zone_targets=latest.get("red_zone_targets"),
     )
 
     return {
