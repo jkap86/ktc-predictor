@@ -411,36 +411,40 @@ def predict_end_ktc(
         "capped_low": raw_end_ktc < KTC_MIN,
     }
 
-    # Confidence bands from the p20/p80 quantile models, if available.
-    # The quantile models predict raw log_ratios without the central model's
-    # KNN / residual correction / shrinkage adjustments. To produce a band
-    # that actually brackets the reported central prediction, we preserve the
-    # band WIDTH from the quantile models and SHIFT by the same delta the
-    # central got from its adjustments.
+    # Confidence bands from the p20/p80 quantile models.
+    # The quantile models are trained with a single seed while the central uses
+    # a 5-seed ensemble, so quantile predictions can systematically sit below
+    # the central (crossing). Instead of shifting each quantile by adjustment_delta,
+    # we extract the SPREAD (half-width) from the quantile pair and center it
+    # around the final central prediction. This guarantees p20 <= central <= p80.
     if quantile_models and position in quantile_models:
         q_dict = quantile_models[position]
-        adjustment_delta = pred_log_ratio - raw_pred_log_ratio
-
-        def _bound_end_ktc(q_log: float) -> float:
-            # Apply the central's adjustment shift, then the same clipping / KTC-aware
-            # bounds / domain clamp the central went through.
-            q_log = q_log + adjustment_delta
-            q_log = max(ktc_aware_lower, min(ktc_aware_upper, q_log))
-            if bounds is not None:
-                q_log = max(bounds[0], min(bounds[1], q_log))
-            if target_type == "pct_change":
-                raw = start_ktc * (1 + q_log)
-            else:
-                raw = start_ktc * np.exp(q_log)
-            return max(KTC_MIN, min(KTC_MAX, raw))
-
         p20_model = q_dict.get(0.2)
         p80_model = q_dict.get(0.8)
-        if p20_model is not None:
+
+        if p20_model is not None and p80_model is not None:
             p20_log = float(p20_model.predict(X)[0])
-            result["p20_end_ktc"] = round(_bound_end_ktc(p20_log), 1)
-        if p80_model is not None:
             p80_log = float(p80_model.predict(X)[0])
-            result["p80_end_ktc"] = round(_bound_end_ktc(p80_log), 1)
+
+            # Half-width of the quantile spread in log-ratio space
+            half_spread = (p80_log - p20_log) / 2.0
+            half_spread = max(half_spread, 0.01)  # floor to avoid degenerate bands
+
+            # Center around the final (post-adjustment) central prediction
+            low_log = pred_log_ratio - half_spread
+            high_log = pred_log_ratio + half_spread
+
+            def _bound_end_ktc(q_log: float) -> float:
+                q_log = max(ktc_aware_lower, min(ktc_aware_upper, q_log))
+                if bounds is not None:
+                    q_log = max(bounds[0], min(bounds[1], q_log))
+                if target_type == "pct_change":
+                    raw = start_ktc * (1 + q_log)
+                else:
+                    raw = start_ktc * np.exp(q_log)
+                return max(KTC_MIN, min(KTC_MAX, raw))
+
+            result["p20_end_ktc"] = round(_bound_end_ktc(low_log), 1)
+            result["p80_end_ktc"] = round(_bound_end_ktc(high_log), 1)
 
     return result

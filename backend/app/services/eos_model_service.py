@@ -144,16 +144,6 @@ def predict_from_inputs(
     if "p20_end_ktc" in result or "p80_end_ktc" in result:
         low_end_ktc = result.get("p20_end_ktc")
         high_end_ktc = result.get("p80_end_ktc")
-        # The quantile models predict raw log_ratios without the central
-        # prediction's calibration / KNN / residual adjustments applied. When
-        # those shifts are large, the quantile bounds can fail to bracket the
-        # central. Enforce low <= central <= high so the band always reads
-        # sensibly in the UI.
-        central = result["end_ktc"]
-        if low_end_ktc is not None:
-            low_end_ktc = min(low_end_ktc, central)
-        if high_end_ktc is not None:
-            high_end_ktc = max(high_end_ktc, central)
     else:
         b = iteration.bundle
         bands = b.get("residual_bands", {}).get(position, {})
