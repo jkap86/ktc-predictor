@@ -38,7 +38,10 @@ def _compute_prior_position_features(
     players: list[dict],
 ) -> dict[tuple[str, int], dict]:
     """For each (player_id, year), extract position-specific stats from the
-    prior season with >= 4 games played."""
+    prior season with >= 4 games played.
+
+    Includes both volume and efficiency metrics per position.
+    """
     result: dict[tuple[str, int], dict] = {}
 
     for player in players:
@@ -53,23 +56,45 @@ def _compute_prior_position_features(
             if i == 0:
                 continue
             prior = seasons[i - 1]
-            if (prior.get("games_played", 0) or 0) < _MIN_GAMES:
+            gp = prior.get("games_played", 0) or 0
+            if gp < _MIN_GAMES:
                 continue
 
             if pos == "QB":
                 result[(pid, season["year"])] = {
                     "prior_passing_tds": float(prior.get("passing_tds") or 0),
                     "prior_interceptions": float(prior.get("interceptions") or 0),
+                    "prior_completion_rate": float(prior.get("completion_rate") or 0),
+                    "prior_rushing_yards": float(prior.get("rushing_yards") or 0),
+                    "prior_pass_sacks": float(prior.get("pass_sacks") or 0),
                 }
             elif pos == "RB":
+                carries = float(prior.get("carries") or 0)
+                rush_yds = float(prior.get("rushing_yards") or 0)
                 result[(pid, season["year"])] = {
-                    "prior_carries": float(prior.get("carries") or 0),
+                    "prior_carries": carries,
                     "prior_red_zone_touches": float(prior.get("red_zone_touches") or 0),
+                    "prior_yards_per_carry": rush_yds / carries if carries > 0 else 0.0,
+                    "prior_receiving_yards": float(prior.get("receiving_yards") or 0),
+                    "prior_rushing_tds": float(prior.get("rushing_tds") or 0),
                 }
-            elif pos in ("WR", "TE"):
+            elif pos == "WR":
+                tgts = float(prior.get("targets") or 0)
+                result[(pid, season["year"])] = {
+                    "prior_targets": tgts,
+                    "prior_red_zone_targets": float(prior.get("red_zone_targets") or 0),
+                    "prior_yards_per_target": float(prior.get("yards_per_target") or 0),
+                    "prior_air_yards_per_target": float(prior.get("air_yards_per_target") or 0),
+                    "prior_receiving_tds": float(prior.get("receiving_tds") or 0),
+                    "prior_drop_rate": float(prior.get("drop_rate") or 0),
+                }
+            elif pos == "TE":
                 result[(pid, season["year"])] = {
                     "prior_targets": float(prior.get("targets") or 0),
                     "prior_red_zone_targets": float(prior.get("red_zone_targets") or 0),
+                    "prior_yards_per_target": float(prior.get("yards_per_target") or 0),
+                    "prior_receiving_tds": float(prior.get("receiving_tds") or 0),
+                    "prior_drop_rate": float(prior.get("drop_rate") or 0),
                 }
 
     return result
@@ -129,9 +154,14 @@ def _build_weekly_snapshot_df_v4(zip_path: str, json_name: str = "training-data.
         "TE": ["prior_targets", "prior_red_zone_targets"],
     }
     # All possible position-stat column names
-    all_pos_cols = ["prior_passing_tds", "prior_interceptions",
-                    "prior_carries", "prior_red_zone_touches",
-                    "prior_targets", "prior_red_zone_targets"]
+    all_pos_cols = [
+        "prior_passing_tds", "prior_interceptions", "prior_completion_rate",
+        "prior_rushing_yards", "prior_pass_sacks",
+        "prior_carries", "prior_red_zone_touches", "prior_yards_per_carry",
+        "prior_receiving_yards", "prior_rushing_tds",
+        "prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
+        "prior_air_yards_per_target", "prior_receiving_tds", "prior_drop_rate",
+    ]
     for col in all_pos_cols:
         df[col] = df.apply(lambda r, c=col: _lookup_prior_pos(r, c), axis=1)
 
@@ -156,12 +186,16 @@ _MOMENTUM_FEATURES = [
     "max_games_missed_streak",
 ]
 
-# Position-specific prior-season stat features
+# Position-specific prior-season stat features (volume + efficiency)
 _POSITION_STAT_FEATURES = {
-    "QB": ["prior_passing_tds", "prior_interceptions"],
-    "RB": ["prior_carries", "prior_red_zone_touches"],
-    "WR": ["prior_targets", "prior_red_zone_targets"],
-    "TE": ["prior_targets", "prior_red_zone_targets"],
+    "QB": ["prior_passing_tds", "prior_interceptions", "prior_completion_rate",
+           "prior_rushing_yards", "prior_pass_sacks"],
+    "RB": ["prior_carries", "prior_red_zone_touches", "prior_yards_per_carry",
+           "prior_receiving_yards", "prior_rushing_tds"],
+    "WR": ["prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
+           "prior_air_yards_per_target", "prior_receiving_tds", "prior_drop_rate"],
+    "TE": ["prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
+           "prior_receiving_tds", "prior_drop_rate"],
 }
 
 
@@ -176,15 +210,21 @@ _POSITIONS_WITH_TEAM_FEATURES = {"WR"}
 
 
 def _v4_get_features_for_position(position: str) -> list[str]:
-    """v3's features + momentum + position-specific stats for QB/WR,
-    plus team context features for WR only."""
+    """v3's features + position-specific efficiency stats for all positions,
+    momentum for QB/WR, team context for WR."""
     base = _V3_GET_FEATURES(position)
     extras: list[str] = []
+    # Momentum features (QB/WR only — hurt RB/TE)
     if position in _POSITIONS_WITH_V4_FEATURES:
-        pos_stats = _POSITION_STAT_FEATURES.get(position, [])
-        extras = _MOMENTUM_FEATURES + pos_stats + ["has_prior_position_stats"]
+        extras.extend(_MOMENTUM_FEATURES)
+    # Position-specific efficiency stats (all positions)
+    pos_stats = _POSITION_STAT_FEATURES.get(position, [])
+    if pos_stats:
+        extras.extend(pos_stats)
+        extras.append("has_prior_position_stats")
+    # Team context (WR only)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
-        extras = extras + _TEAM_FEATURES
+        extras.extend(_TEAM_FEATURES)
     if not extras:
         return base
     return base + extras
@@ -207,7 +247,10 @@ def _v4_build_monotonic_constraints(position: str) -> list[int]:
     base = _v3_build_mc(position)
     n_new = 0
     if position in _POSITIONS_WITH_V4_FEATURES:
-        n_new += len(_MOMENTUM_FEATURES) + len(_POSITION_STAT_FEATURES.get(position, [])) + 1
+        n_new += len(_MOMENTUM_FEATURES)
+    pos_stats = _POSITION_STAT_FEATURES.get(position, [])
+    if pos_stats:
+        n_new += len(pos_stats) + 1  # +1 for has_prior_position_stats
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         n_new += len(_TEAM_FEATURES)
     if n_new == 0:
@@ -239,10 +282,14 @@ def _v4_monotonic_smoke_test(model, position: str) -> bool:
         # v3 prior-behavioral (RB/WR only)
         if position in v3._POSITIONS_WITH_PRIOR_BEHAVIORAL:
             row.extend([0.4, 0.25, 0.25, 0.65, 1.0, 1])
-        # v4 momentum + position-specific (QB/WR only)
+        # v4 momentum (QB/WR only)
         if position in _POSITIONS_WITH_V4_FEATURES:
             row.extend([0.0, 0.0, 0.1, 0.1])  # momentum (4)
-            row.extend([0.0, 0.0, 1])  # position stats (2) + sentinel (1)
+        # v4 position-specific efficiency (all positions)
+        n_pos = len(_POSITION_STAT_FEATURES.get(position, []))
+        if n_pos > 0:
+            row.extend([0.0] * n_pos)  # position stats
+            row.append(1)  # has_prior_position_stats sentinel
         # v4 team features (WR only)
         if position in _POSITIONS_WITH_TEAM_FEATURES:
             row.extend([5000, 30000, 3000])  # qb_ktc, team_total, positional_comp

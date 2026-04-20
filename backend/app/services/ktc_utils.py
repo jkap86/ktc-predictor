@@ -127,8 +127,8 @@ def compute_prior_position_stats(
     anchor_year: int,
     min_games: int = 4,
 ) -> dict | None:
-    """Pull position-specific stats from the most-recent completed season
-    before ``anchor_year``. Used by v4+."""
+    """Pull position-specific volume + efficiency stats from the most-recent
+    completed season before ``anchor_year``. Used by v4+."""
     for season in sorted(seasons, key=lambda s: s["year"], reverse=True):
         if season["year"] >= anchor_year:
             continue
@@ -139,16 +139,36 @@ def compute_prior_position_stats(
             return {
                 "prior_passing_tds": float(season.get("passing_tds") or 0),
                 "prior_interceptions": float(season.get("interceptions") or 0),
+                "prior_completion_rate": float(season.get("completion_rate") or 0),
+                "prior_rushing_yards": float(season.get("rushing_yards") or 0),
+                "prior_pass_sacks": float(season.get("pass_sacks") or 0),
             }
         elif position == "RB":
+            carries = float(season.get("carries") or 0)
+            rush_yds = float(season.get("rushing_yards") or 0)
             return {
-                "prior_carries": float(season.get("carries") or 0),
+                "prior_carries": carries,
                 "prior_red_zone_touches": float(season.get("red_zone_touches") or 0),
+                "prior_yards_per_carry": rush_yds / carries if carries > 0 else 0.0,
+                "prior_receiving_yards": float(season.get("receiving_yards") or 0),
+                "prior_rushing_tds": float(season.get("rushing_tds") or 0),
             }
-        elif position in ("WR", "TE"):
+        elif position == "WR":
             return {
                 "prior_targets": float(season.get("targets") or 0),
                 "prior_red_zone_targets": float(season.get("red_zone_targets") or 0),
+                "prior_yards_per_target": float(season.get("yards_per_target") or 0),
+                "prior_air_yards_per_target": float(season.get("air_yards_per_target") or 0),
+                "prior_receiving_tds": float(season.get("receiving_tds") or 0),
+                "prior_drop_rate": float(season.get("drop_rate") or 0),
+            }
+        elif position == "TE":
+            return {
+                "prior_targets": float(season.get("targets") or 0),
+                "prior_red_zone_targets": float(season.get("red_zone_targets") or 0),
+                "prior_yards_per_target": float(season.get("yards_per_target") or 0),
+                "prior_receiving_tds": float(season.get("receiving_tds") or 0),
+                "prior_drop_rate": float(season.get("drop_rate") or 0),
             }
     return None
 

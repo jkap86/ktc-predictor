@@ -26,6 +26,9 @@
     "max_games_missed_streak",
     "prior_passing_tds",
     "prior_interceptions",
+    "prior_completion_rate",
+    "prior_rushing_yards",
+    "prior_pass_sacks",
     "has_prior_position_stats"
   ],
   "RB": [
@@ -54,7 +57,13 @@
     "prior_bust_rate",
     "prior_snap_pct",
     "prior_ktc_volatility",
-    "has_prior_behavioral"
+    "has_prior_behavioral",
+    "prior_carries",
+    "prior_red_zone_touches",
+    "prior_yards_per_carry",
+    "prior_receiving_yards",
+    "prior_rushing_tds",
+    "has_prior_position_stats"
   ],
   "WR": [
     "games_played_so_far",
@@ -89,6 +98,10 @@
     "max_games_missed_streak",
     "prior_targets",
     "prior_red_zone_targets",
+    "prior_yards_per_target",
+    "prior_air_yards_per_target",
+    "prior_receiving_tds",
+    "prior_drop_rate",
     "has_prior_position_stats",
     "qb_ktc",
     "team_total_ktc",
@@ -114,6 +127,12 @@
     "apy_cap_pct",
     "is_contract_year",
     "apy_position_rank",
-    "has_contract_data"
+    "has_contract_data",
+    "prior_targets",
+    "prior_red_zone_targets",
+    "prior_yards_per_target",
+    "prior_receiving_tds",
+    "prior_drop_rate",
+    "has_prior_position_stats"
   ]
 }

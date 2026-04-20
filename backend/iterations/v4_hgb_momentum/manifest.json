@@ -3,6 +3,6 @@
   "name": "HGB v4 (momentum + position efficiency)",
   "description": "v3 baseline for RB/TE, KTC momentum + position efficiency for QB/WR, team context (qb_ktc, team_total_ktc, positional_competition) for WR only. draft_pick and years_remaining now populated from nfl_data_py.",
   "created": "2026-04-19",
-  "features_count": {"QB": 27, "RB": 26, "WR": 36, "TE": 20},
+  "features_count": {"QB": 30, "RB": 32, "WR": 40, "TE": 26},
   "positions": ["QB", "RB", "WR", "TE"]
 }

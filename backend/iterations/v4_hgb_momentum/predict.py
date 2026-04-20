@@ -73,10 +73,14 @@ _MOMENTUM_FEATURES = [
 ]
 
 _POSITION_STAT_FEATURES = {
-    "QB": ["prior_passing_tds", "prior_interceptions"],
-    "RB": ["prior_carries", "prior_red_zone_touches"],
-    "WR": ["prior_targets", "prior_red_zone_targets"],
-    "TE": ["prior_targets", "prior_red_zone_targets"],
+    "QB": ["prior_passing_tds", "prior_interceptions", "prior_completion_rate",
+           "prior_rushing_yards", "prior_pass_sacks"],
+    "RB": ["prior_carries", "prior_red_zone_touches", "prior_yards_per_carry",
+           "prior_receiving_yards", "prior_rushing_tds"],
+    "WR": ["prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
+           "prior_air_yards_per_target", "prior_receiving_tds", "prior_drop_rate"],
+    "TE": ["prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
+           "prior_receiving_tds", "prior_drop_rate"],
 }
 
 
@@ -93,10 +97,13 @@ def get_expected_features(position: str) -> list[str]:
         base = base + _PRIOR_BEHAVIORAL_FEATURES
     extras: list[str] = []
     if position in _POSITIONS_WITH_V4_FEATURES:
-        pos_stats = _POSITION_STAT_FEATURES.get(position, [])
-        extras = _MOMENTUM_FEATURES + pos_stats + ["has_prior_position_stats"]
+        extras.extend(_MOMENTUM_FEATURES)
+    pos_stats = _POSITION_STAT_FEATURES.get(position, [])
+    if pos_stats:
+        extras.extend(pos_stats)
+        extras.append("has_prior_position_stats")
     if position in _POSITIONS_WITH_TEAM_FEATURES:
-        extras = extras + _TEAM_FEATURES
+        extras.extend(_TEAM_FEATURES)
     if not extras:
         return base
     return base + extras
@@ -170,6 +177,17 @@ def predict_end_ktc(
     prior_red_zone_touches: float | None = None,
     prior_targets: float | None = None,
     prior_red_zone_targets: float | None = None,
+    # v4 efficiency features
+    prior_completion_rate: float | None = None,
+    prior_rushing_yards: float | None = None,
+    prior_pass_sacks: float | None = None,
+    prior_yards_per_carry: float | None = None,
+    prior_receiving_yards: float | None = None,
+    prior_rushing_tds: float | None = None,
+    prior_yards_per_target: float | None = None,
+    prior_air_yards_per_target: float | None = None,
+    prior_receiving_tds: float | None = None,
+    prior_drop_rate: float | None = None,
     # v4 team context (WR only)
     qb_ktc: float | None = None,
     team_total_ktc: float | None = None,
@@ -272,9 +290,8 @@ def predict_end_ktc(
             has_prior_behavioral,
         ])
 
-    # v4 momentum + position-specific (QB/WR only)
+    # v4 momentum (QB/WR only)
     if position in _POSITIONS_WITH_V4_FEATURES:
-        # Momentum (4)
         linear_features.extend([
             ktc_30d_trend if ktc_30d_trend is not None else 0.0,
             ktc_90d_trend if ktc_90d_trend is not None else 0.0,
@@ -282,21 +299,34 @@ def predict_end_ktc(
             max_games_missed_streak if max_games_missed_streak is not None else 0.0,
         ])
 
-        # Position-specific prior stats (2) + sentinel (1)
-        if position == "QB":
-            has_ps = 1 if prior_passing_tds is not None else 0
-            linear_features.extend([
-                prior_passing_tds if prior_passing_tds is not None else np.nan,
-                prior_interceptions if prior_interceptions is not None else np.nan,
-                has_ps,
-            ])
-        else:  # WR
-            has_ps = 1 if prior_targets is not None else 0
-            linear_features.extend([
-                prior_targets if prior_targets is not None else np.nan,
-                prior_red_zone_targets if prior_red_zone_targets is not None else np.nan,
-                has_ps,
-            ])
+    # Position-specific prior efficiency stats (all positions)
+    _pos_features = _POSITION_STAT_FEATURES.get(position, [])
+    if _pos_features:
+        _pos_kwargs = {
+            "prior_passing_tds": prior_passing_tds,
+            "prior_interceptions": prior_interceptions,
+            "prior_completion_rate": prior_completion_rate,
+            "prior_rushing_yards": prior_rushing_yards,
+            "prior_pass_sacks": prior_pass_sacks,
+            "prior_carries": prior_carries,
+            "prior_red_zone_touches": prior_red_zone_touches,
+            "prior_yards_per_carry": prior_yards_per_carry,
+            "prior_receiving_yards": prior_receiving_yards,
+            "prior_rushing_tds": prior_rushing_tds,
+            "prior_targets": prior_targets,
+            "prior_red_zone_targets": prior_red_zone_targets,
+            "prior_yards_per_target": prior_yards_per_target,
+            "prior_air_yards_per_target": prior_air_yards_per_target,
+            "prior_receiving_tds": prior_receiving_tds,
+            "prior_drop_rate": prior_drop_rate,
+        }
+        has_ps = 0
+        for fname in _pos_features:
+            val = _pos_kwargs.get(fname)
+            linear_features.append(val if val is not None else np.nan)
+            if val is not None:
+                has_ps = 1
+        linear_features.append(has_ps)
 
     # v4 team context (WR only)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
