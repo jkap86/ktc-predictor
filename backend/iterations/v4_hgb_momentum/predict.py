@@ -341,6 +341,17 @@ def predict_end_ktc(
     raw_pred_log_ratio = float(model.predict(X)[0])
     pred_log_ratio = raw_pred_log_ratio
 
+    # Tier-aware calibration (corrects systematic bias per KTC tier)
+    pos_calibrators = calibrators.get(position, {}) if calibrators else {}
+    if pos_calibrators:
+        from iterations.v1_hgb_baseline.train import _ktc_tier_key
+        tkey = _ktc_tier_key(start_ktc)
+        tier_cal = pos_calibrators.get(tkey) if tkey else None
+        if tier_cal is not None:
+            calibrated = float(tier_cal.predict([pred_log_ratio])[0])
+            if not np.isnan(calibrated):
+                pred_log_ratio = calibrated
+
     # KNN elite adjustment
     if knn_adjuster is not None:
         pred_log_ratio = knn_adjuster.adjust(

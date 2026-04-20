@@ -227,16 +227,27 @@ export default function WhatIfChart({
             }}
             labelStyle={{ color: '#d1d5db', fontWeight: 600 }}
             labelFormatter={(v) => `PPG: ${v}`}
-            formatter={(value, name) => {
-              const labels: Record<string, string> = {
-                predictedEos: 'Predicted EOS',
-                high: 'p80',
-                low: 'p20',
-                compareEos: compare?.name ?? 'Compare',
-                compareHigh: `${compare?.name ?? 'Compare'} p80`,
-                compareLow: `${compare?.name ?? 'Compare'} p20`,
-              };
-              return [formatKtc(Number(value)), labels[String(name)] ?? String(name)];
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              const pt = data.find((d) => d.ppg === label);
+              if (!pt) return null;
+              return (
+                <div style={{ backgroundColor: 'rgba(31,41,55,0.95)', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13 }}>
+                  <p style={{ color: '#d1d5db', fontWeight: 600, marginBottom: 4 }}>PPG: {label}</p>
+                  {pt.predictedEos != null && (
+                    <p style={{ color: '#3b82f6' }}>Predicted EOS: {formatKtc(pt.predictedEos)}</p>
+                  )}
+                  {pt.low != null && pt.high != null && (
+                    <p style={{ color: '#93c5fd' }}>Range: {formatKtc(pt.low)} – {formatKtc(pt.high)}</p>
+                  )}
+                  {pt.compareEos != null && (
+                    <p style={{ color: '#f97316' }}>{compare?.name ?? 'Compare'}: {formatKtc(pt.compareEos)}</p>
+                  )}
+                  {pt.compareLow != null && pt.compareHigh != null && (
+                    <p style={{ color: '#fdba74' }}>Range: {formatKtc(pt.compareLow)} – {formatKtc(pt.compareHigh)}</p>
+                  )}
+                </div>
+              );
             }}
           />
 
@@ -295,13 +306,7 @@ export default function WhatIfChart({
             name="predictedEos"
           />
 
-          {/* Hidden lines for tooltip display of band values */}
-          {hasBands && (
-            <>
-              <Line dataKey="high" stroke="transparent" strokeWidth={0} dot={false} isAnimationActive={false} name="high" />
-              <Line dataKey="low" stroke="transparent" strokeWidth={0} dot={false} isAnimationActive={false} name="low" />
-            </>
-          )}
+          {/* Band values shown via custom tooltip, no hidden lines needed */}
 
           {/* Comparison prediction curve */}
           {hasCompare && (
@@ -315,13 +320,7 @@ export default function WhatIfChart({
             />
           )}
 
-          {/* Hidden lines for tooltip display of comparison band values */}
-          {hasCompare && (
-            <>
-              <Line dataKey="compareHigh" stroke="transparent" strokeWidth={0} dot={false} isAnimationActive={false} name="compareHigh" />
-              <Line dataKey="compareLow" stroke="transparent" strokeWidth={0} dot={false} isAnimationActive={false} name="compareLow" />
-            </>
-          )}
+          {/* Comparison band values shown via custom tooltip, no hidden lines needed */}
 
           {/* Current PPG marker (primary) */}
           {currentPoint && currentPoint.predictedEos !== null && (

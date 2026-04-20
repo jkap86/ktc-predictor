@@ -187,6 +187,12 @@ MIN_SAMPLES = 100
 GP_BUCKETS = [(1, 3), (4, 7), (8, 11), (12, 17)]
 GP_BUCKET_MIN_SAMPLES = 30
 
+# KTC tier buckets for tier-aware calibration
+KTC_TIER_BUCKETS = [(0, 2000), (2000, 4000), (4000, 6000), (6000, 99999)]
+KTC_TIER_MIN_SAMPLES = 30
+# RB tier calibration hurts (Optuna already handles RB's tier distribution well)
+KTC_TIER_SKIP_POSITIONS = {"RB"}
+
 # Ensemble configuration: train multiple models with different seeds for variance reduction
 ENSEMBLE_SEEDS = [42, 123, 456, 789, 999]
 
@@ -216,6 +222,14 @@ def _gp_bucket_key(gp: float) -> str | None:
     for lo, hi in GP_BUCKETS:
         if lo <= gp <= hi:
             return f"gp_{lo}_{hi}"
+    return None
+
+
+def _ktc_tier_key(start_ktc: float) -> str | None:
+    """Return the tier key string for a start_ktc value, or None."""
+    for lo, hi in KTC_TIER_BUCKETS:
+        if lo <= start_ktc < hi:
+            return f"tier_{lo}_{hi}"
     return None
 
 
@@ -994,6 +1008,49 @@ def train_all(
             post_mae = mean_absolute_error(y_end_ktc_test, post_end_ktc)
             post_bias = float(np.mean(post_end_ktc - y_end_ktc_test))
             print(f"  pos_cal: MAE {pre_mae:.1f} -> {post_mae:.1f}, bias {pre_bias:+.1f} -> {post_bias:+.1f}")
+
+            # Third-stage: per-KTC-tier calibration
+            # Corrects systematic bias at different value tiers (e.g. TE 6k+ underprediction)
+            # Skipped for positions where it hurts (RB)
+            start_ktc_train_vals = start_ktc[train_idx]
+            start_ktc_test_vals = start_ktc[test_idx]
+
+            # Apply pos_cal to OOF predictions for tier calibrator fitting
+            oof_preds_pos = pos_cal.predict(oof_preds_cal)
+
+            tier_pre_mae = post_mae
+            tier_pre_bias = post_bias
+
+            if pos not in KTC_TIER_SKIP_POSITIONS:
+                for tlo, thi in KTC_TIER_BUCKETS:
+                    tkey = f"tier_{tlo}_{thi}"
+                    tier_mask = (start_ktc_train_vals >= tlo) & (start_ktc_train_vals < thi) & valid_oof
+                    if tier_mask.sum() >= KTC_TIER_MIN_SAMPLES:
+                        # Weaker identity shrinkage (3.0 vs default 10.0) lets
+                        # the calibrator correct larger systematic biases per tier.
+                        tier_cal = MonotoneLinearCalibrator(min_slope=0.01, identity_strength=3.0)
+                        tier_cal.fit(oof_preds_pos[tier_mask], y_train[tier_mask])
+                        calibrator_dict[tkey] = tier_cal
+
+                # Apply tier calibration to test predictions
+                test_preds_tier = test_preds.copy()
+                for i in range(len(test_preds)):
+                    tkey = _ktc_tier_key(start_ktc_test_vals[i])
+                    if tkey and tkey in calibrator_dict:
+                        calibrated = float(calibrator_dict[tkey].predict([test_preds[i]])[0])
+                        if not np.isnan(calibrated):
+                            test_preds_tier[i] = calibrated
+                test_preds = test_preds_tier
+
+                if USE_PCT_CHANGE_TARGET:
+                    tier_end_ktc = start_ktc_test * (1 + test_preds)
+                else:
+                    tier_end_ktc = start_ktc_test * np.exp(test_preds)
+                tier_post_mae = mean_absolute_error(y_end_ktc_test, tier_end_ktc)
+                tier_post_bias = float(np.mean(tier_end_ktc - y_end_ktc_test))
+                print(f"  tier_cal: MAE {tier_pre_mae:.1f} -> {tier_post_mae:.1f}, bias {tier_pre_bias:+.1f} -> {tier_post_bias:+.1f}")
+            else:
+                print(f"  tier_cal: SKIP ({pos} in KTC_TIER_SKIP_POSITIONS)")
 
         # Clip bounds: 2nd/97th percentile of y_train
         # Tightened from p99 — extreme shrinkage handles remaining outliers
