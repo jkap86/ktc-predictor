@@ -190,11 +190,14 @@ GP_BUCKET_MIN_SAMPLES = 30
 # Ensemble configuration: train multiple models with different seeds for variance reduction
 ENSEMBLE_SEEDS = [42, 123, 456, 789, 999]
 
-# Position-specific hyperparameters: QB/RB/TE underfit with default params
-# WR works great with defaults (R²=0.91), so keep current settings
+# Position-specific hyperparameters (QB/RB Optuna-tuned, WR/TE hand-tuned)
 POSITION_HYPERPARAMS = {
-    "QB": {"max_depth": 4, "learning_rate": 0.08, "n_estimators": 300},
-    "RB": {"max_depth": 7, "learning_rate": 0.05, "n_estimators": 400},
+    "QB": {"max_depth": 7, "learning_rate": 0.028, "n_estimators": 350,
+            "loss": "absolute_error", "min_samples_leaf": 50,
+            "l2_regularization": 0.0014, "max_leaf_nodes": 55},
+    "RB": {"max_depth": 3, "learning_rate": 0.015, "n_estimators": 500,
+            "loss": "squared_error", "min_samples_leaf": 7,
+            "l2_regularization": 3.87, "max_leaf_nodes": 30},
     "WR": {"max_depth": 5, "learning_rate": 0.10, "n_estimators": 200},
     "TE": {"max_depth": 6, "learning_rate": 0.08, "n_estimators": 300},
 }
@@ -432,13 +435,22 @@ def _build_hgb(seed: int, position: str = "WR"):
     """Create a HistGradientBoostingRegressor with monotonic constraints and position-specific hyperparams."""
     params = POSITION_HYPERPARAMS.get(position, POSITION_HYPERPARAMS["WR"])
     monotonic_cst = _build_monotonic_constraints(position)
-    return HistGradientBoostingRegressor(
-        max_iter=params["n_estimators"],
-        max_depth=params["max_depth"],
-        learning_rate=params["learning_rate"],
-        monotonic_cst=monotonic_cst,
-        random_state=seed,
-    )
+    kwargs = {
+        "max_iter": params["n_estimators"],
+        "max_depth": params["max_depth"],
+        "learning_rate": params["learning_rate"],
+        "monotonic_cst": monotonic_cst,
+        "random_state": seed,
+    }
+    if "loss" in params:
+        kwargs["loss"] = params["loss"]
+    if "min_samples_leaf" in params:
+        kwargs["min_samples_leaf"] = params["min_samples_leaf"]
+    if "l2_regularization" in params:
+        kwargs["l2_regularization"] = params["l2_regularization"]
+    if "max_leaf_nodes" in params:
+        kwargs["max_leaf_nodes"] = params["max_leaf_nodes"]
+    return HistGradientBoostingRegressor(**kwargs)
 
 
 def _build_quantile_hgb(seed: int, position: str, quantile: float):
@@ -448,15 +460,22 @@ def _build_quantile_hgb(seed: int, position: str, quantile: float):
     """
     params = POSITION_HYPERPARAMS.get(position, POSITION_HYPERPARAMS["WR"])
     monotonic_cst = _build_monotonic_constraints(position)
-    return HistGradientBoostingRegressor(
-        loss="quantile",
-        quantile=quantile,
-        max_iter=params["n_estimators"],
-        max_depth=params["max_depth"],
-        learning_rate=params["learning_rate"],
-        monotonic_cst=monotonic_cst,
-        random_state=seed,
-    )
+    kwargs = {
+        "loss": "quantile",
+        "quantile": quantile,
+        "max_iter": params["n_estimators"],
+        "max_depth": params["max_depth"],
+        "learning_rate": params["learning_rate"],
+        "monotonic_cst": monotonic_cst,
+        "random_state": seed,
+    }
+    if "min_samples_leaf" in params:
+        kwargs["min_samples_leaf"] = params["min_samples_leaf"]
+    if "l2_regularization" in params:
+        kwargs["l2_regularization"] = params["l2_regularization"]
+    if "max_leaf_nodes" in params:
+        kwargs["max_leaf_nodes"] = params["max_leaf_nodes"]
+    return HistGradientBoostingRegressor(**kwargs)
 
 
 def _build_ridge():

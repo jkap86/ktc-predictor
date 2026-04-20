@@ -2,70 +2,70 @@
   "positions": {
     "QB": {
       "n": 784,
-      "mae": 676.8,
-      "bias": -3.6,
+      "mae": 593.7,
+      "bias": 61.3,
       "tiers": {
         "0-2k": {
           "n": 229,
-          "mae": 389.1,
-          "bias": 140.3
+          "mae": 350.8,
+          "bias": 258.5
         },
         "2k-4k": {
           "n": 156,
-          "mae": 871.8,
-          "bias": -397.2
+          "mae": 772.6,
+          "bias": -167.6
         },
         "4k-6k": {
           "n": 131,
-          "mae": 624.2,
-          "bias": -116.3,
-          "riser_bias": 133.4,
+          "mae": 564.7,
+          "bias": -43.9,
+          "riser_bias": 236.8,
           "riser_n": 65,
-          "faller_bias": -362.2,
+          "faller_bias": -320.4,
           "faller_n": 66
         },
         "6k+": {
           "n": 268,
-          "mae": 834.8,
-          "bias": 157.6,
-          "riser_bias": 429.9,
+          "mae": 711.3,
+          "bias": 77.3,
+          "riser_bias": 394.5,
           "riser_n": 145,
-          "faller_bias": -163.4,
+          "faller_bias": -296.5,
           "faller_n": 123
         }
       }
     },
     "RB": {
       "n": 1145,
-      "mae": 551.0,
-      "bias": 171.7,
+      "mae": 523.4,
+      "bias": 190.6,
       "tiers": {
         "0-2k": {
           "n": 291,
-          "mae": 359.6,
-          "bias": 51.7
+          "mae": 299.7,
+          "bias": 20.9
         },
         "2k-4k": {
           "n": 442,
-          "mae": 590.9,
-          "bias": 407.8
+          "mae": 633.0,
+          "bias": 429.4
         },
         "4k-6k": {
           "n": 251,
-          "mae": 589.3,
-          "bias": 18.4,
-          "riser_bias": 823.7,
+          "mae": 559.4,
+          "bias": -43.3,
+          "riser_bias": 550.2,
           "riser_n": 60,
-          "faller_bias": -234.6,
+          "faller_bias": -229.8,
           "faller_n": 191
         },
         "6k+": {
           "n": 161,
-          "mae": 727.4,
-          "bias": -20.5,
-          "riser_bias": 320.1,
+          "mae": 570.7,
+          "bias": 206.4,
+          "riser_bias": 474.5,
           "riser_n": 99,
-          "faller_bias": -564.3,
+          "faller_bias": -221.6,
           "faller_n": 62
         }
       }
