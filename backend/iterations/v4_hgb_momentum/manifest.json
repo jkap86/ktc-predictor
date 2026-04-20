@@ -1,8 +1,8 @@
 {
   "id": "v4_hgb_momentum",
   "name": "HGB v4 (momentum + position efficiency)",
-  "description": "v3 baseline for RB/TE (unchanged), plus KTC momentum + position-specific efficiency for QB/WR only. QB gets 30d/90d trend, momentum_ratio, max_games_missed_streak, prior_passing_tds, prior_interceptions. WR gets the same momentum features plus prior_targets, prior_red_zone_targets.",
-  "created": "2026-04-17",
-  "features_count": {"QB": 27, "RB": 26, "WR": 33, "TE": 20},
+  "description": "v3 baseline for RB/TE, KTC momentum + position efficiency for QB/WR, team context (qb_ktc, team_total_ktc, positional_competition) for WR only. draft_pick and years_remaining now populated from nfl_data_py.",
+  "created": "2026-04-19",
+  "features_count": {"QB": 27, "RB": 26, "WR": 36, "TE": 20},
   "positions": ["QB", "RB", "WR", "TE"]
 }

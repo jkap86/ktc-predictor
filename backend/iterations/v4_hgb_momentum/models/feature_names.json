@@ -89,7 +89,10 @@
     "max_games_missed_streak",
     "prior_targets",
     "prior_red_zone_targets",
-    "has_prior_position_stats"
+    "has_prior_position_stats",
+    "qb_ktc",
+    "team_total_ktc",
+    "positional_competition"
   ],
   "TE": [
     "games_played_so_far",

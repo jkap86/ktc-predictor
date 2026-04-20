@@ -169,14 +169,25 @@ _POSITION_STAT_FEATURES = {
 # Initial v4 applied to all 4; RB/TE were worse than v3, QB/WR improved.
 _POSITIONS_WITH_V4_FEATURES = {"QB", "WR"}
 
+# Team context features (WR only — helps with target competition;
+# hurt QB/RB/TE where individual trajectory dominates)
+_TEAM_FEATURES = ["qb_ktc", "team_total_ktc", "positional_competition"]
+_POSITIONS_WITH_TEAM_FEATURES = {"WR"}
+
 
 def _v4_get_features_for_position(position: str) -> list[str]:
-    """v3's features + momentum + position-specific stats for QB/WR only."""
+    """v3's features + momentum + position-specific stats for QB/WR,
+    plus team context features for WR only."""
     base = _V3_GET_FEATURES(position)
-    if position not in _POSITIONS_WITH_V4_FEATURES:
+    extras: list[str] = []
+    if position in _POSITIONS_WITH_V4_FEATURES:
+        pos_stats = _POSITION_STAT_FEATURES.get(position, [])
+        extras = _MOMENTUM_FEATURES + pos_stats + ["has_prior_position_stats"]
+    if position in _POSITIONS_WITH_TEAM_FEATURES:
+        extras = extras + _TEAM_FEATURES
+    if not extras:
         return base
-    pos_stats = _POSITION_STAT_FEATURES.get(position, [])
-    return base + _MOMENTUM_FEATURES + pos_stats + ["has_prior_position_stats"]
+    return base + extras
 
 
 v1.get_features_for_position = _v4_get_features_for_position
@@ -192,11 +203,15 @@ _v3_build_mc = v1._build_monotonic_constraints
 
 
 def _v4_build_monotonic_constraints(position: str) -> list[int]:
-    """v3's constraints + zeros for the new features (QB/WR only)."""
+    """v3's constraints + zeros for the new features."""
     base = _v3_build_mc(position)
-    if position not in _POSITIONS_WITH_V4_FEATURES:
+    n_new = 0
+    if position in _POSITIONS_WITH_V4_FEATURES:
+        n_new += len(_MOMENTUM_FEATURES) + len(_POSITION_STAT_FEATURES.get(position, [])) + 1
+    if position in _POSITIONS_WITH_TEAM_FEATURES:
+        n_new += len(_TEAM_FEATURES)
+    if n_new == 0:
         return base
-    n_new = len(_MOMENTUM_FEATURES) + len(_POSITION_STAT_FEATURES.get(position, [])) + 1
     return base + [0] * n_new
 
 
@@ -228,6 +243,9 @@ def _v4_monotonic_smoke_test(model, position: str) -> bool:
         if position in _POSITIONS_WITH_V4_FEATURES:
             row.extend([0.0, 0.0, 0.1, 0.1])  # momentum (4)
             row.extend([0.0, 0.0, 1])  # position stats (2) + sentinel (1)
+        # v4 team features (WR only)
+        if position in _POSITIONS_WITH_TEAM_FEATURES:
+            row.extend([5000, 30000, 3000])  # qb_ktc, team_total, positional_comp
         X_test.append(row)
 
     X_test = np.array(X_test)

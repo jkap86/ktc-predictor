@@ -74,6 +74,10 @@ def predict_from_inputs(
     prior_red_zone_touches: float | None = None,
     prior_targets: float | None = None,
     prior_red_zone_targets: float | None = None,
+    # v4+ team context (WR only; ignored by others via **_unused_kwargs)
+    qb_ktc: float | None = None,
+    team_total_ktc: float | None = None,
+    positional_competition: float | None = None,
 ) -> dict:
     """Predict EOS KTC using a specific model iteration."""
     result = iteration.predict_end_ktc(
@@ -103,6 +107,9 @@ def predict_from_inputs(
         prior_red_zone_touches=prior_red_zone_touches,
         prior_targets=prior_targets,
         prior_red_zone_targets=prior_red_zone_targets,
+        qb_ktc=qb_ktc,
+        team_total_ktc=team_total_ktc,
+        positional_competition=positional_competition,
     )
 
     effective_ktc = result.get("effective_start_ktc", start_ktc)
@@ -244,6 +251,12 @@ async def predict_for_player(
         prior_red_zone_touches=prior_pos.get("prior_red_zone_touches"),
         prior_targets=prior_pos.get("prior_targets"),
         prior_red_zone_targets=prior_pos.get("prior_red_zone_targets"),
+        # Team context features: pulled from latest season training data.
+        # At inference these come from the stored season record (training-time
+        # values); live inference would need a roster + KTC DB lookup.
+        qb_ktc=latest.get("qb_ktc") if latest else None,
+        team_total_ktc=latest.get("team_total_ktc") if latest else None,
+        positional_competition=latest.get("positional_competition") if latest else None,
     )
     result["player_id"] = player_id
     result["name"] = player["name"]

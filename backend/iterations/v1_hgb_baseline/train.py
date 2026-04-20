@@ -123,8 +123,8 @@ _TEAM_FEATURES = [
     "positional_competition",  # KTC of same-position teammates (committee risk)
 ]
 
-# Feature flag for team features
-# Disabled: adds noise to RB 6k+ tier predictions
+# Feature flag for team features (global toggle — used by v1/v3/v4 base pipeline)
+# Set False here; v4 selectively enables for WR only via get_features_for_position override
 USE_TEAM_FEATURES = False
 
 # Offseason features (only used when USE_OFFSEASON_FEATURES=True)

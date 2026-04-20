@@ -82,16 +82,24 @@ _POSITION_STAT_FEATURES = {
 
 _POSITIONS_WITH_V4_FEATURES = {"QB", "WR"}
 
+_TEAM_FEATURES = ["qb_ktc", "team_total_ktc", "positional_competition"]
+_POSITIONS_WITH_TEAM_FEATURES = {"WR"}
+
 
 def get_expected_features(position: str) -> list[str]:
     """Get the expected feature list for v4 for a given position."""
     base = _V1_CORE_FEATURES + _V1_LINEAR_FEATURES
     if position in _POSITIONS_WITH_PRIOR_BEHAVIORAL:
         base = base + _PRIOR_BEHAVIORAL_FEATURES
-    if position not in _POSITIONS_WITH_V4_FEATURES:
+    extras: list[str] = []
+    if position in _POSITIONS_WITH_V4_FEATURES:
+        pos_stats = _POSITION_STAT_FEATURES.get(position, [])
+        extras = _MOMENTUM_FEATURES + pos_stats + ["has_prior_position_stats"]
+    if position in _POSITIONS_WITH_TEAM_FEATURES:
+        extras = extras + _TEAM_FEATURES
+    if not extras:
         return base
-    pos_stats = _POSITION_STAT_FEATURES.get(position, [])
-    return base + _MOMENTUM_FEATURES + pos_stats + ["has_prior_position_stats"]
+    return base + extras
 
 
 EXPECTED_FEATURES = get_expected_features("RB")  # largest layout
@@ -162,6 +170,10 @@ def predict_end_ktc(
     prior_red_zone_touches: float | None = None,
     prior_targets: float | None = None,
     prior_red_zone_targets: float | None = None,
+    # v4 team context (WR only)
+    qb_ktc: float | None = None,
+    team_total_ktc: float | None = None,
+    positional_competition: float | None = None,
     sentinel_impute: dict | None = None,
     residual_correction: dict | None = None,
     target_type: str = "log_ratio",
@@ -285,6 +297,14 @@ def predict_end_ktc(
                 prior_red_zone_targets if prior_red_zone_targets is not None else np.nan,
                 has_ps,
             ])
+
+    # v4 team context (WR only)
+    if position in _POSITIONS_WITH_TEAM_FEATURES:
+        linear_features.extend([
+            qb_ktc if qb_ktc is not None else np.nan,
+            team_total_ktc if team_total_ktc is not None else np.nan,
+            positional_competition if positional_competition is not None else np.nan,
+        ])
 
     X = np.array([core_features + linear_features])
 
