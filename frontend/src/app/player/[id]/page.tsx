@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getPlayer, getPrediction, predictEos } from '../../../lib/api';
 import { formatKtc } from '../../../lib/format';
@@ -36,9 +36,10 @@ function ConfidenceBand({ prediction, color = 'blue' }: { prediction: EOSPredict
   );
 }
 
-/** Compact player header: name + position + KTC */
-function PlayerHeader({ player, prediction, color = 'blue' }: {
+/** Compact player header: name + position + KTC, with optional remove/swap */
+function PlayerHeader({ player, prediction, color = 'blue', onRemove, onSwap, showActions = false }: {
   player: Player; prediction: EOSPrediction | null; color?: 'blue' | 'orange';
+  onRemove?: () => void; onSwap?: () => void; showActions?: boolean;
 }) {
   const accent = color === 'orange' ? 'text-orange-500 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400';
   const border = color === 'orange' ? 'border-orange-200 dark:border-orange-800' : 'border-blue-200 dark:border-blue-800';
@@ -53,11 +54,31 @@ function PlayerHeader({ player, prediction, color = 'blue' }: {
           {player.position}
         </span>
       </div>
-      <div className="text-right shrink-0">
-        <div className={`text-2xl font-bold ${accent}`}>
-          {formatKtc(player.live_ktc ?? prediction?.start_ktc ?? 0)}
+      <div className="flex items-center gap-2">
+        {showActions && (
+          <div className="flex items-center gap-1">
+            {onSwap && (
+              <button onClick={onSwap} className={`p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors ${accent}`} title="Swap players">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+              </button>
+            )}
+            {onRemove && (
+              <button onClick={onRemove} className={`p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors ${accent}`} title="Remove player">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
+        <div className="text-right shrink-0">
+          <div className={`text-2xl font-bold ${accent}`}>
+            {formatKtc(player.live_ktc ?? prediction?.start_ktc ?? 0)}
+          </div>
+          <div className="text-xs text-gray-400">{player.live_ktc ? 'Live' : 'KTC'}</div>
         </div>
-        <div className="text-xs text-gray-400">{player.live_ktc ? 'Live' : 'KTC'}</div>
       </div>
     </div>
   );
@@ -113,6 +134,7 @@ function SeasonRow({ season }: {
 
 export default function PlayerPage() {
   const params = useParams();
+  const router = useRouter();
   const playerId = params.id as string;
   const { selectedModelId } = useModel();
 
@@ -211,9 +233,34 @@ export default function PlayerPage() {
 
       {/* ── SECTION: Player Headers ── */}
       <div className={`grid gap-4 ${hasCompare ? 'grid-cols-2' : 'grid-cols-1'}`}>
-        <PlayerHeader player={player} prediction={prediction} color="blue" />
+        <PlayerHeader
+          player={player}
+          prediction={prediction}
+          color="blue"
+          showActions={hasCompare}
+          onSwap={hasCompare && comparePlayer ? () => {
+            const newCompare: PlayerSummary = { player_id: playerId, name: player.name, position: player.position, latest_ktc: player.live_ktc ?? prediction?.start_ktc ?? 0 };
+            router.push(`/player/${comparePlayer.player_id}`);
+            setTimeout(() => setComparePlayer(newCompare), 100);
+          } : undefined}
+          onRemove={hasCompare && comparePlayer ? () => {
+            router.push(`/player/${comparePlayer.player_id}`);
+            setComparePlayer(null);
+          } : undefined}
+        />
         {hasCompare && compareData && (
-          <PlayerHeader player={compareData} prediction={comparePrediction} color="orange" />
+          <PlayerHeader
+            player={compareData}
+            prediction={comparePrediction}
+            color="orange"
+            showActions
+            onSwap={comparePlayer ? () => {
+              const newCompare: PlayerSummary = { player_id: playerId, name: player.name, position: player.position, latest_ktc: player.live_ktc ?? prediction?.start_ktc ?? 0 };
+              router.push(`/player/${comparePlayer.player_id}`);
+              setTimeout(() => setComparePlayer(newCompare), 100);
+            } : undefined}
+            onRemove={() => setComparePlayer(null)}
+          />
         )}
       </div>
 
