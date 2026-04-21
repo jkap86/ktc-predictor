@@ -194,12 +194,16 @@ def predict_end_ktc(
     positional_competition: float | None = None,
     sentinel_impute: dict | None = None,
     residual_correction: dict | None = None,
-    target_type: str = "log_ratio",
+    target_type: str | dict = "log_ratio",
     knn_adjuster=None,
     quantile_models: dict | None = None,
     **_unused_kwargs,
 ) -> dict:
     """Predict end-of-season KTC value using v4's feature model."""
+    # Resolve per-position target type (dict or string)
+    if isinstance(target_type, dict):
+        target_type = target_type.get(position, "log_ratio")
+
     if position not in VALID_POSITIONS:
         raise ValueError(
             f"Invalid position '{position}'. Must be one of {sorted(VALID_POSITIONS)}"
@@ -363,14 +367,14 @@ def predict_end_ktc(
             gp=gp,
         )
 
-    # Residual correction
-    if env_flag("KTC_ENABLE_RESIDUAL_CORRECTION", default=True):
+    # Residual correction (log_ratio/pct_change only — corrections are in log-ratio scale)
+    if target_type != "abs_change" and env_flag("KTC_ENABLE_RESIDUAL_CORRECTION", default=True):
         pred_log_ratio = apply_residual_correction(
             pred_log_ratio, start_ktc, position, residual_correction
         )
 
-    # Extreme shrinkage
-    if env_flag("KTC_ENABLE_EXTREME_SHRINKAGE", default=True):
+    # Extreme shrinkage (log_ratio/pct_change only — thresholds don't apply to raw delta)
+    if target_type != "abs_change" and env_flag("KTC_ENABLE_EXTREME_SHRINKAGE", default=True):
         pred_log_ratio = apply_extreme_shrinkage(pred_log_ratio)
 
     # Clip to percentile bounds
@@ -384,7 +388,10 @@ def predict_end_ktc(
         pred_log_ratio = apply_age_decline_adjustment(pred_log_ratio, age, position)
 
     # KTC-aware bounds
-    if target_type == "pct_change":
+    if target_type == "abs_change":
+        ktc_aware_upper = 9999.0 - start_ktc
+        ktc_aware_lower = 1.0 - start_ktc
+    elif target_type == "pct_change":
         ktc_aware_upper = (9999.0 - start_ktc) / start_ktc
         ktc_aware_lower = (1.0 - start_ktc) / start_ktc
     else:
@@ -395,7 +402,9 @@ def predict_end_ktc(
     KTC_MIN = 1.0
     KTC_MAX = 9999.0
 
-    if target_type == "pct_change":
+    if target_type == "abs_change":
+        raw_end_ktc = start_ktc + pred_log_ratio
+    elif target_type == "pct_change":
         raw_end_ktc = start_ktc * (1 + pred_log_ratio)
     else:
         raw_end_ktc = start_ktc * np.exp(pred_log_ratio)
@@ -438,7 +447,9 @@ def predict_end_ktc(
                 q_log = max(ktc_aware_lower, min(ktc_aware_upper, q_log))
                 if bounds is not None:
                     q_log = max(bounds[0], min(bounds[1], q_log))
-                if target_type == "pct_change":
+                if target_type == "abs_change":
+                    raw = start_ktc + q_log
+                elif target_type == "pct_change":
                     raw = start_ktc * (1 + q_log)
                 else:
                     raw = start_ktc * np.exp(q_log)

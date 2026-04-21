@@ -50,6 +50,11 @@ USE_PFF_FEATURES = False
 # pct_change treats all tiers equally; log_ratio compresses elite tier errors
 USE_PCT_CHANGE_TARGET = False  # Experiment B failed - extreme outliers destabilize training
 
+# Positions that use raw delta (end_ktc - start_ktc) as target instead of log_ratio.
+# Delta treats all KTC points equally (matches dynasty trade value).
+# QB benefits from delta (-26 MAE); RB/WR worse with delta so keep log_ratio.
+USE_DELTA_TARGET_POSITIONS = {"QB"}
+
 # ============================================================================
 # FEATURE LISTS FOR MIXED PROCESSING PIPELINE
 # ============================================================================
@@ -210,6 +215,16 @@ POSITION_HYPERPARAMS = {
     "WR": {"max_depth": 5, "learning_rate": 0.10, "n_estimators": 200},
     "TE": {"max_depth": 6, "learning_rate": 0.08, "n_estimators": 300},
 }
+
+def _reconstruct_end_ktc(preds, start_ktc, target_name):
+    """Reconstruct end_ktc from model predictions based on target type."""
+    if target_name == "abs_change":
+        return start_ktc + preds
+    elif target_name == "pct_change":
+        return start_ktc * (1 + preds)
+    else:  # log_ratio
+        return start_ktc * np.exp(preds)
+
 
 NAN_CHECK_COLS = ["age", "draft_pick", "years_remaining"]
 
@@ -837,8 +852,11 @@ def train_all(
         n_core, n_linear = get_feature_counts_for_position(pos)
 
         X = pos_df[pos_features].values
-        # Target variable: log_ratio or pct_change based on flag
-        if USE_PCT_CHANGE_TARGET:
+        # Target variable: per-position selection
+        if pos in USE_DELTA_TARGET_POSITIONS:
+            y = pos_df["abs_change"].values
+            target_name = "abs_change"
+        elif USE_PCT_CHANGE_TARGET:
             y = pos_df["pct_change"].values
             target_name = "pct_change"
         else:
@@ -1004,10 +1022,7 @@ def train_all(
 
             # Second-stage: per-position linear calibration
             # Fit on calibrated OOF predictions (no test leakage!)
-            if USE_PCT_CHANGE_TARGET:
-                pre_end_ktc = start_ktc_test * (1 + test_preds)
-            else:
-                pre_end_ktc = start_ktc_test * np.exp(test_preds)
+            pre_end_ktc = _reconstruct_end_ktc(test_preds, start_ktc_test, target_name)
             pre_mae = mean_absolute_error(y_end_ktc_test, pre_end_ktc)
             pre_bias = float(np.mean(pre_end_ktc - y_end_ktc_test))
 
@@ -1018,10 +1033,7 @@ def train_all(
             # Apply pos_cal to test predictions
             test_preds = pos_cal.predict(test_preds)
 
-            if USE_PCT_CHANGE_TARGET:
-                post_end_ktc = start_ktc_test * (1 + test_preds)
-            else:
-                post_end_ktc = start_ktc_test * np.exp(test_preds)
+            post_end_ktc = _reconstruct_end_ktc(test_preds, start_ktc_test, target_name)
             post_mae = mean_absolute_error(y_end_ktc_test, post_end_ktc)
             post_bias = float(np.mean(post_end_ktc - y_end_ktc_test))
             print(f"  pos_cal: MAE {pre_mae:.1f} -> {post_mae:.1f}, bias {pre_bias:+.1f} -> {post_bias:+.1f}")
@@ -1061,10 +1073,7 @@ def train_all(
                         test_preds_tier[i] = calibrated
             test_preds = test_preds_tier
 
-            if USE_PCT_CHANGE_TARGET:
-                tier_end_ktc = start_ktc_test * (1 + test_preds)
-            else:
-                tier_end_ktc = start_ktc_test * np.exp(test_preds)
+            tier_end_ktc = _reconstruct_end_ktc(test_preds, start_ktc_test, target_name)
             tier_post_mae = mean_absolute_error(y_end_ktc_test, tier_end_ktc)
             tier_post_bias = float(np.mean(tier_end_ktc - y_end_ktc_test))
             print(f"  tier_cal: MAE {tier_pre_mae:.1f} -> {tier_post_mae:.1f}, bias {tier_pre_bias:+.1f} -> {tier_post_bias:+.1f}")
@@ -1079,21 +1088,22 @@ def train_all(
             _ppg_sensitivity_test(model, calibrator_dict, (low, high), pos)
 
         # Clip test predictions and apply extreme shrinkage
+        # (shrinkage only for log_ratio/pct_change — thresholds don't apply to raw delta)
         from .predict import apply_extreme_shrinkage
         test_preds_clipped = np.clip(test_preds, low, high)
-        test_preds_clipped = np.array([
-            apply_extreme_shrinkage(p) for p in test_preds_clipped
-        ])
+        if target_name != "abs_change":
+            test_preds_clipped = np.array([
+                apply_extreme_shrinkage(p) for p in test_preds_clipped
+            ])
 
         # Apply KTC-aware clamp (ensures end_ktc stays within [1, 9999] domain)
-        if USE_PCT_CHANGE_TARGET:
-            # pct_change: end_ktc = start_ktc * (1 + pct_change)
-            # For end_ktc = 9999: pct_change = (9999 - start_ktc) / start_ktc
-            # For end_ktc = 1: pct_change = (1 - start_ktc) / start_ktc
+        if target_name == "abs_change":
+            ktc_aware_upper = 9999.0 - start_ktc_test
+            ktc_aware_lower = 1.0 - start_ktc_test
+        elif target_name == "pct_change":
             ktc_aware_upper = (9999.0 - start_ktc_test) / start_ktc_test
             ktc_aware_lower = (1.0 - start_ktc_test) / start_ktc_test
         else:
-            # log_ratio: end_ktc = start_ktc * exp(log_ratio)
             ktc_aware_upper = np.log(9999.0 / start_ktc_test)
             ktc_aware_lower = np.log(1.0 / start_ktc_test)
 
@@ -1103,12 +1113,7 @@ def train_all(
         )
 
         # Convert to end_ktc for reporting
-        if USE_PCT_CHANGE_TARGET:
-            # pct_change: end_ktc = start_ktc * (1 + pct_change)
-            test_end_ktc_preds = start_ktc_test * (1 + test_preds_clipped)
-        else:
-            # log_ratio: end_ktc = start_ktc * exp(log_ratio)
-            test_end_ktc_preds = start_ktc_test * np.exp(test_preds_clipped)
+        test_end_ktc_preds = _reconstruct_end_ktc(test_preds_clipped, start_ktc_test, target_name)
 
         # Collect test-set rows (always — used by diagnostics and optional CSV export)
         test_meta = pos_df.iloc[test_idx]
@@ -1173,8 +1178,15 @@ def train_all(
             sentinel_impute[pos] = float(non_sent["start_ktc"].quantile(0.95))
     bundle["sentinel_impute"] = sentinel_impute
 
-    # Save target type for inference (log_ratio vs pct_change)
-    bundle["target_type"] = "pct_change" if USE_PCT_CHANGE_TARGET else "log_ratio"
+    # Save target type for inference (per-position: abs_change, log_ratio, or pct_change)
+    default_target = "pct_change" if USE_PCT_CHANGE_TARGET else "log_ratio"
+    target_types = {}
+    for pos in POSITIONS:
+        if pos in USE_DELTA_TARGET_POSITIONS:
+            target_types[pos] = "abs_change"
+        else:
+            target_types[pos] = default_target
+    bundle["target_type"] = target_types
 
     if export_csv and all_test_rows:
         csv_df = pd.DataFrame(all_test_rows)

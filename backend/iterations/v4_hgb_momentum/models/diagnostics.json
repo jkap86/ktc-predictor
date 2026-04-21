@@ -2,35 +2,35 @@
   "positions": {
     "QB": {
       "n": 784,
-      "mae": 593.6,
-      "bias": 88.5,
+      "mae": 587.8,
+      "bias": 34.9,
       "tiers": {
         "0-2k": {
           "n": 229,
-          "mae": 346.3,
-          "bias": 238.1
+          "mae": 328.5,
+          "bias": 269.7
         },
         "2k-4k": {
           "n": 156,
-          "mae": 755.2,
-          "bias": -59.2
+          "mae": 666.6,
+          "bias": -95.3
         },
         "4k-6k": {
           "n": 131,
-          "mae": 570.1,
-          "bias": -39.7,
-          "riser_bias": 231.6,
+          "mae": 517.9,
+          "bias": -111.8,
+          "riser_bias": 220.7,
           "riser_n": 65,
-          "faller_bias": -306.8,
+          "faller_bias": -439.2,
           "faller_n": 66
         },
         "6k+": {
           "n": 268,
-          "mae": 722.4,
-          "bias": 109.2,
-          "riser_bias": 440.3,
+          "mae": 797.6,
+          "bias": -18.2,
+          "riser_bias": 558.3,
           "riser_n": 145,
-          "faller_bias": -281.1,
+          "faller_bias": -697.8,
           "faller_n": 123
         }
       }

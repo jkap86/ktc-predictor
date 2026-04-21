@@ -1,12 +1,12 @@
 {
   "QB": {
-    "mae": 593.6,
-    "r2": 0.933,
+    "mae": 587.8,
+    "r2": 0.9381,
     "n_train": 3045,
     "n_test": 784,
     "backend": "HGB",
-    "clip_low": -0.9,
-    "clip_high": 1.0
+    "clip_low": -2213.0,
+    "clip_high": 2477.0
   },
   "RB": {
     "mae": 523.4,
