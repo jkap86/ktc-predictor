@@ -857,6 +857,16 @@ def train_all(
         start_ktc_test = start_ktc[test_idx]
         y_end_ktc_test = y_end_ktc[test_idx]
 
+        # Sample weights: upweight elite tier (4k+) for WR only.
+        # WR has enough elite samples to benefit; smaller positions overfit.
+        start_ktc_train = start_ktc[train_idx]
+        sample_weights = np.ones(len(X_train))
+        if pos == "WR":
+            sample_weights[start_ktc_train >= 6000] = 1.5
+            sample_weights[start_ktc_train >= 4000] = np.maximum(
+                sample_weights[start_ktc_train >= 4000], 1.25
+            )
+
         # Select backend and build model(s)
         backend_name = model_type.upper()
         quantile_models = {}
@@ -906,12 +916,16 @@ def train_all(
                 ensemble_models.append(m)
 
             # Train all ensemble models
+            has_weights = not np.all(sample_weights == 1.0)
+            fit_kwargs = {"sample_weight": sample_weights} if has_weights else {}
             for m in ensemble_models:
-                m.fit(X_train, y_train)
+                m.fit(X_train, y_train, **fit_kwargs)
 
             # Use first model for monotonic test, ensemble for predictions
             model = EnsembleModel(ensemble_models)
             print(f"  Ensemble: {len(ENSEMBLE_SEEDS)} models with seeds {ENSEMBLE_SEEDS}")
+            if has_weights:
+                print(f"  Sample weights: {np.sum(sample_weights > 1)}/{len(sample_weights)} upweighted")
 
             # Monotonic smoke test (use first model in ensemble)
             _monotonic_smoke_test(ensemble_models[0], pos)
@@ -919,7 +933,7 @@ def train_all(
             # Train quantile models for uncertainty estimation (20th and 80th percentiles)
             for q in [0.2, 0.8]:
                 q_model = _build_quantile_hgb(seed, pos, q)
-                q_model.fit(X_train, y_train)
+                q_model.fit(X_train, y_train, **fit_kwargs)
                 quantile_models[q] = q_model
             print(f"  Quantile models trained (p20, p80) for uncertainty bands")
 
