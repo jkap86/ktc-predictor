@@ -14,7 +14,7 @@ export default function ModelSelector() {
     <select
       value={selectedModelId || ''}
       onChange={(e) => setSelectedModelId(e.target.value)}
-      className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-sm border border-white/20 hover:bg-white/20 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/30"
+      className="px-2 sm:px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs sm:text-sm border border-white/20 hover:bg-white/20 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/30 max-w-[120px] sm:max-w-none truncate"
     >
       {visibleModels.map((model) => (
         <option key={model.id} value={model.id} className="bg-gray-800 text-white">

@@ -17,7 +17,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   return (
     <Link
       href={href}
-      className={`px-4 py-2 rounded-lg transition-all duration-200 ${
+      className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm sm:text-base transition-all duration-200 ${
         isActive ? 'bg-white/20 font-medium' : 'hover:bg-white/10'
       }`}
     >
@@ -71,16 +71,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={inter.className}>
         <ModelProvider>
-          <nav className="bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg">
-            <div className="max-w-7xl mx-auto px-4 py-4">
-              <div className="flex items-center justify-between">
+          <nav className="bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg w-full overflow-hidden">
+            <div className="max-w-7xl mx-auto px-4 py-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <Link
                   href="/"
-                  className="text-xl font-bold tracking-tight hover:opacity-90 transition-opacity"
+                  className="text-lg sm:text-xl font-bold tracking-tight hover:opacity-90 transition-opacity shrink-0"
                 >
-                  KTC Predictor Dev
+                  KTC Predictor
                 </Link>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                   <ModelSelector />
                   <NavLink href="/">Search</NavLink>
                   <ThemeToggle />

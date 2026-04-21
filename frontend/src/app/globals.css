@@ -14,6 +14,10 @@
   --background-end: 31, 41, 55;
 }
 
+html, body {
+  overflow-x: hidden;
+}
+
 body {
   color: rgb(var(--foreground-rgb));
   background: linear-gradient(
