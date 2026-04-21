@@ -247,6 +247,16 @@ class CompsIndex:
 
             importances = _extract_feature_importances(pos_model, len(model_features))
 
+            # Ensure start_ktc gets meaningful weight in comps regardless of
+            # model split frequency. The model uses start_ktc_quartile for
+            # splits, but comps need similar absolute KTC to be useful.
+            START_KTC_MIN_WEIGHT = 0.12
+            if "start_ktc" in model_features:
+                ktc_idx = model_features.index("start_ktc")
+                if importances[ktc_idx] < START_KTC_MIN_WEIGHT:
+                    importances[ktc_idx] = START_KTC_MIN_WEIGHT
+                    importances = importances / importances.sum()
+
             # Build records and feature vectors
             records = []
             feature_rows = []
