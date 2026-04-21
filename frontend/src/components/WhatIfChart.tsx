@@ -195,9 +195,6 @@ export default function WhatIfChart({
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
           Predicted EOS by PPG
-          <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">
-            ({gamesPlayed} games)
-          </span>
         </h4>
         <div className="flex items-center gap-3">
           {hasCompare && compare && (

@@ -143,7 +143,6 @@ export default function PlayerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [whatIfGames, setWhatIfGames] = useState(17);
   const [whatIfPpg, setWhatIfPpg] = useState(15);
   const [whatIfResult, setWhatIfResult] = useState<EOSPrediction | null>(null);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
@@ -163,7 +162,6 @@ export default function PlayerPage() {
         setPlayer(pd);
         if (pd.seasons.length > 0) {
           const latest = pd.seasons.reduce((a, b) => (a.year > b.year ? a : b));
-          setWhatIfGames(latest.games_played);
           setWhatIfPpg(Math.round((latest.games_played > 0 ? latest.fantasy_points / latest.games_played : 15) * 2) / 2);
         }
         const pred = await getPrediction(playerId, selectedModelId);
@@ -192,13 +190,13 @@ export default function PlayerPage() {
       try {
         const batch = await predictPlayerWhatIfBatch(
           comparePlayer.player_id,
-          { games_played: whatIfGames, ppg_values: [whatIfPpg] },
+          { games_played: 17, ppg_values: [whatIfPpg] },
           selectedModelId,
         );
         setCompareResult(batch?.predictions[0] ?? null);
       } catch { setCompareResult(null); }
     })();
-  }, [compareData, comparePlayer, whatIfGames, whatIfPpg, selectedModelId]);
+  }, [compareData, comparePlayer, 17, whatIfPpg, selectedModelId]);
 
   // What-if for primary (player-aware: uses full feature context)
   const fetchWhatIf = useCallback(async () => {
@@ -207,13 +205,13 @@ export default function PlayerPage() {
     try {
       const batch = await predictPlayerWhatIfBatch(
         playerId,
-        { games_played: whatIfGames, ppg_values: [whatIfPpg] },
+        { games_played: 17, ppg_values: [whatIfPpg] },
         selectedModelId,
       );
       setWhatIfResult(batch?.predictions[0] ?? null);
     } catch { /* */ }
     finally { setWhatIfLoading(false); }
-  }, [prediction, playerId, whatIfGames, whatIfPpg, selectedModelId]);
+  }, [prediction, playerId, 17, whatIfPpg, selectedModelId]);
 
   useEffect(() => {
     if (!prediction) return;
@@ -310,23 +308,16 @@ export default function PlayerPage() {
       {prediction && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-6">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">What-If Scenario</h3>
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-medium text-gray-700 dark:text-gray-300 w-14">Games</label>
-              <input type="range" min="0" max="17" value={whatIfGames} onChange={(e) => setWhatIfGames(parseInt(e.target.value))} className="flex-1" />
-              <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-8 text-center">{whatIfGames}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-medium text-gray-700 dark:text-gray-300 w-14">PPG</label>
-              <input type="range" min="0" max="25" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" />
-              <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-8 text-center">{whatIfPpg}</span>
-            </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-medium text-gray-700 dark:text-gray-300 w-14">PPG</label>
+            <input type="range" min="0" max="25" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" />
+            <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-8 text-center">{whatIfPpg}</span>
           </div>
 
           <WhatIfChart
             position={prediction.position}
             startKtc={prediction.start_ktc}
-            gamesPlayed={whatIfGames}
+            gamesPlayed={17}
             currentPpg={whatIfPpg}
             modelId={selectedModelId}
             playerId={playerId}
