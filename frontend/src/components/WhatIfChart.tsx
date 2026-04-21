@@ -13,7 +13,7 @@ import {
   ReferenceDot,
   ComposedChart,
 } from 'recharts';
-import { predictEosBatch } from '../lib/api';
+import { predictEosBatch, predictPlayerWhatIfBatch } from '../lib/api';
 import { formatKtc } from '../lib/format';
 
 interface PlayerCurveConfig {
@@ -35,8 +35,10 @@ interface WhatIfChartProps {
   draftPick?: number;
   yearsRemaining?: number;
   weeksMissed?: number;
+  /** Player ID for player-aware predictions (uses full feature context) */
+  playerId?: string;
   /** Optional comparison player config */
-  compare?: PlayerCurveConfig & { name: string };
+  compare?: PlayerCurveConfig & { name: string; playerId?: string };
 }
 
 interface ChartPoint {
@@ -58,23 +60,31 @@ async function fetchCurveForPlayer(
   config: PlayerCurveConfig,
   gamesPlayed: number,
   modelId: string | null,
+  playerId?: string,
 ): Promise<Map<number, { eos: number | null; low: number | null; high: number | null }>> {
   const results = new Map<number, { eos: number | null; low: number | null; high: number | null }>();
 
   try {
-    const batch = await predictEosBatch(
-      {
-        position: config.position,
-        start_ktc: config.startKtc,
-        games_played: gamesPlayed,
-        ppg_values: PPG_STEPS,
-        age: config.age,
-        draft_pick: config.draftPick,
-        years_remaining: config.yearsRemaining,
-        weeks_missed: config.weeksMissed,
-      },
-      modelId,
-    );
+    // Use player-aware endpoint when playerId is available (includes full feature context)
+    const batch = playerId
+      ? await predictPlayerWhatIfBatch(
+          playerId,
+          { games_played: gamesPlayed, ppg_values: PPG_STEPS },
+          modelId,
+        )
+      : await predictEosBatch(
+          {
+            position: config.position,
+            start_ktc: config.startKtc,
+            games_played: gamesPlayed,
+            ppg_values: PPG_STEPS,
+            age: config.age,
+            draft_pick: config.draftPick,
+            years_remaining: config.yearsRemaining,
+            weeks_missed: config.weeksMissed,
+          },
+          modelId,
+        );
 
     if (batch) {
       batch.predictions.forEach((pred, i) => {
@@ -87,7 +97,6 @@ async function fetchCurveForPlayer(
       });
     }
   } catch {
-    // Batch failed — fill with nulls
     for (const ppg of PPG_STEPS) {
       results.set(ppg, { eos: null, low: null, high: null });
     }
@@ -106,6 +115,7 @@ export default function WhatIfChart({
   draftPick,
   yearsRemaining,
   weeksMissed,
+  playerId,
   compare,
 }: WhatIfChartProps) {
   const [data, setData] = useState<ChartPoint[]>([]);
@@ -123,8 +133,8 @@ export default function WhatIfChart({
       setLoading(true);
 
       const fetches: [Promise<Map<number, { eos: number | null; low: number | null; high: number | null }>>, Promise<Map<number, { eos: number | null; low: number | null; high: number | null }>> | null] = [
-        fetchCurveForPlayer(primaryConfig, gamesPlayed, modelId),
-        compare ? fetchCurveForPlayer(compare, gamesPlayed, modelId) : null,
+        fetchCurveForPlayer(primaryConfig, gamesPlayed, modelId, playerId),
+        compare ? fetchCurveForPlayer(compare, gamesPlayed, modelId, compare.playerId) : null,
       ];
 
       const [primaryMap, compareMap] = await Promise.all([
@@ -157,8 +167,8 @@ export default function WhatIfChart({
     fetchCurves();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    position, startKtc, gamesPlayed, modelId, age, draftPick, yearsRemaining, weeksMissed,
-    compare?.position, compare?.startKtc, compare?.age,
+    position, startKtc, gamesPlayed, modelId, age, draftPick, yearsRemaining, weeksMissed, playerId,
+    compare?.position, compare?.startKtc, compare?.age, compare?.playerId,
   ]);
 
   const currentPoint = data.reduce<ChartPoint | null>((best, pt) => {

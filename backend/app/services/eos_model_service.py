@@ -287,6 +287,98 @@ async def predict_for_player(
     return result
 
 
+async def predict_for_player_whatif(
+    iteration: ModelIteration,
+    player_id: str,
+    data_loader,
+    games_played: int,
+    ppg: float,
+) -> dict | None:
+    """Like predict_for_player but with overridden games_played and ppg.
+
+    Uses all the player's real context (prior stats, momentum, team, etc.)
+    but lets the caller control the scenario inputs.
+    """
+    player = data_loader.get_player_by_id(player_id)
+    if not player:
+        return None
+
+    seasons = player.get("seasons", [])
+    if not seasons:
+        return None
+
+    live_ktc = None
+    try:
+        live_ktc = await get_latest_ktc(player_id)
+    except Exception:
+        pass
+
+    anchor = select_anchor_ktc(seasons)
+    if live_ktc and live_ktc > 0:
+        start_ktc = live_ktc
+        anchor_year = anchor[1] if anchor else max(s["year"] for s in seasons)
+    elif anchor:
+        start_ktc, anchor_year, _ = anchor
+    else:
+        return None
+
+    latest = max(seasons, key=lambda s: s["year"])
+    baseline_info = select_baseline_stats(seasons)
+    baseline_year = baseline_info[0] if baseline_info else latest["year"]
+    baseline_season = next(
+        (s for s in seasons if s["year"] == baseline_year), latest
+    )
+    age = baseline_season.get("age") or latest.get("age")
+
+    prior_ref_year = anchor_year if anchor_year else (latest["year"] + 1)
+    prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
+    prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
+    prior_behavioral = compute_prior_behavioral_features(seasons, prior_ref_year) or {}
+    momentum = compute_momentum_features(seasons, anchor_year) or {}
+    prior_pos = compute_prior_position_stats(seasons, player["position"], prior_ref_year) or {}
+
+    result = predict_from_inputs(
+        iteration=iteration,
+        position=player["position"],
+        start_ktc=start_ktc,
+        games_played=games_played,
+        ppg=ppg,
+        age=float(age) if age is not None else None,
+        prior_end_ktc=prior_end_ktc,
+        max_ktc_prior=max_ktc_prior,
+        prior_ppg=prior_ppg,
+        prior_weekly_fp_cv=prior_behavioral.get("prior_weekly_fp_cv"),
+        prior_boom_rate=prior_behavioral.get("prior_boom_rate"),
+        prior_bust_rate=prior_behavioral.get("prior_bust_rate"),
+        prior_snap_pct=prior_behavioral.get("prior_snap_pct"),
+        prior_ktc_volatility=prior_behavioral.get("prior_ktc_volatility"),
+        ktc_30d_trend=momentum.get("ktc_30d_trend"),
+        ktc_90d_trend=momentum.get("ktc_90d_trend"),
+        momentum_ratio=momentum.get("momentum_ratio"),
+        max_games_missed_streak=momentum.get("max_games_missed_streak"),
+        prior_passing_tds=prior_pos.get("prior_passing_tds"),
+        prior_interceptions=prior_pos.get("prior_interceptions"),
+        prior_carries=prior_pos.get("prior_carries"),
+        prior_red_zone_touches=prior_pos.get("prior_red_zone_touches"),
+        prior_targets=prior_pos.get("prior_targets"),
+        prior_red_zone_targets=prior_pos.get("prior_red_zone_targets"),
+        prior_completion_rate=prior_pos.get("prior_completion_rate"),
+        prior_rushing_yards=prior_pos.get("prior_rushing_yards"),
+        prior_pass_sacks=prior_pos.get("prior_pass_sacks"),
+        prior_yards_per_carry=prior_pos.get("prior_yards_per_carry"),
+        prior_receiving_yards=prior_pos.get("prior_receiving_yards"),
+        prior_rushing_tds=prior_pos.get("prior_rushing_tds"),
+        prior_yards_per_target=prior_pos.get("prior_yards_per_target"),
+        prior_air_yards_per_target=prior_pos.get("prior_air_yards_per_target"),
+        prior_receiving_tds=prior_pos.get("prior_receiving_tds"),
+        prior_drop_rate=prior_pos.get("prior_drop_rate"),
+        qb_ktc=latest.get("qb_ktc") if latest else None,
+        team_total_ktc=latest.get("team_total_ktc") if latest else None,
+        positional_competition=latest.get("positional_competition") if latest else None,
+    )
+    return result
+
+
 def predict_historical(
     player_id: str,
     data_loader,

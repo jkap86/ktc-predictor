@@ -120,6 +120,11 @@ class EOSBatchResponse(BaseModel):
     model_version: str = ""
 
 
+class PlayerWhatIfBatchRequest(BaseModel):
+    games_played: int = Field(ge=0, le=17)
+    ppg_values: list[float] = Field(description="List of PPG values to predict for")
+
+
 class HistoricalPrediction(BaseModel):
     model_config = {"protected_namespaces": ()}
 

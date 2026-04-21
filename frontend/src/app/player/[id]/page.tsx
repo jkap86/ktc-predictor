@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getPlayer, getPrediction, predictEos } from '../../../lib/api';
+import { getPlayer, getPrediction, predictPlayerWhatIfBatch } from '../../../lib/api';
 import { formatKtc } from '../../../lib/format';
 import { useModel } from '../../../context/ModelContext';
 import WhatIfChart from '../../../components/WhatIfChart';
@@ -185,27 +185,35 @@ export default function PlayerPage() {
     })();
   }, [comparePlayer, selectedModelId]);
 
-  // What-if for compare
+  // What-if for compare (player-aware)
   useEffect(() => {
     if (!compareData || !comparePlayer) { setCompareResult(null); return; }
-    const startKtc = comparePlayer.latest_ktc ?? comparePrediction?.start_ktc ?? 5000;
-    const latest = compareData.seasons.length > 0 ? compareData.seasons.reduce((a, b) => (a.year > b.year ? a : b)) : null;
     (async () => {
       try {
-        setCompareResult(await predictEos({ position: compareData.position, start_ktc: startKtc, games_played: whatIfGames, ppg: whatIfPpg, age: latest?.age }, selectedModelId));
+        const batch = await predictPlayerWhatIfBatch(
+          comparePlayer.player_id,
+          { games_played: whatIfGames, ppg_values: [whatIfPpg] },
+          selectedModelId,
+        );
+        setCompareResult(batch?.predictions[0] ?? null);
       } catch { setCompareResult(null); }
     })();
-  }, [compareData, comparePlayer, comparePrediction, whatIfGames, whatIfPpg, selectedModelId]);
+  }, [compareData, comparePlayer, whatIfGames, whatIfPpg, selectedModelId]);
 
-  // What-if for primary
+  // What-if for primary (player-aware: uses full feature context)
   const fetchWhatIf = useCallback(async () => {
     if (!prediction) return;
     setWhatIfLoading(true);
     try {
-      setWhatIfResult(await predictEos({ position: prediction.position, start_ktc: prediction.start_ktc, games_played: whatIfGames, ppg: whatIfPpg }, selectedModelId));
+      const batch = await predictPlayerWhatIfBatch(
+        playerId,
+        { games_played: whatIfGames, ppg_values: [whatIfPpg] },
+        selectedModelId,
+      );
+      setWhatIfResult(batch?.predictions[0] ?? null);
     } catch { /* */ }
     finally { setWhatIfLoading(false); }
-  }, [prediction, whatIfGames, whatIfPpg, selectedModelId]);
+  }, [prediction, playerId, whatIfGames, whatIfPpg, selectedModelId]);
 
   useEffect(() => {
     if (!prediction) return;
@@ -321,11 +329,13 @@ export default function PlayerPage() {
             gamesPlayed={whatIfGames}
             currentPpg={whatIfPpg}
             modelId={selectedModelId}
+            playerId={playerId}
             compare={hasCompare && compareData && comparePlayer ? {
               name: comparePlayer.name,
               position: compareData.position,
               startKtc: comparePlayer.latest_ktc ?? prediction.start_ktc,
               age: compareLatest?.age,
+              playerId: comparePlayer.player_id,
             } : undefined}
           />
 

@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.services.model_registry import get_registry
 from app.services.data_loader import get_data_loader
-from app.services.eos_model_service import predict_from_inputs, predict_for_player, predict_historical
+from app.services.eos_model_service import predict_from_inputs, predict_for_player, predict_for_player_whatif, predict_historical
 from app.services.ktc_db import get_latest_ktc_batch
-from app.schemas.player import EOSPredictionResponse, EOSPredictRequest, EOSBatchRequest, EOSBatchResponse, HistoricalResponse, HistoricalPrediction
+from app.schemas.player import EOSPredictionResponse, EOSPredictRequest, EOSBatchRequest, EOSBatchResponse, PlayerWhatIfBatchRequest, HistoricalResponse, HistoricalPrediction
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,44 @@ async def predict_player(
         raise HTTPException(status_code=404, detail="Player not found")
 
     return EOSPredictionResponse(**result)
+
+
+@router.post("/players/{player_id}/predict/whatif-batch", response_model=EOSBatchResponse)
+async def predict_player_whatif_batch(
+    player_id: str,
+    request: PlayerWhatIfBatchRequest,
+    model: Optional[str] = Query(None, description="Model iteration ID"),
+):
+    """Predict EOS KTC for a player with overridden games/ppg.
+
+    Uses all the player's real context (prior stats, momentum, team, etc.)
+    but lets the caller sweep over PPG values for What-If charts.
+    """
+    registry = get_registry()
+    try:
+        iteration = registry.get(model)
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    data_loader = get_data_loader()
+    predictions = []
+    for ppg in request.ppg_values:
+        try:
+            result = await predict_for_player_whatif(
+                iteration, player_id, data_loader,
+                games_played=request.games_played, ppg=ppg,
+            )
+            if result:
+                predictions.append(EOSPredictionResponse(**result))
+            else:
+                raise ValueError("Player not found")
+        except Exception:
+            predictions.append(EOSPredictionResponse(
+                position="QB", start_ktc=0,
+                predicted_end_ktc=0, predicted_delta_ktc=0, predicted_pct_change=0,
+            ))
+
+    return EOSBatchResponse(predictions=predictions, model_version=iteration.id)
 
 
 @router.get("/players/{player_id}/historical", response_model=HistoricalResponse)

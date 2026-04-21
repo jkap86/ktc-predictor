@@ -112,6 +112,25 @@ export async function predictEosBatch(
   return response.json();
 }
 
+export async function predictPlayerWhatIfBatch(
+  playerId: string,
+  payload: { games_played: number; ppg_values: number[] },
+  modelId?: string | null,
+): Promise<EOSBatchResponse | null> {
+  const mp = modelParam(modelId);
+  const qs = mp ? `?${mp}` : '';
+  const response = await fetchWithTimeout(
+    `${API_BASE}/players/${playerId}/predict/whatif-batch${qs}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) return null;
+  return response.json();
+}
+
 export interface TopMover {
   player_id: string;
   name: string;
