@@ -218,14 +218,13 @@ async def predict_for_player(
     )
     age = baseline_season.get("age") or latest.get("age")
 
-    # Prior-season features
+    # Prior-season features (all positions — model trains with these for everyone)
     prior_end_ktc = None
     max_ktc_prior = None
     prior_ppg = None
     prior_ref_year = anchor_year if anchor_year else (latest["year"] + 1)
-    if player["position"] in ("QB", "WR", "TE"):
-        prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
-        prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
+    prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
+    prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
 
     # Prior-season behavioral signals (v3+). Computed for all positions;
     # older iterations receive them as kwargs and ignore via **_unused_kwargs.
@@ -426,13 +425,9 @@ def predict_historical(
         except KeyError:
             continue
 
-        # Prior-season features relative to predict_year
-        prior_end_ktc = None
-        max_ktc_prior = None
-        prior_ppg_val = None
-        if player["position"] in ("QB", "WR", "TE"):
-            prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, predict_year)
-            prior_ppg_val = compute_prior_ppg(seasons, predict_year)
+        # Prior-season features relative to predict_year (all positions)
+        prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, predict_year)
+        prior_ppg_val = compute_prior_ppg(seasons, predict_year)
 
         prior_behavioral = compute_prior_behavioral_features(seasons, predict_year) or {}
 
