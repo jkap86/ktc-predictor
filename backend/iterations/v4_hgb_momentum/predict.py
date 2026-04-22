@@ -437,7 +437,13 @@ def predict_end_ktc(
 
             # Half-width of the quantile spread in log-ratio space
             half_spread = (p80_log - p20_log) / 2.0
-            half_spread = max(half_spread, 0.01)  # floor to avoid degenerate bands
+
+            # Floor: quantile models can be overconfident when all features are
+            # populated. Enforce a minimum half-spread calibrated from historical
+            # test-set p20-p80 error widths per position.
+            _MIN_HALF_SPREAD = {"QB": 0.10, "RB": 0.10, "WR": 0.08, "TE": 0.10}
+            min_hs = _MIN_HALF_SPREAD.get(position, 0.08)
+            half_spread = max(half_spread, min_hs)
 
             # Center around the final (post-adjustment) central prediction
             low_log = pred_log_ratio - half_spread
