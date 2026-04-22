@@ -60,21 +60,6 @@ def _compute_prior_position_features(
             if gp < _MIN_GAMES:
                 continue
 
-            # EPA/efficiency features from nfl_data_py (all positions)
-            # Use NaN (not 0) for missing data — HGB handles NaN natively
-            # and 0.0 EPA is meaningful (league average), not missing.
-            def _epa_val(key):
-                v = prior.get(key)
-                if v is None:
-                    return float("nan")
-                return float(v)
-            epa_feats = {
-                "prior_rushing_epa": _epa_val("rushing_epa"),
-                "prior_receiving_epa": _epa_val("receiving_epa"),
-                "prior_target_share": _epa_val("target_share"),
-                "prior_dominator_rating": _epa_val("dominator_rating"),
-            }
-
             if pos == "QB":
                 result[(pid, season["year"])] = {
                     "prior_passing_tds": float(prior.get("passing_tds") or 0),
@@ -82,7 +67,6 @@ def _compute_prior_position_features(
                     "prior_completion_rate": float(prior.get("completion_rate") or 0),
                     "prior_rushing_yards": float(prior.get("rushing_yards") or 0),
                     "prior_pass_sacks": float(prior.get("pass_sacks") or 0),
-                    **epa_feats,
                 }
             elif pos == "RB":
                 carries = float(prior.get("carries") or 0)
@@ -93,7 +77,6 @@ def _compute_prior_position_features(
                     "prior_yards_per_carry": rush_yds / carries if carries > 0 else 0.0,
                     "prior_receiving_yards": float(prior.get("receiving_yards") or 0),
                     "prior_rushing_tds": float(prior.get("rushing_tds") or 0),
-                    **epa_feats,
                 }
             elif pos == "WR":
                 tgts = float(prior.get("targets") or 0)
@@ -104,7 +87,6 @@ def _compute_prior_position_features(
                     "prior_air_yards_per_target": float(prior.get("air_yards_per_target") or 0),
                     "prior_receiving_tds": float(prior.get("receiving_tds") or 0),
                     "prior_drop_rate": float(prior.get("drop_rate") or 0),
-                    **epa_feats,
                 }
             elif pos == "TE":
                 result[(pid, season["year"])] = {
@@ -113,7 +95,6 @@ def _compute_prior_position_features(
                     "prior_yards_per_target": float(prior.get("yards_per_target") or 0),
                     "prior_receiving_tds": float(prior.get("receiving_tds") or 0),
                     "prior_drop_rate": float(prior.get("drop_rate") or 0),
-                    **epa_feats,
                 }
 
     return result
@@ -172,10 +153,15 @@ def _build_weekly_snapshot_df_v4(zip_path: str, json_name: str = "training-data.
         "WR": ["prior_targets", "prior_red_zone_targets"],
         "TE": ["prior_targets", "prior_red_zone_targets"],
     }
-    # All possible position-stat column names (union across all positions)
-    all_pos_cols = sorted(set(
-        col for cols in _POSITION_STAT_FEATURES.values() for col in cols
-    ))
+    # All possible position-stat column names
+    all_pos_cols = [
+        "prior_passing_tds", "prior_interceptions", "prior_completion_rate",
+        "prior_rushing_yards", "prior_pass_sacks",
+        "prior_carries", "prior_red_zone_touches", "prior_yards_per_carry",
+        "prior_receiving_yards", "prior_rushing_tds",
+        "prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
+        "prior_air_yards_per_target", "prior_receiving_tds", "prior_drop_rate",
+    ]
     for col in all_pos_cols:
         df[col] = df.apply(lambda r, c=col: _lookup_prior_pos(r, c), axis=1)
 
@@ -200,22 +186,16 @@ _MOMENTUM_FEATURES = [
     "max_games_missed_streak",
 ]
 
-# EPA features from nfl_data_py (all positions)
-_EPA_FEATURES = [
-    "prior_rushing_epa", "prior_receiving_epa",
-    "prior_target_share", "prior_dominator_rating",
-]
-
-# Position-specific prior-season stat features (volume + efficiency + EPA)
+# Position-specific prior-season stat features (volume + efficiency)
 _POSITION_STAT_FEATURES = {
     "QB": ["prior_passing_tds", "prior_interceptions", "prior_completion_rate",
-           "prior_rushing_yards", "prior_pass_sacks"] + _EPA_FEATURES,
+           "prior_rushing_yards", "prior_pass_sacks"],
     "RB": ["prior_carries", "prior_red_zone_touches", "prior_yards_per_carry",
-           "prior_receiving_yards", "prior_rushing_tds"] + _EPA_FEATURES,
+           "prior_receiving_yards", "prior_rushing_tds"],
     "WR": ["prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
-           "prior_air_yards_per_target", "prior_receiving_tds", "prior_drop_rate"] + _EPA_FEATURES,
+           "prior_air_yards_per_target", "prior_receiving_tds", "prior_drop_rate"],
     "TE": ["prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
-           "prior_receiving_tds", "prior_drop_rate"] + _EPA_FEATURES,
+           "prior_receiving_tds", "prior_drop_rate"],
 }
 
 

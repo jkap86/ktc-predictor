@@ -72,20 +72,15 @@ _MOMENTUM_FEATURES = [
     "max_games_missed_streak",
 ]
 
-_EPA_FEATURES = [
-    "prior_rushing_epa", "prior_receiving_epa",
-    "prior_target_share", "prior_dominator_rating",
-]
-
 _POSITION_STAT_FEATURES = {
     "QB": ["prior_passing_tds", "prior_interceptions", "prior_completion_rate",
-           "prior_rushing_yards", "prior_pass_sacks"] + _EPA_FEATURES,
+           "prior_rushing_yards", "prior_pass_sacks"],
     "RB": ["prior_carries", "prior_red_zone_touches", "prior_yards_per_carry",
-           "prior_receiving_yards", "prior_rushing_tds"] + _EPA_FEATURES,
+           "prior_receiving_yards", "prior_rushing_tds"],
     "WR": ["prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
-           "prior_air_yards_per_target", "prior_receiving_tds", "prior_drop_rate"] + _EPA_FEATURES,
+           "prior_air_yards_per_target", "prior_receiving_tds", "prior_drop_rate"],
     "TE": ["prior_targets", "prior_red_zone_targets", "prior_yards_per_target",
-           "prior_receiving_tds", "prior_drop_rate"] + _EPA_FEATURES,
+           "prior_receiving_tds", "prior_drop_rate"],
 }
 
 
@@ -193,11 +188,6 @@ def predict_end_ktc(
     prior_air_yards_per_target: float | None = None,
     prior_receiving_tds: float | None = None,
     prior_drop_rate: float | None = None,
-    # v4 EPA features (all positions)
-    prior_rushing_epa: float | None = None,
-    prior_receiving_epa: float | None = None,
-    prior_target_share: float | None = None,
-    prior_dominator_rating: float | None = None,
     # v4 team context (WR only)
     qb_ktc: float | None = None,
     team_total_ktc: float | None = None,
@@ -333,10 +323,6 @@ def predict_end_ktc(
             "prior_air_yards_per_target": prior_air_yards_per_target,
             "prior_receiving_tds": prior_receiving_tds,
             "prior_drop_rate": prior_drop_rate,
-            "prior_rushing_epa": prior_rushing_epa,
-            "prior_receiving_epa": prior_receiving_epa,
-            "prior_target_share": prior_target_share,
-            "prior_dominator_rating": prior_dominator_rating,
         }
         has_ps = 0
         for fname in _pos_features:

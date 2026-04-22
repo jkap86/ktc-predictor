@@ -135,14 +135,6 @@ def compute_prior_position_stats(
         games = season.get("games_played", 0) or 0
         if games < min_games:
             continue
-        # EPA features (all positions, from nfl_data_py seasonal data)
-        # Use None (not 0) for missing — 0.0 EPA is meaningful (league average)
-        epa = {
-            "prior_rushing_epa": float(season["rushing_epa"]) if season.get("rushing_epa") is not None else None,
-            "prior_receiving_epa": float(season["receiving_epa"]) if season.get("receiving_epa") is not None else None,
-            "prior_target_share": float(season["target_share"]) if season.get("target_share") is not None else None,
-            "prior_dominator_rating": float(season["dominator_rating"]) if season.get("dominator_rating") is not None else None,
-        }
         if position == "QB":
             return {
                 "prior_passing_tds": float(season.get("passing_tds") or 0),
@@ -150,7 +142,6 @@ def compute_prior_position_stats(
                 "prior_completion_rate": float(season.get("completion_rate") or 0),
                 "prior_rushing_yards": float(season.get("rushing_yards") or 0),
                 "prior_pass_sacks": float(season.get("pass_sacks") or 0),
-                **epa,
             }
         elif position == "RB":
             carries = float(season.get("carries") or 0)
@@ -161,7 +152,6 @@ def compute_prior_position_stats(
                 "prior_yards_per_carry": rush_yds / carries if carries > 0 else 0.0,
                 "prior_receiving_yards": float(season.get("receiving_yards") or 0),
                 "prior_rushing_tds": float(season.get("rushing_tds") or 0),
-                **epa,
             }
         elif position == "WR":
             return {
@@ -171,7 +161,6 @@ def compute_prior_position_stats(
                 "prior_air_yards_per_target": float(season.get("air_yards_per_target") or 0),
                 "prior_receiving_tds": float(season.get("receiving_tds") or 0),
                 "prior_drop_rate": float(season.get("drop_rate") or 0),
-                **epa,
             }
         elif position == "TE":
             return {
@@ -180,7 +169,6 @@ def compute_prior_position_stats(
                 "prior_yards_per_target": float(season.get("yards_per_target") or 0),
                 "prior_receiving_tds": float(season.get("receiving_tds") or 0),
                 "prior_drop_rate": float(season.get("drop_rate") or 0),
-                **epa,
             }
     return None
 

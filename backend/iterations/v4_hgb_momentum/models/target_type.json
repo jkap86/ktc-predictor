@@ -1,1 +1,1 @@
-{"target_type": {"QB": "abs_change", "RB": "log_ratio", "WR": "log_ratio", "TE": "log_ratio"}}
+{"target_type": "log_ratio"}
