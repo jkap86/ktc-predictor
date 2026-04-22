@@ -8,6 +8,7 @@ reflect what that model considers important.
 
 import json
 import logging
+import zipfile
 from collections import Counter
 from pathlib import Path
 from typing import Optional
@@ -212,8 +213,15 @@ class CompsIndex:
         self.model_id = model_id
 
         path = data_path or TRAINING_DATA_PATH
-        with open(path) as f:
-            raw = json.load(f)
+        zip_path = path.with_suffix(".zip") if path.suffix != ".zip" else path
+        json_path = path.with_suffix(".json") if path.suffix != ".json" else path
+        if zip_path.exists():
+            with zipfile.ZipFile(zip_path) as zf:
+                with zf.open(json_path.name) as f:
+                    raw = json.load(f)
+        else:
+            with open(json_path) as f:
+                raw = json.load(f)
         players = raw.get("players", [])
 
         # Pre-compute prior seasons
