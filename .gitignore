@@ -32,13 +32,11 @@ frontend/.env.local
 backend/.env
 .env.local
 
-# Model artifacts (large binary files)
-*.joblib
+# Model artifacts - keep joblib for deployment, ignore CSVs
 backend/iterations/*/models/test_predictions.csv
 
-# Training data (large)
+# Training data - keep zip for deployment, ignore extracted json
 backend/data/training-data.json
-backend/data/training-data.zip
 backend/data/pff-grades-*.json
 
 # Shell crash dumps
