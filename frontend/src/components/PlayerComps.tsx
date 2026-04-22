@@ -44,11 +44,11 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   if (comps.length === 0) return null;
 
   // Summary stats
-  const avgChange = comps.reduce((sum, c) => sum + c.pct_change, 0) / comps.length;
+  const avgDelta = comps.reduce((sum, c) => sum + c.delta_ktc, 0) / comps.length;
   const avgPpg = comps.reduce((sum, c) => sum + c.ppg, 0) / comps.length;
   const avgStartKtc = comps.reduce((sum, c) => sum + c.start_ktc, 0) / comps.length;
   const avgEndKtc = comps.reduce((sum, c) => sum + c.end_ktc, 0) / comps.length;
-  const risers = comps.filter((c) => c.pct_change > 0).length;
+  const risers = comps.filter((c) => c.delta_ktc > 0).length;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
@@ -64,11 +64,11 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
       {/* Summary row */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-          avgChange >= 0
+          avgDelta >= 0
             ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
             : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
         }`}>
-          Avg Change: {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(1)}%
+          Avg Change: {avgDelta >= 0 ? '+' : ''}{Math.round(avgDelta).toLocaleString()}
         </span>
         <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
           Avg PPG: {avgPpg.toFixed(1)}
@@ -117,11 +117,11 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
                 <td className="py-2.5 pr-3 text-right text-gray-600 dark:text-gray-400">{formatKtc(c.start_ktc)}</td>
                 <td className="py-2.5 pr-3 text-right font-medium text-gray-900 dark:text-white">{formatKtc(c.end_ktc)}</td>
                 <td className={`py-2.5 text-right font-bold ${
-                  c.pct_change >= 0
+                  c.delta_ktc >= 0
                     ? 'text-green-600 dark:text-green-400'
                     : 'text-red-600 dark:text-red-400'
                 }`}>
-                  {c.pct_change >= 0 ? '+' : ''}{c.pct_change.toFixed(1)}%
+                  {c.delta_ktc >= 0 ? '+' : ''}{Math.round(c.delta_ktc).toLocaleString()}
                 </td>
               </tr>
             ))}
