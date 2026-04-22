@@ -1,81 +1,21 @@
 {
-  "QB": {
-    "position": "QB",
-    "best_params": {
-      "loss": "absolute_error",
-      "max_depth": 7,
-      "learning_rate": 0.02791098374782618,
-      "max_iter": 350,
-      "min_samples_leaf": 50,
-      "l2_regularization": 0.0013656013005585257,
-      "max_leaf_nodes": 55
-    },
-    "best_cv_mae": 760.8,
-    "current_holdout_mae": 709.2,
-    "tuned_holdout_mae": 620.9,
-    "delta_mae": -88.2,
-    "delta_pct": -12.4,
-    "n_trials": 60,
-    "n_train": 3045,
-    "n_test": 784
-  },
-  "RB": {
-    "position": "RB",
-    "best_params": {
-      "loss": "squared_error",
-      "max_depth": 3,
-      "learning_rate": 0.0151343267166395,
-      "max_iter": 500,
-      "min_samples_leaf": 7,
-      "l2_regularization": 3.865631351489514,
-      "max_leaf_nodes": 30
-    },
-    "best_cv_mae": 568.0,
-    "current_holdout_mae": 551.5,
-    "tuned_holdout_mae": 526.4,
-    "delta_mae": -25.1,
-    "delta_pct": -4.6,
-    "n_trials": 60,
-    "n_train": 4798,
-    "n_test": 1145
-  },
-  "WR": {
-    "position": "WR",
-    "best_params": {
-      "loss": "absolute_error",
-      "max_depth": 3,
-      "learning_rate": 0.08779238696445962,
-      "max_iter": 100,
-      "min_samples_leaf": 50,
-      "l2_regularization": 1.2273800987852967,
-      "max_leaf_nodes": 30
-    },
-    "best_cv_mae": 496.2,
-    "current_holdout_mae": 407.2,
-    "tuned_holdout_mae": 419.8,
-    "delta_mae": 12.6,
-    "delta_pct": 3.1,
-    "n_trials": 60,
-    "n_train": 7901,
-    "n_test": 1632
-  },
   "TE": {
     "position": "TE",
     "best_params": {
       "loss": "absolute_error",
       "max_depth": 4,
-      "learning_rate": 0.012765943426047373,
+      "learning_rate": 0.015444744856832447,
       "max_iter": 250,
-      "min_samples_leaf": 42,
-      "l2_regularization": 0.26746907139714277,
-      "max_leaf_nodes": 55
+      "min_samples_leaf": 43,
+      "l2_regularization": 1.7084897668897006,
+      "max_leaf_nodes": 60
     },
-    "best_cv_mae": 516.3,
+    "best_cv_mae": 513.6,
     "current_holdout_mae": 566.4,
-    "tuned_holdout_mae": 596.7,
-    "delta_mae": 30.4,
-    "delta_pct": 5.4,
-    "n_trials": 60,
+    "tuned_holdout_mae": 604.0,
+    "delta_mae": 37.6,
+    "delta_pct": 6.6,
+    "n_trials": 80,
     "n_train": 3579,
     "n_test": 1000
   }
