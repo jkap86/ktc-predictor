@@ -145,7 +145,7 @@ export default function Home() {
       setSearchLoading(true);
       try {
         const pos = position === 'All' ? undefined : position;
-        const result = await searchPlayers(query, pos, 50, 'ktc', 'desc');
+        const result = await searchPlayers(query, pos, 200, 'ktc', 'desc');
         setSearchResults(result.players);
       } catch { /* */ }
       finally { setSearchLoading(false); }
@@ -275,7 +275,7 @@ export default function Home() {
           <div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="max-h-[360px] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-700 p-2">
+        <div className="max-h-[520px] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-700 p-2">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {searchResults.map((player) => {
             const isPrimary = player.player_id === primaryId;
