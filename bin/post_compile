@@ -5,5 +5,5 @@ set -e
 echo "-----> Building frontend..."
 cd frontend
 npm ci --production=false
-npm run build
+NEXT_OUTPUT=export npm run build
 echo "-----> Frontend build complete (output in frontend/out/)"
