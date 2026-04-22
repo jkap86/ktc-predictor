@@ -1,8 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -74,11 +77,6 @@ app.include_router(predictions_router)
 app.include_router(models_router)
 
 
-@app.get("/")
-def root():
-    return {"message": "KTC Predictor Dev API", "docs": "/docs"}
-
-
 @app.get("/health")
 def health_check():
     try:
@@ -91,3 +89,45 @@ def health_check():
         "status": "healthy" if ready else "degraded",
         "model_ready": ready,
     }
+
+
+# ── Static frontend serving ──────────────────────────────────────────────
+# Serve the Next.js static export from frontend/out/ if it exists.
+# This must come AFTER API routes so /api/* takes precedence.
+
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "out"
+
+if FRONTEND_DIR.is_dir():
+    # Serve static assets (_next/, images, etc.)
+    app.mount("/_next", StaticFiles(directory=FRONTEND_DIR / "_next"), name="next_static")
+
+    # SPA catch-all: serve index.html for any non-API, non-static route
+    @app.get("/{full_path:path}")
+    async def serve_frontend(request: Request, full_path: str):
+        # Try exact file first (e.g. /favicon.ico, /robots.txt)
+        file_path = FRONTEND_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+
+        # Try directory with index.html (e.g. /player/123/ -> /player/[id]/index.html)
+        index_path = file_path / "index.html"
+        if index_path.is_file():
+            return FileResponse(index_path)
+
+        # Dynamic routes: /player/anything/ -> /player/[id]/index.html
+        parts = full_path.strip("/").split("/")
+        if len(parts) >= 2 and parts[0] == "player":
+            dynamic_index = FRONTEND_DIR / "player" / "[id]" / "index.html"
+            if dynamic_index.is_file():
+                return FileResponse(dynamic_index)
+
+        # Fallback to root index.html (SPA client-side routing)
+        root_index = FRONTEND_DIR / "index.html"
+        if root_index.is_file():
+            return FileResponse(root_index)
+
+        return {"message": "KTC Predictor Dev API", "docs": "/docs"}
+else:
+    @app.get("/")
+    def root():
+        return {"message": "KTC Predictor Dev API", "docs": "/docs"}

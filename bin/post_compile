@@ -1,0 +1,9 @@
+#!/bin/bash
+# Heroku post-compile hook: build Next.js frontend after Python install
+set -e
+
+echo "-----> Building frontend..."
+cd frontend
+npm ci --production=false
+npm run build
+echo "-----> Frontend build complete (output in frontend/out/)"
