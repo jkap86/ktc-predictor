@@ -54,6 +54,7 @@ def predict_from_inputs(
     weeks_missed: float | None = None,
     draft_pick: float | None = None,
     years_remaining: float | None = None,
+    start_position_rank: float | None = None,
     prior_end_ktc: float | None = None,
     max_ktc_prior: float | None = None,
     prior_ppg: float | None = None,
@@ -100,6 +101,7 @@ def predict_from_inputs(
         weeks_missed=weeks_missed,
         draft_pick=draft_pick,
         years_remaining=years_remaining,
+        start_position_rank=start_position_rank,
         prior_end_ktc=prior_end_ktc,
         max_ktc_prior=max_ktc_prior,
         prior_ppg=prior_ppg,
@@ -236,6 +238,8 @@ async def predict_for_player(
     # v4+ position-specific prior stats
     prior_pos = compute_prior_position_stats(seasons, player["position"], prior_ref_year) or {}
 
+    start_position_rank = latest.get("start_position_rank")
+
     result = predict_from_inputs(
         iteration=iteration,
         position=player["position"],
@@ -243,6 +247,7 @@ async def predict_for_player(
         games_played=games,
         ppg=ppg,
         age=float(age) if age is not None else None,
+        start_position_rank=float(start_position_rank) if start_position_rank is not None else None,
         prior_end_ktc=prior_end_ktc,
         max_ktc_prior=max_ktc_prior,
         prior_ppg=prior_ppg,
@@ -335,6 +340,7 @@ async def predict_for_player_whatif(
     prior_behavioral = compute_prior_behavioral_features(seasons, prior_ref_year) or {}
     momentum = compute_momentum_features(seasons, anchor_year) or {}
     prior_pos = compute_prior_position_stats(seasons, player["position"], prior_ref_year) or {}
+    start_position_rank = latest.get("start_position_rank")
 
     result = predict_from_inputs(
         iteration=iteration,
@@ -343,6 +349,7 @@ async def predict_for_player_whatif(
         games_played=games_played,
         ppg=ppg,
         age=float(age) if age is not None else None,
+        start_position_rank=float(start_position_rank) if start_position_rank is not None else None,
         prior_end_ktc=prior_end_ktc,
         max_ktc_prior=max_ktc_prior,
         prior_ppg=prior_ppg,

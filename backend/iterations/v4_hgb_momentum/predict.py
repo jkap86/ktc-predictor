@@ -86,6 +86,8 @@ _POSITION_STAT_FEATURES = {
 
 _POSITIONS_WITH_V4_FEATURES = {"QB", "WR"}
 
+_POSITIONS_WITH_RANK_FEATURE = {"RB", "TE"}
+
 _TEAM_FEATURES = ["qb_ktc", "team_total_ktc", "positional_competition"]
 _POSITIONS_WITH_TEAM_FEATURES = {"WR"}
 
@@ -102,6 +104,8 @@ def get_expected_features(position: str) -> list[str]:
     if pos_stats:
         extras.extend(pos_stats)
         extras.append("has_prior_position_stats")
+    if position in _POSITIONS_WITH_RANK_FEATURE:
+        extras.append("start_position_rank")
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         extras.extend(_TEAM_FEATURES)
     if not extras:
@@ -153,6 +157,7 @@ def predict_end_ktc(
     weeks_missed: float | None = None,
     draft_pick: float | None = None,
     years_remaining: float | None = None,
+    start_position_rank: float | None = None,
     prior_end_ktc: float | None = None,
     max_ktc_prior: float | None = None,
     prior_ppg: float | None = None,
@@ -233,7 +238,7 @@ def predict_end_ktc(
     age_prime_dist = _age_prime_distance(age, position)
     breakout_flag = _is_breakout_candidate(age, start_ktc, ppg, position)
 
-    # Core features (8) — unchanged from v1
+    # Core features (8)
     core_features = [
         gp,
         ppg,
@@ -331,6 +336,10 @@ def predict_end_ktc(
             if val is not None:
                 has_ps = 1
         linear_features.append(has_ps)
+
+    # v4 position rank (RB/TE only)
+    if position in _POSITIONS_WITH_RANK_FEATURE:
+        linear_features.append(start_position_rank if start_position_rank is not None else np.nan)
 
     # v4 team context (WR only)
     if position in _POSITIONS_WITH_TEAM_FEATURES:

@@ -203,6 +203,10 @@ _POSITION_STAT_FEATURES = {
 # Initial v4 applied to all 4; RB/TE were worse than v3, QB/WR improved.
 _POSITIONS_WITH_V4_FEATURES = {"QB", "WR"}
 
+# Position rank feature (RB/TE only — differentiates players at similar KTC;
+# hurt QB/WR where existing features already capture relative positioning)
+_POSITIONS_WITH_RANK_FEATURE = {"RB", "TE"}
+
 # Team context features (WR only — helps with target competition;
 # hurt QB/RB/TE where individual trajectory dominates)
 _TEAM_FEATURES = ["qb_ktc", "team_total_ktc", "positional_competition"]
@@ -222,6 +226,9 @@ def _v4_get_features_for_position(position: str) -> list[str]:
     if pos_stats:
         extras.extend(pos_stats)
         extras.append("has_prior_position_stats")
+    # Position rank (RB/TE only)
+    if position in _POSITIONS_WITH_RANK_FEATURE:
+        extras.append("start_position_rank")
     # Team context (WR only)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         extras.extend(_TEAM_FEATURES)
@@ -251,6 +258,8 @@ def _v4_build_monotonic_constraints(position: str) -> list[int]:
     pos_stats = _POSITION_STAT_FEATURES.get(position, [])
     if pos_stats:
         n_new += len(pos_stats) + 1  # +1 for has_prior_position_stats
+    if position in _POSITIONS_WITH_RANK_FEATURE:
+        n_new += 1  # start_position_rank
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         n_new += len(_TEAM_FEATURES)
     if n_new == 0:
@@ -290,6 +299,9 @@ def _v4_monotonic_smoke_test(model, position: str) -> bool:
         if n_pos > 0:
             row.extend([0.0] * n_pos)  # position stats
             row.append(1)  # has_prior_position_stats sentinel
+        # v4 position rank (RB/TE only)
+        if position in _POSITIONS_WITH_RANK_FEATURE:
+            row.append(10)  # start_position_rank
         # v4 team features (WR only)
         if position in _POSITIONS_WITH_TEAM_FEATURES:
             row.extend([5000, 30000, 3000])  # qb_ktc, team_total, positional_comp
