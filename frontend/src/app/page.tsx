@@ -79,8 +79,8 @@ function SeasonRow({ season }: {
   );
 }
 
-function PlayerHeader({ player, prediction, color = 'blue', onRemove }: {
-  player: Player; prediction: EOSPrediction | null; color?: 'blue' | 'orange'; onRemove?: () => void;
+function PlayerHeader({ player, prediction, color = 'blue', onRemove, onSwap }: {
+  player: Player; prediction: EOSPrediction | null; color?: 'blue' | 'orange'; onRemove?: () => void; onSwap?: () => void;
 }) {
   const accent = color === 'orange' ? 'text-orange-500 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400';
   const border = color === 'orange' ? 'border-orange-200 dark:border-orange-800' : 'border-blue-200 dark:border-blue-800';
@@ -94,6 +94,13 @@ function PlayerHeader({ player, prediction, color = 'blue', onRemove }: {
         </span>
       </div>
       <div className="flex items-center gap-2">
+        {onSwap && (
+          <button onClick={onSwap} className={`p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors ${accent}`} title="Swap players">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+            </svg>
+          </button>
+        )}
         {onRemove && (
           <button onClick={onRemove} className={`p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors ${accent}`} title="Remove">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -212,16 +219,21 @@ export default function Home() {
 
   // Click handler for search result cards
   const handleSelectPlayer = (player: PlayerSummary) => {
-    if (!primaryId) {
-      setPrimaryId(player.player_id);
-    } else if (primaryId === player.player_id) {
-      // Clicking the already-selected primary deselects it
-      return;
-    } else if (compareId === player.player_id) {
-      // Clicking the already-selected compare deselects it
-      return;
+    const pid = player.player_id;
+    if (pid === primaryId) {
+      // Deselect primary — promote compare if it exists
+      setPrimaryId(compareId);
+      setCompareId(null);
+    } else if (pid === compareId) {
+      // Deselect compare
+      setCompareId(null);
+    } else if (!primaryId) {
+      setPrimaryId(pid);
+    } else if (!compareId) {
+      setCompareId(pid);
     } else {
-      setCompareId(player.player_id);
+      // Both slots filled — replace compare
+      setCompareId(pid);
     }
   };
 
@@ -344,12 +356,18 @@ export default function Home() {
 
           {primaryPlayer && (
             <div className={`grid gap-4 ${hasCompare ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              <PlayerHeader player={primaryPlayer} prediction={primaryPrediction} color="blue" onRemove={() => {
-                if (compareId) { setPrimaryId(compareId); setCompareId(null); }
-                else { setPrimaryId(null); }
-              }} />
+              <PlayerHeader player={primaryPlayer} prediction={primaryPrediction} color="blue"
+                onSwap={hasCompare ? () => { const tmp = primaryId; setPrimaryId(compareId); setCompareId(tmp); } : undefined}
+                onRemove={() => {
+                  if (compareId) { setPrimaryId(compareId); setCompareId(null); }
+                  else { setPrimaryId(null); }
+                }}
+              />
               {hasCompare && comparePlayer && (
-                <PlayerHeader player={comparePlayer} prediction={comparePrediction} color="orange" onRemove={() => setCompareId(null)} />
+                <PlayerHeader player={comparePlayer} prediction={comparePrediction} color="orange"
+                  onSwap={() => { const tmp = primaryId; setPrimaryId(compareId); setCompareId(tmp); }}
+                  onRemove={() => setCompareId(null)}
+                />
               )}
             </div>
           )}
