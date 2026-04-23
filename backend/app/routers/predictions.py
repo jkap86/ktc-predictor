@@ -9,6 +9,7 @@ from app.services.model_registry import get_registry
 from app.services.data_loader import get_data_loader
 from app.services.eos_model_service import predict_from_inputs, predict_for_player, predict_for_player_whatif, predict_historical
 from app.services.ktc_db import get_latest_ktc_batch
+from app.services.prediction_cache import get_prediction_cache
 from app.schemas.player import EOSPredictionResponse, EOSPredictRequest, EOSBatchRequest, EOSBatchResponse, PlayerWhatIfBatchRequest, HistoricalResponse, HistoricalPrediction
 
 logger = logging.getLogger(__name__)
@@ -171,50 +172,42 @@ async def top_movers(
     position: Optional[str] = Query(None),
 ):
     """Get players with the biggest predicted EOS changes (risers + fallers)."""
-    registry = get_registry()
-    iteration = registry.get()
     data_loader = get_data_loader()
     players = data_loader.get_players()
+    pred_cache = get_prediction_cache()
 
     valid_positions = {"QB", "RB", "WR", "TE"}
-    candidates = [
-        p for p in players
-        if p["position"] in valid_positions
-        and (position is None or p["position"] == position)
-        and p.get("seasons")
-    ]
-
-    # Batch-fetch live KTC
-    pids = [p["player_id"] for p in candidates]
-    try:
-        live_ktc = await get_latest_ktc_batch(pids)
-    except Exception:
-        live_ktc = {}
-
-    # Only predict for players that have live KTC
     results = []
-    for player in candidates:
+    for player in players:
         pid = player["player_id"]
-        ktc = live_ktc.get(pid)
-        if not ktc or ktc <= 0:
+        if player["position"] not in valid_positions:
+            continue
+        if position and player["position"] != position:
             continue
 
-        try:
-            pred = await predict_for_player(iteration, pid, data_loader)
-            if pred:
-                results.append({
-                    "player_id": pid,
-                    "name": player["name"],
-                    "position": player["position"],
-                    "start_ktc": pred["start_ktc"],
-                    "predicted_end_ktc": pred["predicted_end_ktc"],
-                    "predicted_delta_ktc": pred["predicted_delta_ktc"],
-                    "predicted_pct_change": pred["predicted_pct_change"],
-                })
-        except Exception:
+        cached = pred_cache.get(pid)
+        if not cached:
             continue
 
-    results.sort(key=lambda r: r["predicted_pct_change"], reverse=True)
+        # Get start_ktc from training data
+        seasons = player.get("seasons", [])
+        from app.services.ktc_utils import select_anchor_ktc
+        anchor = select_anchor_ktc(seasons) if seasons else None
+        start_ktc = anchor[0] if anchor else None
+        if not start_ktc:
+            continue
+
+        results.append({
+            "player_id": pid,
+            "name": player["name"],
+            "position": player["position"],
+            "start_ktc": round(start_ktc, 1),
+            "predicted_end_ktc": cached["predicted_end_ktc"],
+            "predicted_delta_ktc": cached["predicted_delta_ktc"],
+            "predicted_pct_change": cached["predicted_pct_change"],
+        })
+
+    results.sort(key=lambda r: r["predicted_delta_ktc"], reverse=True)
     risers = results[:limit]
     fallers = results[-limit:][::-1] if len(results) > limit else []
 
