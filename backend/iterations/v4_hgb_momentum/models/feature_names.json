@@ -63,7 +63,8 @@
     "prior_yards_per_carry",
     "prior_receiving_yards",
     "prior_rushing_tds",
-    "has_prior_position_stats"
+    "has_prior_position_stats",
+    "start_position_rank"
   ],
   "WR": [
     "games_played_so_far",
@@ -133,6 +134,7 @@
     "prior_yards_per_target",
     "prior_receiving_tds",
     "prior_drop_rate",
-    "has_prior_position_stats"
+    "has_prior_position_stats",
+    "start_position_rank"
   ]
 }
