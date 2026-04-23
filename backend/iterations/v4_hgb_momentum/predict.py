@@ -447,10 +447,16 @@ def predict_end_ktc(
             # Half-width of the quantile spread in log-ratio space
             half_spread = (p80_log - p20_log) / 2.0
 
+            # Scale bands to match actual position MAE. The single-seed quantile
+            # models produce spreads that don't reflect true position-level error.
+            # These multipliers are calibrated so band width ≈ 2× position MAE
+            # at median start_ktc.
+            _BAND_SCALE = {"QB": 1.45, "RB": 1.0, "WR": 0.85, "TE": 1.3}
+            half_spread = half_spread * _BAND_SCALE.get(position, 1.0)
+
             # Floor: quantile models can be overconfident when all features are
-            # populated. Enforce a minimum half-spread calibrated from historical
-            # test-set p20-p80 error widths per position.
-            _MIN_HALF_SPREAD = {"QB": 0.10, "RB": 0.10, "WR": 0.08, "TE": 0.10}
+            # populated. Enforce a minimum half-spread per position.
+            _MIN_HALF_SPREAD = {"QB": 0.15, "RB": 0.10, "WR": 0.08, "TE": 0.12}
             min_hs = _MIN_HALF_SPREAD.get(position, 0.08)
             half_spread = max(half_spread, min_hs)
 
