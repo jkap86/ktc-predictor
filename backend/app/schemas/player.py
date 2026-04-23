@@ -17,19 +17,19 @@ class WeeklyKTC(BaseModel):
 
 class PlayerSeason(BaseModel):
     year: int
-    age: int
-    years_exp: int
-    start_ktc: float
-    end_ktc: float
-    fantasy_points: float
-    games_played: int
+    age: Optional[int] = None
+    years_exp: int = 0
+    start_ktc: float = 0
+    end_ktc: float = 0
+    fantasy_points: float = 0
+    games_played: int = 0
     ktc_30d_trend: Optional[float] = None
     ktc_90d_trend: Optional[float] = None
-    ktc_volatility: float
+    ktc_volatility: float = 0
     prior_year_fp: Optional[float] = None
     prior_year_games: Optional[int] = None
     fp_change_yoy: Optional[float] = None
-    start_position_rank: int
+    start_position_rank: Optional[int] = None
     weekly_stats: list[WeeklyStat] = []
     weekly_ktc: list[WeeklyKTC] = []
 
