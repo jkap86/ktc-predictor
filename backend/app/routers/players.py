@@ -122,9 +122,7 @@ async def player_comps(
         gp, ppg = 0, 0.0
 
     latest = max(seasons, key=lambda s: s["year"])
-    age = latest.get("age")
-    if age is None:
-        raise HTTPException(status_code=404, detail="No age data")
+    age = latest.get("age") or 22  # default to 22 for rookies without age data
 
     # Pull all available features from the latest season for matching.
     # The comp finder ignores features not in its spec for the position.
