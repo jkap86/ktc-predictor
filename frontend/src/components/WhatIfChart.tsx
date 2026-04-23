@@ -287,7 +287,7 @@ export default function WhatIfChart({
             <Area
               dataKey="bandRange"
               stroke="none"
-              fill="rgba(59,130,246,0.12)"
+              fill="rgba(59,130,246,0.25)"
               isAnimationActive={false}
               name="bandRange"
               tooltipType="none"
@@ -297,7 +297,7 @@ export default function WhatIfChart({
             <Area
               dataKey="compareBandRange"
               stroke="none"
-              fill="rgba(249,115,22,0.10)"
+              fill="rgba(249,115,22,0.22)"
               isAnimationActive={false}
               name="compareBandRange"
               tooltipType="none"
