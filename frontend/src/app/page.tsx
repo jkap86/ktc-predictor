@@ -195,12 +195,12 @@ export default function Home() {
 
   // What-If for primary
   const fetchWhatIf = useCallback(async () => {
-    if (!primaryId || !primaryPlayer) return;
+    if (!primaryId || !primary?.player) return;
     try {
       const batch = await predictPlayerWhatIfBatch(primaryId, { games_played: 17, ppg_values: [whatIfPpg] }, selectedModelId);
       setWhatIfResult(batch?.predictions[0] ?? null);
     } catch { /* */ }
-  }, [primaryId, primaryPlayer, whatIfPpg, selectedModelId]);
+  }, [primaryId, primary?.player, whatIfPpg, selectedModelId]);
 
   // What-If for compare
   const fetchCompareWhatIf = useCallback(async () => {
