@@ -48,14 +48,16 @@ def select_baseline_stats(
 def compute_prior_ktc_features(
     seasons: list[dict],
     anchor_year: int,
-) -> tuple[float | None, float | None]:
+) -> tuple[float | None, float | None, float | None, float | None]:
     """Compute prior-year KTC features for trajectory signal.
 
-    Returns (prior_end_ktc, max_ktc_prior).
+    Returns (prior_end_ktc, max_ktc_prior, initial_ktc, min_ktc_prior).
     """
     sorted_seasons = sorted(seasons, key=lambda s: s["year"])
     prior_end_ktc = None
     max_ktc_prior = None
+    min_ktc_prior = None
+    initial_ktc = None
 
     for season in sorted_seasons:
         year = season["year"]
@@ -63,13 +65,21 @@ def compute_prior_ktc_features(
             break
         if (season.get("years_exp") or 0) < 0:
             continue
+        start_ktc = season.get("start_ktc")
+        if initial_ktc is None and _is_valid_ktc(start_ktc):
+            initial_ktc = start_ktc
         end_ktc = season.get("end_ktc")
         if _is_valid_ktc(end_ktc):
             prior_end_ktc = end_ktc
             if max_ktc_prior is None or end_ktc > max_ktc_prior:
                 max_ktc_prior = end_ktc
+            if min_ktc_prior is None or end_ktc < min_ktc_prior:
+                min_ktc_prior = end_ktc
+        if _is_valid_ktc(start_ktc):
+            if min_ktc_prior is None or start_ktc < min_ktc_prior:
+                min_ktc_prior = start_ktc
 
-    return prior_end_ktc, max_ktc_prior
+    return prior_end_ktc, max_ktc_prior, initial_ktc, min_ktc_prior
 
 
 def compute_prior_ppg(

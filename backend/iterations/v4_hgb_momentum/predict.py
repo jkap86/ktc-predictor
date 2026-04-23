@@ -98,7 +98,12 @@ _POSITIONS_WITH_TEAM_FEATURES = {"WR"}
 
 def get_expected_features(position: str) -> list[str]:
     """Get the expected feature list for v4 for a given position."""
-    base = _V1_CORE_FEATURES + _V1_LINEAR_FEATURES
+    linear = list(_V1_LINEAR_FEATURES)
+    # Insert extended KTC features for QB/RB after ktc_peak_drawdown
+    if position in ("QB", "RB"):
+        idx = linear.index("has_prior_season")
+        linear[idx:idx] = ["ktc_vs_initial", "ktc_rise_from_low"]
+    base = _V1_CORE_FEATURES + linear
     if position in _POSITIONS_WITH_PRIOR_BEHAVIORAL:
         base = base + _PRIOR_BEHAVIORAL_FEATURES
     extras: list[str] = []
@@ -164,6 +169,8 @@ def predict_end_ktc(
     draft_pick: float | None = None,
     years_remaining: float | None = None,
     start_position_rank: float | None = None,
+    initial_ktc: float | None = None,
+    min_ktc_prior: float | None = None,
     prior_end_ktc: float | None = None,
     max_ktc_prior: float | None = None,
     prior_ppg: float | None = None,
@@ -274,7 +281,12 @@ def predict_end_ktc(
         ktc_peak_drawdown = float(np.log(start_ktc / max_ktc_prior))
     else:
         ktc_peak_drawdown = np.nan
-    linear_features.extend([ktc_yoy_log, ktc_peak_drawdown, has_prior_season])
+    linear_features.extend([ktc_yoy_log, ktc_peak_drawdown])
+    if position in ("QB", "RB"):
+        ktc_vs_initial = float(np.log(start_ktc / initial_ktc)) if initial_ktc and initial_ktc > 0 else np.nan
+        ktc_rise_from_low = float(np.log(start_ktc / min_ktc_prior)) if min_ktc_prior and min_ktc_prior > 0 else np.nan
+        linear_features.extend([ktc_vs_initial, ktc_rise_from_low])
+    linear_features.append(has_prior_season)
 
     # Prior-season PPG (3)
     if prior_ppg is not None and prior_ppg > 0 and ppg > 0:

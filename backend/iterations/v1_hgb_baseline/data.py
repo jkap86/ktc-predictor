@@ -121,8 +121,10 @@ def _compute_prior_season_features(players: list[dict]) -> dict[tuple[str, int],
             key=lambda s: s["year"],
         )
 
-        # Track running max of end_ktc values seen so far
+        # Track running max/min and initial KTC values
         max_ktc_so_far = 0.0
+        min_ktc_so_far = float("inf")
+        initial_ktc = None
 
         for i, season in enumerate(sorted_seasons):
             year = season["year"]
@@ -130,9 +132,13 @@ def _compute_prior_season_features(players: list[dict]) -> dict[tuple[str, int],
 
             if i == 0:
                 # First season: no prior data, but track for future seasons
+                if start_ktc and 0 < start_ktc < 9999:
+                    initial_ktc = start_ktc
+                    min_ktc_so_far = start_ktc
                 end_ktc = season.get("end_ktc")
                 if end_ktc and end_ktc > 0 and end_ktc < 9999:
                     max_ktc_so_far = max(max_ktc_so_far, end_ktc)
+                    min_ktc_so_far = min(min_ktc_so_far, end_ktc)
                 continue
 
             # Get prior season's end_ktc
@@ -169,18 +175,27 @@ def _compute_prior_season_features(players: list[dict]) -> dict[tuple[str, int],
             else:
                 ktc_peak_drawdown = 0.0
 
+            # Career low and initial value features
+            ktc_vs_initial = float(np.log(start_ktc / initial_ktc)) if initial_ktc and initial_ktc > 0 else 0.0
+            ktc_rise_from_low = float(np.log(start_ktc / min_ktc_so_far)) if min_ktc_so_far > 0 and min_ktc_so_far < float("inf") else 0.0
+
             result[(pid, year)] = {
                 "prior_end_ktc": round(prior_end_ktc, 1),
                 "max_ktc_prior": round(max_ktc_prior, 1),
                 "ktc_yoy_log": round(ktc_yoy_log, 4),
                 "ktc_peak_drawdown": round(ktc_peak_drawdown, 4),
+                "ktc_vs_initial": round(ktc_vs_initial, 4),
+                "ktc_rise_from_low": round(ktc_rise_from_low, 4),
             }
 
-            # Update running max for next iteration
+            # Update running max/min for next iteration
             max_ktc_so_far = max_ktc_prior
             end_ktc = season.get("end_ktc")
             if end_ktc and end_ktc > 0 and end_ktc < 9999:
                 max_ktc_so_far = max(max_ktc_so_far, end_ktc)
+                min_ktc_so_far = min(min_ktc_so_far, end_ktc)
+            if start_ktc and 0 < start_ktc < 9999:
+                min_ktc_so_far = min(min_ktc_so_far, start_ktc)
 
     return result
 
@@ -476,6 +491,8 @@ def build_weekly_snapshot_df(
                         # ktc_peak_drawdown: log(start_ktc / max_ktc_prior)
                         # 0 = at career peak, Negative = below peak
                         "ktc_peak_drawdown": prior_feat.get("ktc_peak_drawdown"),
+                        "ktc_vs_initial": prior_feat.get("ktc_vs_initial"),
+                        "ktc_rise_from_low": prior_feat.get("ktc_rise_from_low"),
                         # has_prior_season: 1 if prior season data exists, else 0
                         "has_prior_season": 1 if prior_feat else 0,
                         # Prior-season PPG features (QB only - captures performance trajectory)

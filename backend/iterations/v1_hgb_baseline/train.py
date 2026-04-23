@@ -88,11 +88,20 @@ _BASE_LINEAR_FEATURES = [
 
 # Prior-season KTC features (QB ONLY - captures trajectory/path)
 # These help QB predict upside but destabilize RB elite tier predictions.
-_PRIOR_SEASON_FEATURES = [
+# Prior-season KTC features (all positions get yoy + peak + sentinel;
+# QB/RB additionally get vs_initial and rise_from_low)
+_PRIOR_SEASON_FEATURES_BASE = [
     "ktc_yoy_log",         # log(start_ktc / prior_end_ktc), clipped
     "ktc_peak_drawdown",   # log(start_ktc / max_ktc_prior)
+]
+_PRIOR_SEASON_FEATURES_EXTENDED = [
+    "ktc_vs_initial",      # log(start_ktc / initial_ktc) — career value trajectory
+    "ktc_rise_from_low",   # log(start_ktc / min_ktc_prior) — bounce from career low
+]
+_PRIOR_SEASON_FEATURES_SENTINEL = [
     "has_prior_season",    # 1 if prior season data exists
 ]
+_POSITIONS_WITH_EXTENDED_KTC = {"QB", "RB"}
 
 # Prior-season PPG features (QB ONLY - captures performance trajectory)
 # Complements KTC trajectory by tracking actual on-field performance.
@@ -154,7 +163,10 @@ def get_features_for_position(position: str) -> list[str]:
 
     # Prior-season trajectory features (KTC + PPG) for all positions
     if position in ("QB", "RB", "WR", "TE"):
-        linear_features.extend(_PRIOR_SEASON_FEATURES)
+        linear_features.extend(_PRIOR_SEASON_FEATURES_BASE)
+        if position in _POSITIONS_WITH_EXTENDED_KTC:
+            linear_features.extend(_PRIOR_SEASON_FEATURES_EXTENDED)
+        linear_features.extend(_PRIOR_SEASON_FEATURES_SENTINEL)
         linear_features.extend(_PRIOR_PPG_FEATURES)
 
     # Contract features for all positions (market position, contract year effect)
@@ -439,12 +451,11 @@ def _build_monotonic_constraints(position: str) -> list[int]:
 
     # Prior-season features for all positions
     if position in ("QB", "RB", "WR", "TE"):
-        # Prior KTC features (3): ktc_yoy_log, ktc_peak_drawdown, has_prior_season
-        # QB: no yoy constraint — small N causes overfitting to individual trajectories;
-        #     rising KTC last year does not reliably predict rise (mean-reversion is common)
-        # Other positions: positive constraint (trajectory signal is reliable)
         yoy_constraint = 0 if position == "QB" else 1
-        linear_constraints.extend([yoy_constraint, 0, 0])
+        linear_constraints.extend([yoy_constraint, 0])  # ktc_yoy_log, ktc_peak_drawdown
+        if position in _POSITIONS_WITH_EXTENDED_KTC:
+            linear_constraints.extend([0, 0])  # ktc_vs_initial, ktc_rise_from_low
+        linear_constraints.append(0)  # has_prior_season
         # Prior PPG features (3): prior_ppg, ppg_yoy_log, has_prior_ppg
         linear_constraints.extend([0, 1, 0])
 

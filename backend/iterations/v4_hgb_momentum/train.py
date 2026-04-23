@@ -365,7 +365,10 @@ def _v4_monotonic_smoke_test(model, position: str) -> bool:
     for ppg in ppg_values:
         row = [8, ppg, 2, np.nan, 3, 4, -2, 0]  # core (8)
         row.extend([5000, 0])  # start_ktc, sentinel
-        row.extend([0.0, 0.0, 1])  # prior KTC
+        row.extend([0.0, 0.0])  # ktc_yoy_log, ktc_peak_drawdown
+        if position in v1._POSITIONS_WITH_EXTENDED_KTC:
+            row.extend([0.0, 0.0])  # ktc_vs_initial, ktc_rise_from_low
+        row.append(1)  # has_prior_season
         row.extend([15.0, np.log((ppg + 0.1) / (15 + 0.1)), 1])  # prior PPG
         if v1.USE_CONTRACT_FEATURES:
             row.extend([0.05, 0, 0.5, 1])  # contract

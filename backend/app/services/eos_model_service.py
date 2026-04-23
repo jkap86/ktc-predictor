@@ -56,6 +56,8 @@ def predict_from_inputs(
     draft_pick: float | None = None,
     years_remaining: float | None = None,
     start_position_rank: float | None = None,
+    initial_ktc: float | None = None,
+    min_ktc_prior: float | None = None,
     prior_end_ktc: float | None = None,
     max_ktc_prior: float | None = None,
     prior_ppg: float | None = None,
@@ -107,6 +109,8 @@ def predict_from_inputs(
         draft_pick=draft_pick,
         years_remaining=years_remaining,
         start_position_rank=start_position_rank,
+        initial_ktc=initial_ktc,
+        min_ktc_prior=min_ktc_prior,
         prior_end_ktc=prior_end_ktc,
         max_ktc_prior=max_ktc_prior,
         prior_ppg=prior_ppg,
@@ -233,7 +237,7 @@ async def predict_for_player(
     max_ktc_prior = None
     prior_ppg = None
     prior_ref_year = anchor_year if anchor_year else (latest["year"] + 1)
-    prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
+    prior_end_ktc, max_ktc_prior, initial_ktc, min_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
     prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
 
     # Prior-season behavioral signals (v3+). Computed for all positions;
@@ -259,6 +263,8 @@ async def predict_for_player(
         ppg=ppg,
         age=float(age) if age is not None else None,
         start_position_rank=float(start_position_rank) if start_position_rank is not None else None,
+        initial_ktc=initial_ktc,
+        min_ktc_prior=min_ktc_prior,
         prior_end_ktc=prior_end_ktc,
         max_ktc_prior=max_ktc_prior,
         prior_ppg=prior_ppg,
@@ -348,7 +354,7 @@ async def predict_for_player_whatif(
     age = baseline_season.get("age") or latest.get("age")
 
     prior_ref_year = anchor_year if anchor_year else (latest["year"] + 1)
-    prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
+    prior_end_ktc, max_ktc_prior, initial_ktc, min_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
     prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
     prior_behavioral = compute_prior_behavioral_features(seasons, prior_ref_year) or {}
     momentum = compute_momentum_features(seasons, anchor_year) or {}
@@ -364,6 +370,8 @@ async def predict_for_player_whatif(
         ppg=ppg,
         age=float(age) if age is not None else None,
         start_position_rank=float(start_position_rank) if start_position_rank is not None else None,
+        initial_ktc=initial_ktc,
+        min_ktc_prior=min_ktc_prior,
         prior_end_ktc=prior_end_ktc,
         max_ktc_prior=max_ktc_prior,
         prior_ppg=prior_ppg,
@@ -450,7 +458,7 @@ def predict_historical(
             continue
 
         # Prior-season features relative to predict_year (all positions)
-        prior_end_ktc, max_ktc_prior = compute_prior_ktc_features(seasons, predict_year)
+        prior_end_ktc, max_ktc_prior, _, _ = compute_prior_ktc_features(seasons, predict_year)
         prior_ppg_val = compute_prior_ppg(seasons, predict_year)
 
         prior_behavioral = compute_prior_behavioral_features(seasons, predict_year) or {}
