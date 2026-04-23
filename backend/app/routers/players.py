@@ -9,8 +9,7 @@ from app.services.data_loader import get_data_loader
 from app.services.ktc_utils import select_anchor_ktc, select_baseline_stats
 from app.services.ktc_db import get_latest_ktc, get_latest_ktc_batch
 from app.services.comps import get_comps_index
-from app.services.model_registry import get_registry
-from app.services.eos_model_service import predict_for_player
+from app.services.prediction_cache import get_prediction_cache
 from app.schemas.player import Player, PlayerList, PlayerSummary
 
 logger = logging.getLogger(__name__)
@@ -86,6 +85,13 @@ async def list_players(
         )
 
     results = results[:limit]
+
+    # Add cached predictions (precomputed at startup, instant lookup)
+    pred_cache = get_prediction_cache()
+    for r in results:
+        cached = pred_cache.get(r["player_id"])
+        if cached:
+            r["predicted_end_ktc"] = cached["predicted_end_ktc"]
 
     return PlayerList(
         players=[PlayerSummary(**p) for p in results],
