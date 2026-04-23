@@ -78,8 +78,10 @@ _ALL_SEASON_FEATURES = [
     "start_ktc_quartile",
     "age_prime_distance",
     "is_breakout_candidate",
+    "start_position_rank",
     "start_ktc",
     "start_ktc_was_sentinel",
+    "years_exp",
     "ktc_yoy_log",
     "ktc_peak_drawdown",
     "has_prior_season",
@@ -157,8 +159,10 @@ def _compute_all_features(season: dict, prior: dict | None, position: str, start
         "start_ktc_quartile": _get_ktc_quartile(start_ktc),
         "age_prime_distance": _age_prime_distance(age, position),
         "is_breakout_candidate": breakout,
+        "start_position_rank": float(season.get("start_position_rank") or 0),
         "start_ktc": start_ktc,
         "start_ktc_was_sentinel": 1 if start_ktc >= 9999 else 0,
+        "years_exp": float(season.get("years_exp") or 0),
         "ktc_yoy_log": ktc_yoy_log,
         "ktc_peak_drawdown": ktc_peak_drawdown,
         "has_prior_season": has_prior,
@@ -255,15 +259,29 @@ class CompsIndex:
 
             importances = _extract_feature_importances(pos_model, len(model_features))
 
+            # Add extra features that aren't in the model but matter for comps.
+            # years_exp ensures rookies match rookies, not 3rd-year players.
+            # start_position_rank differentiates players at similar KTC.
+            _EXTRA_COMP_FEATURES = {
+                "years_exp": 0.15,
+                "start_position_rank": 0.08,
+            }
+            for fname, min_weight in _EXTRA_COMP_FEATURES.items():
+                if fname not in model_features:
+                    model_features = model_features + [fname]
+                    importances = np.append(importances, min_weight)
+
             # Ensure start_ktc gets meaningful weight in comps regardless of
             # model split frequency. The model uses start_ktc_quartile for
             # splits, but comps need similar absolute KTC to be useful.
-            START_KTC_MIN_WEIGHT = 0.12
-            if "start_ktc" in model_features:
-                ktc_idx = model_features.index("start_ktc")
-                if importances[ktc_idx] < START_KTC_MIN_WEIGHT:
-                    importances[ktc_idx] = START_KTC_MIN_WEIGHT
-                    importances = importances / importances.sum()
+            _MIN_WEIGHTS = {"start_ktc": 0.12}
+            for fname, min_w in _MIN_WEIGHTS.items():
+                if fname in model_features:
+                    idx = model_features.index(fname)
+                    if importances[idx] < min_w:
+                        importances[idx] = min_w
+
+            importances = importances / importances.sum()
 
             # Build records and feature vectors
             records = []

@@ -160,6 +160,7 @@ async def player_comps(
         weeks_missed=0,
         draft_pick=latest.get("draft_pick"),
         start_position_rank=latest.get("start_position_rank"),
+        years_exp=latest.get("years_exp"),
         # KTC trajectory
         ktc_yoy_pct=ktc_yoy_pct,
         ktc_30d_trend=latest.get("ktc_30d_trend"),
