@@ -138,7 +138,7 @@ function HomeContent() {
   // Search state
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('All');
-  const [sortBy, setSortBy] = useState<'ktc' | 'predicted' | 'change'>('ktc');
+  const [sortBy, setSortBy] = useState<'ktc' | 'predicted' | 'change' | 'ppg'>('ktc');
   const [searchResults, setSearchResults] = useState<PlayerSummary[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -319,7 +319,7 @@ function HomeContent() {
       {/* Sort options */}
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-500 dark:text-gray-400">Sort:</span>
-        {([['ktc', 'Value'], ['predicted', 'Predicted'], ['change', 'Change']] as const).map(([key, label]) => (
+        {([['ktc', 'Value'], ['predicted', 'Predicted'], ['change', 'Change'], ['ppg', 'PPG']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setSortBy(key)}

@@ -22,7 +22,7 @@ async def list_players(
     q: str = Query("", description="Search query for player name"),
     position: Optional[str] = Query(None, description="Filter by position (QB, RB, WR, TE)"),
     limit: int = Query(50, ge=1, le=2000, description="Maximum number of results"),
-    sort_by: str = Query("name", regex="^(name|ktc|predicted|change)$", description="Sort by field"),
+    sort_by: str = Query("name", regex="^(name|ktc|predicted|change|ppg)$", description="Sort by field"),
     sort_order: str = Query("asc", regex="^(asc|desc)$", description="Sort order"),
 ):
     """Search and list players."""
@@ -94,6 +94,8 @@ async def list_players(
             p = x.get("predicted_end_ktc")
             k = x.get("latest_ktc")
             v = (p - k) if p is not None and k is not None else None
+        elif sort_by == "ppg":
+            v = x.get("ppg")
         else:
             return (0, x["name"].lower() if not desc else "")
 
