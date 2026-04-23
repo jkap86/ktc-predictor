@@ -128,6 +128,7 @@ export default function WhatIfChart({
 
   useEffect(() => {
     const generation = ++abortRef.current;
+    setData([]);
 
     async function fetchCurves() {
       setLoading(true);
