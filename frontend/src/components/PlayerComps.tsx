@@ -96,7 +96,8 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
               <th className="py-2 pr-3 text-right">PPG</th>
               <th className="py-2 pr-3 text-right">Start</th>
               <th className="py-2 pr-3 text-right">End</th>
-              <th className="py-2 text-right">Change</th>
+              <th className="py-2 pr-3 text-right">Change</th>
+              <th className="py-2 text-right">Sim</th>
             </tr>
           </thead>
           <tbody>
@@ -116,12 +117,15 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
                 <td className="py-2.5 pr-3 text-right text-gray-600 dark:text-gray-400">{c.ppg}</td>
                 <td className="py-2.5 pr-3 text-right text-gray-600 dark:text-gray-400">{formatKtc(c.start_ktc)}</td>
                 <td className="py-2.5 pr-3 text-right font-medium text-gray-900 dark:text-white">{formatKtc(c.end_ktc)}</td>
-                <td className={`py-2.5 text-right font-bold ${
+                <td className={`py-2.5 pr-3 text-right font-bold ${
                   c.delta_ktc >= 0
                     ? 'text-green-600 dark:text-green-400'
                     : 'text-red-600 dark:text-red-400'
                 }`}>
                   {c.delta_ktc >= 0 ? '+' : ''}{Math.round(c.delta_ktc).toLocaleString()}
+                </td>
+                <td className="py-2.5 text-right text-gray-400 dark:text-gray-500 text-xs">
+                  {Math.round(c.similarity * 100)}%
                 </td>
               </tr>
             ))}
