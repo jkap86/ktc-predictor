@@ -57,6 +57,8 @@ async def list_players(
 
         if latest_ktc is not None:
             latest_ktc = max(1.0, min(9999.0, latest_ktc))
+        else:
+            continue  # skip players with no KTC data
 
         # PPG from most recent season with games
         ppg = None
