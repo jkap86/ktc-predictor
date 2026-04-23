@@ -71,7 +71,7 @@ export async function searchPlayers(
   query: string = '',
   position?: string,
   limit: number = 50,
-  sortBy: 'name' | 'ktc' = 'name',
+  sortBy: 'name' | 'ktc' | 'predicted' | 'change' = 'name',
   sortOrder: 'asc' | 'desc' = 'asc'
 ): Promise<PlayerList> {
   const params = new URLSearchParams();

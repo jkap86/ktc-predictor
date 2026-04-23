@@ -22,7 +22,7 @@ async def list_players(
     q: str = Query("", description="Search query for player name"),
     position: Optional[str] = Query(None, description="Filter by position (QB, RB, WR, TE)"),
     limit: int = Query(50, ge=1, le=2000, description="Maximum number of results"),
-    sort_by: str = Query("name", regex="^(name|ktc)$", description="Sort by field"),
+    sort_by: str = Query("name", regex="^(name|ktc|predicted|change)$", description="Sort by field"),
     sort_order: str = Query("asc", regex="^(asc|desc)$", description="Sort order"),
 ):
     """Search and list players."""
@@ -73,25 +73,30 @@ async def list_players(
             "ppg": ppg,
         })
 
-    if sort_by == "ktc":
-        results.sort(
-            key=lambda x: (x["latest_ktc"] is None, -(x["latest_ktc"] or 0)),
-            reverse=(sort_order == "asc"),
-        )
-    else:
-        results.sort(
-            key=lambda x: x["name"].lower(),
-            reverse=(sort_order == "desc"),
-        )
-
-    results = results[:limit]
-
     # Add cached predictions (precomputed at startup, instant lookup)
     pred_cache = get_prediction_cache()
     for r in results:
         cached = pred_cache.get(r["player_id"])
         if cached:
             r["predicted_end_ktc"] = cached["predicted_end_ktc"]
+
+    desc = sort_order == "desc"
+    if sort_by == "ktc":
+        results.sort(key=lambda x: (x["latest_ktc"] is None, x["latest_ktc"] or 0), reverse=desc)
+    elif sort_by == "predicted":
+        results.sort(key=lambda x: (x.get("predicted_end_ktc") is None, x.get("predicted_end_ktc") or 0), reverse=desc)
+    elif sort_by == "change":
+        def _change(x):
+            p = x.get("predicted_end_ktc")
+            k = x.get("latest_ktc")
+            if p is None or k is None:
+                return (True, 0)
+            return (False, p - k)
+        results.sort(key=_change, reverse=desc)
+    else:
+        results.sort(key=lambda x: x["name"].lower(), reverse=desc)
+
+    results = results[:limit]
 
     return PlayerList(
         players=[PlayerSummary(**p) for p in results],

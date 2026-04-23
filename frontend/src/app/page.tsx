@@ -138,6 +138,7 @@ function HomeContent() {
   // Search state
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('All');
+  const [sortBy, setSortBy] = useState<'ktc' | 'predicted' | 'change'>('ktc');
   const [searchResults, setSearchResults] = useState<PlayerSummary[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -182,14 +183,14 @@ function HomeContent() {
       setSearchLoading(true);
       try {
         const pos = position === 'All' ? undefined : position;
-        const result = await searchPlayers(query, pos, 200, 'ktc', 'desc');
+        const result = await searchPlayers(query, pos, 200, sortBy, 'desc');
         setSearchResults(result.players);
       } catch { /* */ }
       finally { setSearchLoading(false); }
     };
     const debounce = setTimeout(fetchPlayers, 300);
     return () => clearTimeout(debounce);
-  }, [query, position]);
+  }, [query, position, sortBy]);
 
   // Fetch primary player data
   useEffect(() => {
@@ -313,6 +314,24 @@ function HomeContent() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Sort options */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500 dark:text-gray-400">Sort:</span>
+        {([['ktc', 'Value'], ['predicted', 'Predicted'], ['change', 'Change']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setSortBy(key)}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+              sortBy === key
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Search results as selectable cards */}
