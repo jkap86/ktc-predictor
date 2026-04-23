@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { searchPlayers, getPlayer, getPrediction, predictPlayerWhatIfBatch } from '../lib/api';
 import { formatKtc } from '../lib/format';
 import { useModel } from '../context/ModelContext';
@@ -122,7 +123,17 @@ function PlayerHeader({ player, prediction, color = 'blue', onRemove, onSwap }: 
 // ── Main page ────────────────────────────────────────────────────────────
 
 export default function Home() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" /></div>}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const { selectedModelId } = useModel();
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   // Search state
   const [query, setQuery] = useState('');
@@ -130,9 +141,28 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<PlayerSummary[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // Selected players
-  const [primaryId, setPrimaryId] = useState<string | null>(null);
-  const [compareId, setCompareId] = useState<string | null>(null);
+  // Selected players — initialize from URL params
+  const [primaryId, setPrimaryIdRaw] = useState<string | null>(searchParams.get('p1'));
+  const [compareId, setCompareIdRaw] = useState<string | null>(searchParams.get('p2'));
+
+  // Sync selection to URL params
+  const setPrimaryId = useCallback((id: string | null) => {
+    setPrimaryIdRaw(id);
+    const params = new URLSearchParams(window.location.search);
+    if (id) params.set('p1', id); else params.delete('p1');
+    // Keep p2 only if p1 exists
+    if (!id) params.delete('p2');
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : '/', { scroll: false });
+  }, [router]);
+
+  const setCompareId = useCallback((id: string | null) => {
+    setCompareIdRaw(id);
+    const params = new URLSearchParams(window.location.search);
+    if (id) params.set('p2', id); else params.delete('p2');
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : '/', { scroll: false });
+  }, [router]);
 
   // Player data
   const [primary, setPrimary] = useState<{ player: Player; prediction: EOSPrediction | null } | null>(null);
