@@ -68,6 +68,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <title>KTC Predictor Dev</title>
         <meta name="description" content="Fantasy Football KTC Value Predictions (Multi-Model)" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </head>
       <body className={inter.className}>
         <ModelProvider>
