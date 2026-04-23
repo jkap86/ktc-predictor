@@ -47,6 +47,8 @@ class PlayerSummary(BaseModel):
     name: str
     position: str
     latest_ktc: Optional[float] = None
+    ppg: Optional[float] = None
+    predicted_end_ktc: Optional[float] = None
 
 
 class PlayerList(BaseModel):

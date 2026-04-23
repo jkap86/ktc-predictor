@@ -9,6 +9,8 @@ from app.services.data_loader import get_data_loader
 from app.services.ktc_utils import select_anchor_ktc, select_baseline_stats
 from app.services.ktc_db import get_latest_ktc, get_latest_ktc_batch
 from app.services.comps import get_comps_index
+from app.services.model_registry import get_registry
+from app.services.eos_model_service import predict_for_player
 from app.schemas.player import Player, PlayerList, PlayerSummary
 
 logger = logging.getLogger(__name__)
@@ -45,10 +47,11 @@ async def list_players(
     results = []
     for player in matching_players:
         pid = player["player_id"]
+        seasons = player.get("seasons", [])
+
         # Prefer live KTC from DB, fall back to training data
         latest_ktc = live_ktc.get(pid)
         if latest_ktc is None:
-            seasons = player.get("seasons", [])
             anchor = select_anchor_ktc(seasons) if seasons else None
             if anchor:
                 latest_ktc, _, _ = anchor
@@ -56,11 +59,19 @@ async def list_players(
         if latest_ktc is not None:
             latest_ktc = max(1.0, min(9999.0, latest_ktc))
 
+        # PPG from most recent season with games
+        ppg = None
+        baseline = select_baseline_stats(seasons) if seasons else None
+        if baseline:
+            _, gp, ppg_val = baseline
+            ppg = round(ppg_val, 1)
+
         results.append({
             "player_id": pid,
             "name": player["name"],
             "position": player["position"],
             "latest_ktc": latest_ktc,
+            "ppg": ppg,
         })
 
     if sort_by == "ktc":
@@ -75,6 +86,20 @@ async def list_players(
         )
 
     results = results[:limit]
+
+    # Add predictions for returned results
+    try:
+        registry = get_registry()
+        iteration = registry.get()
+        for r in results:
+            try:
+                pred = await predict_for_player(iteration, r["player_id"], data_loader)
+                if pred:
+                    r["predicted_end_ktc"] = round(pred["predicted_end_ktc"], 1)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     return PlayerList(
         players=[PlayerSummary(**p) for p in results],

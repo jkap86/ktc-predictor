@@ -341,24 +341,33 @@ function HomeContent() {
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className={`font-semibold text-lg ${isPrimary ? 'text-blue-700 dark:text-blue-300' : isCompare ? 'text-orange-700 dark:text-orange-300' : 'text-gray-900 dark:text-white'}`}>
+                    <h3 className={`font-semibold text-base ${isPrimary ? 'text-blue-700 dark:text-blue-300' : isCompare ? 'text-orange-700 dark:text-orange-300' : 'text-gray-900 dark:text-white'}`}>
                       {player.name}
                     </h3>
-                    <span className="inline-block px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded mt-1">
-                      {player.position}
-                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="inline-block px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+                        {player.position}
+                      </span>
+                      {player.ppg != null && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{player.ppg} ppg</span>
+                      )}
+                    </div>
                   </div>
-                  {player.latest_ktc != null && (
-                    <div className="text-right">
-                      <div className={`text-xl font-bold ${isPrimary ? 'text-blue-600 dark:text-blue-400' : isCompare ? 'text-orange-500 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                  <div className="text-right shrink-0">
+                    {player.latest_ktc != null && (
+                      <div className={`text-lg font-bold ${isPrimary ? 'text-blue-600 dark:text-blue-400' : isCompare ? 'text-orange-500 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400'}`}>
                         {formatKtc(player.latest_ktc)}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">KTC</div>
-                    </div>
-                  )}
+                    )}
+                    {player.predicted_end_ktc != null && player.latest_ktc != null && (
+                      <div className={`text-xs font-medium ${player.predicted_end_ktc >= player.latest_ktc ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        &rarr; {formatKtc(player.predicted_end_ktc)}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 {isSelected && (
-                  <div className={`mt-2 text-xs font-medium ${isPrimary ? 'text-blue-500' : 'text-orange-500'}`}>
+                  <div className={`mt-1 text-xs font-medium ${isPrimary ? 'text-blue-500' : 'text-orange-500'}`}>
                     {isPrimary ? 'Primary' : 'Compare'}
                   </div>
                 )}

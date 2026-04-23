@@ -44,6 +44,8 @@ export interface PlayerSummary {
   name: string;
   position: string;
   latest_ktc: number | null;
+  ppg: number | null;
+  predicted_end_ktc: number | null;
 }
 
 export interface PlayerList {
