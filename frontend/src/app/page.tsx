@@ -195,12 +195,12 @@ export default function Home() {
 
   // What-If for primary
   const fetchWhatIf = useCallback(async () => {
-    if (!primaryId || !primary?.prediction) return;
+    if (!primaryId || !primaryPlayer) return;
     try {
       const batch = await predictPlayerWhatIfBatch(primaryId, { games_played: 17, ppg_values: [whatIfPpg] }, selectedModelId);
       setWhatIfResult(batch?.predictions[0] ?? null);
     } catch { /* */ }
-  }, [primaryId, primary?.prediction, whatIfPpg, selectedModelId]);
+  }, [primaryId, primaryPlayer, whatIfPpg, selectedModelId]);
 
   // What-If for compare
   const fetchCompareWhatIf = useCallback(async () => {
@@ -407,7 +407,7 @@ export default function Home() {
           )}
 
           {/* What-If */}
-          {primaryPlayer && primaryPrediction && (
+          {primaryPlayer && (primaryPrediction || primaryPlayer.live_ktc || primaryPlayer.seasons?.length > 0) && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-6">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">What-If Scenario</h3>
               <div className="flex items-center gap-3">
@@ -417,8 +417,8 @@ export default function Home() {
               </div>
 
               <WhatIfChart
-                position={primaryPrediction.position}
-                startKtc={primaryPrediction.start_ktc}
+                position={primaryPrediction?.position ?? primaryPlayer.position}
+                startKtc={primaryPrediction?.start_ktc ?? primaryPlayer.live_ktc ?? 0}
                 gamesPlayed={17}
                 currentPpg={whatIfPpg}
                 modelId={selectedModelId}
