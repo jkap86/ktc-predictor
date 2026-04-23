@@ -81,20 +81,26 @@ async def list_players(
             r["predicted_end_ktc"] = cached["predicted_end_ktc"]
 
     desc = sort_order == "desc"
-    if sort_by == "ktc":
-        results.sort(key=lambda x: (x["latest_ktc"] is None, x["latest_ktc"] or 0), reverse=desc)
-    elif sort_by == "predicted":
-        results.sort(key=lambda x: (x.get("predicted_end_ktc") is None, x.get("predicted_end_ktc") or 0), reverse=desc)
-    elif sort_by == "change":
-        def _change(x):
+    sign = -1 if desc else 1
+
+    def _sort_key(x):
+        if sort_by == "ktc":
+            v = x.get("latest_ktc")
+        elif sort_by == "predicted":
+            v = x.get("predicted_end_ktc")
+        elif sort_by == "change":
             p = x.get("predicted_end_ktc")
             k = x.get("latest_ktc")
-            if p is None or k is None:
-                return (True, 0)
-            return (False, p - k)
-        results.sort(key=_change, reverse=desc)
-    else:
-        results.sort(key=lambda x: x["name"].lower(), reverse=desc)
+            v = (p - k) if p is not None and k is not None else None
+        else:
+            return (0, x["name"].lower() if not desc else "")
+
+        # Nulls always last: use inf so they sort after real values
+        if v is None:
+            return (1, 0)
+        return (0, v * sign)
+
+    results.sort(key=_sort_key)
 
     results = results[:limit]
 
