@@ -194,6 +194,8 @@ function HomeContent() {
   // Fetch primary player data
   useEffect(() => {
     if (!primaryId) { setPrimary(null); setWhatIfResult(null); return; }
+    setPrimary(null);
+    setWhatIfResult(null);
     setPrimaryLoading(true);
     (async () => {
       try {
@@ -212,6 +214,8 @@ function HomeContent() {
   // Fetch compare player data
   useEffect(() => {
     if (!compareId) { setCompare(null); setCompareWhatIfResult(null); return; }
+    setCompare(null);
+    setCompareWhatIfResult(null);
     setCompareLoading(true);
     (async () => {
       try {
