@@ -340,7 +340,18 @@ function HomeContent() {
           <div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="max-h-[520px] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="rounded-xl border border-gray-100 dark:border-gray-700">
+        {/* Fixed header */}
+        <div className="px-4 py-2 flex items-center gap-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 sticky top-0 z-10 text-xs text-gray-500 dark:text-gray-400 font-medium">
+          <span className="w-6 text-right shrink-0">#</span>
+          <span className="flex-1 min-w-0">Player</span>
+          <span className="w-7 text-center shrink-0">Pos</span>
+          <span className="w-10 text-right shrink-0">PPG</span>
+          <span className="w-14 text-right shrink-0">Value</span>
+          <span className="w-14 text-right shrink-0">Pred</span>
+          <span className="w-14 text-right shrink-0">+/-</span>
+        </div>
+        <div className="max-h-[480px] overflow-y-auto">
         <div className="divide-y divide-gray-100 dark:divide-gray-700">
           {searchResults.map((player, idx) => {
             const isPrimary = player.player_id === primaryId;
@@ -369,9 +380,7 @@ function HomeContent() {
                   )}
                 </span>
                 <span className="text-xs text-gray-400 dark:text-gray-500 w-7 text-center shrink-0">{player.position}</span>
-                {player.ppg != null && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400 w-12 text-right shrink-0">{player.ppg} ppg</span>
-                )}
+                <span className="text-xs text-gray-500 dark:text-gray-400 w-10 text-right shrink-0">{player.ppg ?? '—'}</span>
                 <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-14 text-right shrink-0">
                   {player.latest_ktc != null ? formatKtc(player.latest_ktc) : '—'}
                 </span>
@@ -386,6 +395,7 @@ function HomeContent() {
               </button>
             );
           })}
+        </div>
         </div>
         </div>
       )}
