@@ -75,12 +75,15 @@ async def list_players(
             "ppg": ppg,
         })
 
-    # Add cached predictions (precomputed at startup, instant lookup)
+    # Add cached predictions + projected PPG (precomputed at startup)
     pred_cache = get_prediction_cache()
     for r in results:
         cached = pred_cache.get(r["player_id"])
         if cached:
             r["predicted_end_ktc"] = cached["predicted_end_ktc"]
+            # Use projected PPG (from Sleeper) if available, over last-season
+            if cached.get("projected_ppg") is not None:
+                r["ppg"] = cached["projected_ppg"]
 
     desc = sort_order == "desc"
     sign = -1 if desc else 1
