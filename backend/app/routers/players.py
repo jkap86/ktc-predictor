@@ -87,20 +87,6 @@ async def list_players(
 
     results = results[:limit]
 
-    # Add predictions for returned results
-    try:
-        registry = get_registry()
-        iteration = registry.get()
-        for r in results:
-            try:
-                pred = await predict_for_player(iteration, r["player_id"], data_loader)
-                if pred:
-                    r["predicted_end_ktc"] = round(pred["predicted_end_ktc"], 1)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
     return PlayerList(
         players=[PlayerSummary(**p) for p in results],
         total=len(results),
