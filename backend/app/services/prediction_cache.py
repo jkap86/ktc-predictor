@@ -1,11 +1,9 @@
 """Precomputed prediction cache for all players.
 
-Built lazily in a background thread on first access.
-Serves predictions instantly for the search endpoint once ready.
+Built lazily on first access. Takes ~30s but only happens once.
 """
 
 import logging
-import threading
 import time
 
 from app.services.data_loader import get_data_loader
@@ -24,12 +22,11 @@ from app.services.eos_model_service import predict_from_inputs
 logger = logging.getLogger(__name__)
 
 _cache: dict[str, dict] = {}
-_building = False
 _built = False
 
 
-def build_prediction_cache(iteration) -> dict[str, dict]:
-    """Precompute predictions for all players. Returns {player_id: {predicted_end_ktc, ...}}."""
+def _build(iteration) -> dict[str, dict]:
+    """Compute predictions for all players."""
     dl = get_data_loader()
     players = dl.get_players()
     results = {}
@@ -122,34 +119,15 @@ def build_prediction_cache(iteration) -> dict[str, dict]:
     return results
 
 
-def _build_in_background():
-    """Build cache in a background thread."""
-    global _cache, _building, _built
-    try:
-        from app.services.model_registry import get_registry
-        iteration = get_registry().get()
-        result = build_prediction_cache(iteration)
-        _cache = result
-        _built = True
-    except Exception:
-        logger.exception("Failed to build prediction cache")
-    finally:
-        _building = False
-
-
 def get_prediction_cache() -> dict[str, dict]:
-    """Get the prediction cache. Triggers background build on first call.
-
-    Returns empty dict while building — callers should handle gracefully.
-    """
-    global _building
-    if not _built and not _building:
-        _building = True
-        thread = threading.Thread(target=_build_in_background, daemon=True)
-        thread.start()
+    """Get the prediction cache. Builds on first call (~30s)."""
+    global _cache, _built
+    if not _built:
+        try:
+            from app.services.model_registry import get_registry
+            iteration = get_registry().get()
+            _cache = _build(iteration)
+        except Exception:
+            logger.exception("Failed to build prediction cache")
+        _built = True
     return _cache
-
-
-def get_cached_prediction(player_id: str) -> dict | None:
-    """Get a single player's cached prediction."""
-    return _cache.get(player_id)

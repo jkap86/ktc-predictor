@@ -14,7 +14,6 @@ from app.config import CORS_ORIGINS, DEFAULT_MODEL_ID
 from app.routers import players_router, predictions_router, models_router
 from app.services.model_registry import get_registry
 from app.services.ktc_db import get_pool, close_pool
-from app.services.prediction_cache import get_prediction_cache  # noqa: F401 — triggers lazy build on first search
 
 logger = logging.getLogger(__name__)
 
