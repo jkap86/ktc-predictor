@@ -100,6 +100,62 @@ def _compute_prior_position_features(
     return result
 
 
+def _compute_career_trajectory(
+    players: list[dict],
+) -> dict[tuple[str, int], dict]:
+    """For each (player_id, year), compute trajectory features using the
+    two most recent prior seasons with >= 4 games played.
+
+    Features:
+    - prior_2yr_ppg: PPG from 2 seasons ago (career baseline)
+    - ppg_trend: slope of PPG over last 2 seasons (positive = improving)
+    - prior_2yr_end_ktc: end KTC from 2 seasons ago (career value baseline)
+    """
+    _MIN_GAMES = 4
+    result: dict[tuple[str, int], dict] = {}
+
+    for player in players:
+        pid = player["player_id"]
+        seasons = sorted(
+            [s for s in player.get("seasons", []) if (s.get("years_exp") or 0) >= 0],
+            key=lambda s: s["year"],
+        )
+
+        for i, season in enumerate(seasons):
+            # Find the two most recent prior seasons with enough games
+            priors = []
+            for j in range(i - 1, -1, -1):
+                gp = seasons[j].get("games_played", 0) or 0
+                if gp >= _MIN_GAMES:
+                    priors.append(seasons[j])
+                if len(priors) >= 2:
+                    break
+
+            if len(priors) < 2:
+                continue
+
+            prior_1 = priors[0]  # N-1
+            prior_2 = priors[1]  # N-2
+
+            gp1 = prior_1.get("games_played", 0) or 1
+            fp1 = prior_1.get("fantasy_points", 0) or 0
+            ppg1 = fp1 / gp1
+
+            gp2 = prior_2.get("games_played", 0) or 1
+            fp2 = prior_2.get("fantasy_points", 0) or 0
+            ppg2 = fp2 / gp2
+
+            end_ktc_2 = prior_2.get("end_ktc") or 0
+
+            result[(pid, season["year"])] = {
+                "prior_2yr_ppg": round(ppg2, 2),
+                "ppg_trend": round(ppg1 - ppg2, 2),  # positive = improving
+                "prior_2yr_end_ktc": round(end_ktc_2, 1),
+            }
+
+    return result
+
+
 # ── Wrap the data builder to add v4 columns ─────────────────────────────
 
 _v3_build = v1.build_weekly_snapshot_df  # v3 already patched this
@@ -133,6 +189,10 @@ def _build_weekly_snapshot_df_v4(zip_path: str, json_name: str = "training-data.
     # Prior-season position-specific stats
     prior_pos_feats = _compute_prior_position_features(data["players"])
     print(f"  Prior-position features loaded for {len(prior_pos_feats)} player-seasons")
+
+    # Career trajectory (2-year lookback)
+    trajectory_feats = _compute_career_trajectory(data["players"])
+    print(f"  Career trajectory features loaded for {len(trajectory_feats)} player-seasons")
 
     def _lookup_season(row, key):
         feat = season_feats.get((row["player_id"], row["year"]))
@@ -169,6 +229,18 @@ def _build_weekly_snapshot_df_v4(zip_path: str, json_name: str = "training-data.
         lambda r: 1 if prior_pos_feats.get((r["player_id"], r["year"])) else 0, axis=1
     )
 
+    # Career trajectory columns
+    def _lookup_trajectory(row, key):
+        feat = trajectory_feats.get((row["player_id"], row["year"]))
+        return feat.get(key) if feat else None
+
+    for col in _TRAJECTORY_FEATURES:
+        df[col] = df.apply(lambda r, c=col: _lookup_trajectory(r, c), axis=1)
+
+    df["has_career_trajectory"] = df.apply(
+        lambda r: 1 if trajectory_feats.get((r["player_id"], r["year"])) else 0, axis=1
+    )
+
     return df
 
 
@@ -184,6 +256,14 @@ _MOMENTUM_FEATURES = [
     "ktc_90d_trend",
     "momentum_ratio",
     "max_games_missed_streak",
+]
+
+# Career trajectory features (2-year lookback, all positions)
+_TRAJECTORY_FEATURES = [
+    "prior_2yr_ppg",
+    "ppg_trend",
+    "prior_2yr_end_ktc",
+    "has_career_trajectory",
 ]
 
 # Position-specific prior-season stat features (volume + efficiency)
@@ -229,6 +309,9 @@ def _v4_get_features_for_position(position: str) -> list[str]:
     # Position rank (RB/TE only)
     if position in _POSITIONS_WITH_RANK_FEATURE:
         extras.append("start_position_rank")
+    # Career trajectory (QB/TE only — hurt RB/WR)
+    if position in ("QB", "TE"):
+        extras.extend(_TRAJECTORY_FEATURES)
     # Team context (WR only)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         extras.extend(_TEAM_FEATURES)
@@ -260,6 +343,8 @@ def _v4_build_monotonic_constraints(position: str) -> list[int]:
         n_new += len(pos_stats) + 1  # +1 for has_prior_position_stats
     if position in _POSITIONS_WITH_RANK_FEATURE:
         n_new += 1  # start_position_rank
+    if position in ("QB", "TE"):
+        n_new += len(_TRAJECTORY_FEATURES)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         n_new += len(_TEAM_FEATURES)
     if n_new == 0:
@@ -302,6 +387,9 @@ def _v4_monotonic_smoke_test(model, position: str) -> bool:
         # v4 position rank (RB/TE only)
         if position in _POSITIONS_WITH_RANK_FEATURE:
             row.append(10)  # start_position_rank
+        # v4 career trajectory (QB/TE only)
+        if position in ("QB", "TE"):
+            row.extend([15.0, 1.0, 5000.0, 1])  # prior_2yr_ppg, ppg_trend, prior_2yr_end_ktc, has_career_trajectory
         # v4 team features (WR only)
         if position in _POSITIONS_WITH_TEAM_FEATURES:
             row.extend([5000, 30000, 3000])  # qb_ktc, team_total, positional_comp

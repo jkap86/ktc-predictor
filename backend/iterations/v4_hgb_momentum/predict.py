@@ -88,6 +88,10 @@ _POSITIONS_WITH_V4_FEATURES = {"QB", "WR"}
 
 _POSITIONS_WITH_RANK_FEATURE = {"RB", "TE"}
 
+_TRAJECTORY_FEATURES = [
+    "prior_2yr_ppg", "ppg_trend", "prior_2yr_end_ktc", "has_career_trajectory",
+]
+
 _TEAM_FEATURES = ["qb_ktc", "team_total_ktc", "positional_competition"]
 _POSITIONS_WITH_TEAM_FEATURES = {"WR"}
 
@@ -106,6 +110,8 @@ def get_expected_features(position: str) -> list[str]:
         extras.append("has_prior_position_stats")
     if position in _POSITIONS_WITH_RANK_FEATURE:
         extras.append("start_position_rank")
+    if position in ("QB", "TE"):
+        extras.extend(_TRAJECTORY_FEATURES)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         extras.extend(_TEAM_FEATURES)
     if not extras:
@@ -193,6 +199,10 @@ def predict_end_ktc(
     prior_air_yards_per_target: float | None = None,
     prior_receiving_tds: float | None = None,
     prior_drop_rate: float | None = None,
+    # v4 career trajectory (all positions)
+    prior_2yr_ppg: float | None = None,
+    ppg_trend: float | None = None,
+    prior_2yr_end_ktc: float | None = None,
     # v4 team context (WR only)
     qb_ktc: float | None = None,
     team_total_ktc: float | None = None,
@@ -340,6 +350,16 @@ def predict_end_ktc(
     # v4 position rank (RB/TE only)
     if position in _POSITIONS_WITH_RANK_FEATURE:
         linear_features.append(start_position_rank if start_position_rank is not None else np.nan)
+
+    # v4 career trajectory (QB/TE only)
+    if position in ("QB", "TE"):
+        has_trajectory = 1 if prior_2yr_ppg is not None else 0
+        linear_features.extend([
+            prior_2yr_ppg if prior_2yr_ppg is not None else np.nan,
+            ppg_trend if ppg_trend is not None else np.nan,
+            prior_2yr_end_ktc if prior_2yr_end_ktc is not None else np.nan,
+            has_trajectory,
+        ])
 
     # v4 team context (WR only)
     if position in _POSITIONS_WITH_TEAM_FEATURES:

@@ -173,6 +173,42 @@ def compute_prior_position_stats(
     return None
 
 
+def compute_career_trajectory(
+    seasons: list[dict],
+    anchor_year: int,
+    min_games: int = 4,
+) -> dict | None:
+    """Compute 2-year trajectory features from the two most recent prior seasons."""
+    priors = []
+    for season in sorted(seasons, key=lambda s: s["year"], reverse=True):
+        if season["year"] >= anchor_year:
+            continue
+        if (season.get("games_played", 0) or 0) >= min_games:
+            priors.append(season)
+        if len(priors) >= 2:
+            break
+
+    if len(priors) < 2:
+        return None
+
+    prior_1 = priors[0]  # N-1
+    prior_2 = priors[1]  # N-2
+
+    gp1 = prior_1.get("games_played", 0) or 1
+    fp1 = prior_1.get("fantasy_points", 0) or 0
+    ppg1 = fp1 / gp1
+
+    gp2 = prior_2.get("games_played", 0) or 1
+    fp2 = prior_2.get("fantasy_points", 0) or 0
+    ppg2 = fp2 / gp2
+
+    return {
+        "prior_2yr_ppg": round(ppg2, 2),
+        "ppg_trend": round(ppg1 - ppg2, 2),
+        "prior_2yr_end_ktc": round(float(prior_2.get("end_ktc") or 0), 1),
+    }
+
+
 def compute_momentum_features(
     seasons: list[dict],
     anchor_year: int,

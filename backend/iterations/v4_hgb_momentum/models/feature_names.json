@@ -29,7 +29,11 @@
     "prior_completion_rate",
     "prior_rushing_yards",
     "prior_pass_sacks",
-    "has_prior_position_stats"
+    "has_prior_position_stats",
+    "prior_2yr_ppg",
+    "ppg_trend",
+    "prior_2yr_end_ktc",
+    "has_career_trajectory"
   ],
   "RB": [
     "games_played_so_far",
@@ -135,6 +139,10 @@
     "prior_receiving_tds",
     "prior_drop_rate",
     "has_prior_position_stats",
-    "start_position_rank"
+    "start_position_rank",
+    "prior_2yr_ppg",
+    "ppg_trend",
+    "prior_2yr_end_ktc",
+    "has_career_trajectory"
   ]
 }

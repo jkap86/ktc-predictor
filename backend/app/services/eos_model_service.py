@@ -7,6 +7,7 @@ import numpy as np
 
 from app.services.ktc_utils import (
     _is_valid_ktc,
+    compute_career_trajectory,
     compute_momentum_features,
     compute_prior_behavioral_features,
     compute_prior_ktc_features,
@@ -86,6 +87,10 @@ def predict_from_inputs(
     prior_air_yards_per_target: float | None = None,
     prior_receiving_tds: float | None = None,
     prior_drop_rate: float | None = None,
+    # v4+ career trajectory (all positions)
+    prior_2yr_ppg: float | None = None,
+    ppg_trend: float | None = None,
+    prior_2yr_end_ktc: float | None = None,
     # v4+ team context (WR only; ignored by others via **_unused_kwargs)
     qb_ktc: float | None = None,
     team_total_ktc: float | None = None,
@@ -130,6 +135,9 @@ def predict_from_inputs(
         prior_air_yards_per_target=prior_air_yards_per_target,
         prior_receiving_tds=prior_receiving_tds,
         prior_drop_rate=prior_drop_rate,
+        prior_2yr_ppg=prior_2yr_ppg,
+        ppg_trend=ppg_trend,
+        prior_2yr_end_ktc=prior_2yr_end_ktc,
         qb_ktc=qb_ktc,
         team_total_ktc=team_total_ktc,
         positional_competition=positional_competition,
@@ -238,6 +246,9 @@ async def predict_for_player(
     # v4+ position-specific prior stats
     prior_pos = compute_prior_position_stats(seasons, player["position"], prior_ref_year) or {}
 
+    # Career trajectory (2-year lookback)
+    trajectory = compute_career_trajectory(seasons, prior_ref_year) or {}
+
     start_position_rank = latest.get("start_position_rank")
 
     result = predict_from_inputs(
@@ -276,9 +287,11 @@ async def predict_for_player(
         prior_air_yards_per_target=prior_pos.get("prior_air_yards_per_target"),
         prior_receiving_tds=prior_pos.get("prior_receiving_tds"),
         prior_drop_rate=prior_pos.get("prior_drop_rate"),
+        # Career trajectory
+        prior_2yr_ppg=trajectory.get("prior_2yr_ppg"),
+        ppg_trend=trajectory.get("ppg_trend"),
+        prior_2yr_end_ktc=trajectory.get("prior_2yr_end_ktc"),
         # Team context features: pulled from latest season training data.
-        # At inference these come from the stored season record (training-time
-        # values); live inference would need a roster + KTC DB lookup.
         qb_ktc=latest.get("qb_ktc") if latest else None,
         team_total_ktc=latest.get("team_total_ktc") if latest else None,
         positional_competition=latest.get("positional_competition") if latest else None,
@@ -340,6 +353,7 @@ async def predict_for_player_whatif(
     prior_behavioral = compute_prior_behavioral_features(seasons, prior_ref_year) or {}
     momentum = compute_momentum_features(seasons, anchor_year) or {}
     prior_pos = compute_prior_position_stats(seasons, player["position"], prior_ref_year) or {}
+    trajectory = compute_career_trajectory(seasons, prior_ref_year) or {}
     start_position_rank = latest.get("start_position_rank")
 
     result = predict_from_inputs(
@@ -378,6 +392,9 @@ async def predict_for_player_whatif(
         prior_air_yards_per_target=prior_pos.get("prior_air_yards_per_target"),
         prior_receiving_tds=prior_pos.get("prior_receiving_tds"),
         prior_drop_rate=prior_pos.get("prior_drop_rate"),
+        prior_2yr_ppg=trajectory.get("prior_2yr_ppg"),
+        ppg_trend=trajectory.get("ppg_trend"),
+        prior_2yr_end_ktc=trajectory.get("prior_2yr_end_ktc"),
         qb_ktc=latest.get("qb_ktc") if latest else None,
         team_total_ktc=latest.get("team_total_ktc") if latest else None,
         positional_competition=latest.get("positional_competition") if latest else None,
