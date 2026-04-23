@@ -11,14 +11,33 @@ import type {
 const API_BASE = '/api';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+// ── Simple in-memory cache ───────────────────────────────────────────────
+
+const _cache = new Map<string, { data: unknown; ts: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCached<T>(key: string): T | undefined {
+  const entry = _cache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) {
+    _cache.delete(key);
+    return undefined;
+  }
+  return entry.data as T;
+}
+
+function setCache(key: string, data: unknown): void {
+  _cache.set(key, { data, ts: Date.now() });
+}
+
+// ── Fetch helpers ────────────────────────────────────────────────────────
+
 function fetchWithTimeout(
   url: string,
   options?: RequestInit,
   timeoutMs = DEFAULT_TIMEOUT_MS
 ): Promise<Response> {
   const controller = new AbortController();
-  // If the caller already provided a signal (e.g. for cancellation on unmount),
-  // forward its abort to our controller so both timeout and caller can cancel.
   if (options?.signal) {
     options.signal.addEventListener('abort', () => controller.abort());
   }
@@ -46,6 +65,8 @@ function modelParam(modelId?: string | null): string {
   return modelId ? `model=${encodeURIComponent(modelId)}` : '';
 }
 
+// ── API functions ────────────────────────────────────────────────────────
+
 export async function searchPlayers(
   query: string = '',
   position?: string,
@@ -60,25 +81,42 @@ export async function searchPlayers(
   params.set('sort_by', sortBy);
   params.set('sort_order', sortOrder);
 
-  return fetchApi<PlayerList>(`/players?${params}`);
+  const key = `search:${params}`;
+  const cached = getCached<PlayerList>(key);
+  if (cached) return cached;
+
+  const result = await fetchApi<PlayerList>(`/players?${params}`);
+  setCache(key, result);
+  return result;
 }
 
 export async function getPlayer(playerId: string): Promise<Player> {
-  return fetchApi<Player>(`/players/${playerId}`);
+  const key = `player:${playerId}`;
+  const cached = getCached<Player>(key);
+  if (cached) return cached;
+
+  const result = await fetchApi<Player>(`/players/${playerId}`);
+  setCache(key, result);
+  return result;
 }
 
 export async function getPrediction(
   playerId: string,
   modelId?: string | null
 ): Promise<EOSPrediction | null> {
+  const key = `pred:${playerId}:${modelId ?? 'default'}`;
+  const cached = getCached<EOSPrediction | null>(key);
+  if (cached !== undefined) return cached;
+
   const mp = modelParam(modelId);
   const qs = mp ? `?${mp}` : '';
   const response = await fetchWithTimeout(`${API_BASE}/players/${playerId}/predict${qs}`, {
     headers: { 'Content-Type': 'application/json' },
   });
 
-  if (!response.ok) return null;
-  return response.json();
+  const result = response.ok ? await response.json() : null;
+  setCache(key, result);
+  return result;
 }
 
 export async function predictEos(
@@ -117,6 +155,11 @@ export async function predictPlayerWhatIfBatch(
   payload: { games_played: number; ppg_values: number[] },
   modelId?: string | null,
 ): Promise<EOSBatchResponse | null> {
+  // Cache the full PPG curve per player — only games_played varies
+  const key = `whatif:${playerId}:${payload.games_played}:${modelId ?? 'default'}`;
+  const cached = getCached<EOSBatchResponse | null>(key);
+  if (cached !== undefined) return cached;
+
   const mp = modelParam(modelId);
   const qs = mp ? `?${mp}` : '';
   const response = await fetchWithTimeout(
@@ -127,8 +170,9 @@ export async function predictPlayerWhatIfBatch(
       body: JSON.stringify(payload),
     },
   );
-  if (!response.ok) return null;
-  return response.json();
+  const result = response.ok ? await response.json() : null;
+  setCache(key, result);
+  return result;
 }
 
 export interface TopMover {
@@ -142,8 +186,14 @@ export interface TopMover {
 }
 
 export async function getTopMovers(limit: number = 10): Promise<{ risers: TopMover[]; fallers: TopMover[] } | null> {
+  const key = `movers:${limit}`;
+  const cached = getCached<{ risers: TopMover[]; fallers: TopMover[] }>(key);
+  if (cached) return cached;
+
   try {
-    return await fetchApi(`/top-movers?limit=${limit}`);
+    const result = await fetchApi<{ risers: TopMover[]; fallers: TopMover[] }>(`/top-movers?limit=${limit}`);
+    setCache(key, result);
+    return result;
   } catch {
     return null;
   }
@@ -178,19 +228,29 @@ export interface CompsResponse {
 }
 
 export async function getComps(playerId: string, k: number = 10, modelId?: string | null): Promise<CompsResponse | null> {
+  const key = `comps:${playerId}:${k}:${modelId ?? 'default'}`;
+  const cached = getCached<CompsResponse | null>(key);
+  if (cached !== undefined) return cached;
+
   const params = new URLSearchParams({ k: k.toString() });
   if (modelId) params.set('model', modelId);
   const response = await fetchWithTimeout(`${API_BASE}/players/${playerId}/comps?${params}`, {
     headers: { 'Content-Type': 'application/json' },
   });
-  if (!response.ok) return null;
-  return response.json();
+  const result = response.ok ? await response.json() : null;
+  setCache(key, result);
+  return result;
 }
 
 export async function getHistorical(playerId: string): Promise<HistoricalResponse | null> {
+  const key = `hist:${playerId}`;
+  const cached = getCached<HistoricalResponse | null>(key);
+  if (cached !== undefined) return cached;
+
   const response = await fetchWithTimeout(`${API_BASE}/players/${playerId}/historical`, {
     headers: { 'Content-Type': 'application/json' },
   });
-  if (!response.ok) return null;
-  return response.json();
+  const result = response.ok ? await response.json() : null;
+  setCache(key, result);
+  return result;
 }
