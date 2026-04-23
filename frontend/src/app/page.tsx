@@ -340,56 +340,49 @@ function HomeContent() {
           <div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="max-h-[520px] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-700 p-2">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {searchResults.map((player) => {
+        <div className="max-h-[520px] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+          {searchResults.map((player, idx) => {
             const isPrimary = player.player_id === primaryId;
             const isCompare = player.player_id === compareId;
-            const isSelected = isPrimary || isCompare;
+            const delta = (player.predicted_end_ktc != null && player.latest_ktc != null)
+              ? player.predicted_end_ktc - player.latest_ktc : null;
             return (
               <button
                 key={player.player_id}
                 onClick={() => handleSelectPlayer(player)}
-                className={`text-left p-4 rounded-xl shadow-sm border transition-all duration-200 ${
+                className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors ${
                   isPrimary
-                    ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700 ring-2 ring-blue-400'
+                    ? 'bg-blue-50 dark:bg-blue-950/30'
                     : isCompare
-                    ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-700 ring-2 ring-orange-400'
-                    : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 hover:shadow-md hover:border-gray-200 dark:hover:border-gray-600 hover:-translate-y-0.5'
+                    ? 'bg-orange-50 dark:bg-orange-950/30'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
               >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className={`font-semibold text-base ${isPrimary ? 'text-blue-700 dark:text-blue-300' : isCompare ? 'text-orange-700 dark:text-orange-300' : 'text-gray-900 dark:text-white'}`}>
-                      {player.name}
-                    </h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="inline-block px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
-                        {player.position}
-                      </span>
-                      {player.ppg != null && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{player.ppg} ppg</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    {player.latest_ktc != null && (
-                      <div className={`text-lg font-bold ${isPrimary ? 'text-blue-600 dark:text-blue-400' : isCompare ? 'text-orange-500 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400'}`}>
-                        {formatKtc(player.latest_ktc)}
-                      </div>
-                    )}
-                    {player.predicted_end_ktc != null && player.latest_ktc != null && (
-                      <div className={`text-xs font-medium ${player.predicted_end_ktc >= player.latest_ktc ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        &rarr; {formatKtc(player.predicted_end_ktc)}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {isSelected && (
-                  <div className={`mt-1 text-xs font-medium ${isPrimary ? 'text-blue-500' : 'text-orange-500'}`}>
-                    {isPrimary ? 'Primary' : 'Compare'}
-                  </div>
+                <span className="text-xs text-gray-400 dark:text-gray-500 w-6 text-right shrink-0">{idx + 1}</span>
+                <span className={`font-medium text-sm truncate min-w-0 flex-1 ${isPrimary ? 'text-blue-700 dark:text-blue-300' : isCompare ? 'text-orange-700 dark:text-orange-300' : 'text-gray-900 dark:text-white'}`}>
+                  {player.name}
+                  {(isPrimary || isCompare) && (
+                    <span className={`ml-1.5 text-xs ${isPrimary ? 'text-blue-400' : 'text-orange-400'}`}>
+                      {isPrimary ? '(1)' : '(2)'}
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 w-7 text-center shrink-0">{player.position}</span>
+                {player.ppg != null && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400 w-12 text-right shrink-0">{player.ppg} ppg</span>
                 )}
+                <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-14 text-right shrink-0">
+                  {player.latest_ktc != null ? formatKtc(player.latest_ktc) : '—'}
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 w-14 text-right shrink-0">
+                  {player.predicted_end_ktc != null ? formatKtc(player.predicted_end_ktc) : '—'}
+                </span>
+                <span className={`text-xs font-semibold w-14 text-right shrink-0 ${
+                  delta == null ? 'text-gray-400' : delta >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {delta != null ? `${delta >= 0 ? '+' : ''}${Math.round(delta).toLocaleString()}` : '—'}
+                </span>
               </button>
             );
           })}
