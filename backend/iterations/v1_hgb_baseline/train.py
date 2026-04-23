@@ -51,9 +51,9 @@ USE_PFF_FEATURES = False
 USE_PCT_CHANGE_TARGET = False  # Experiment B failed - extreme outliers destabilize training
 
 # Positions that use raw delta (end_ktc - start_ktc) as target instead of log_ratio.
-# Delta treats all KTC points equally (matches dynasty trade value).
-# QB benefits from delta (-26 MAE); RB/WR worse with delta so keep log_ratio.
-USE_DELTA_TARGET_POSITIONS = {"QB"}
+# Tested: QB delta gave -6 MAE but completely flattened PPG sensitivity.
+# All positions use log_ratio for now.
+USE_DELTA_TARGET_POSITIONS = set()
 
 # ============================================================================
 # FEATURE LISTS FOR MIXED PROCESSING PIPELINE
