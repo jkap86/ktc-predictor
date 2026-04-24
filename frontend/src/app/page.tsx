@@ -10,6 +10,7 @@ import PlayerComps from '../components/PlayerComps';
 import HistoricalAccuracy from '../components/HistoricalAccuracy';
 import TopMovers from '../components/TopMovers';
 import { ConfidenceBand, PredictionStats, SeasonRow, PlayerHeader } from '../components/PlayerCards';
+import { EditablePpg } from '../components/EditablePpg';
 import type { Player, PlayerSummary, EOSPrediction } from '../types/player';
 
 const POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE'];
@@ -72,6 +73,55 @@ function HomeContent() {
   const [compareWhatIfResult, setCompareWhatIfResult] = useState<EOSPrediction | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // PPG overrides for inline editing in ranking list
+  const [ppgOverrides, setPpgOverrides] = useState<Map<string, number>>(new Map());
+  const [overridePredictions, setOverridePredictions] = useState<Map<string, {
+    loading: boolean;
+    predicted_end_ktc: number | null;
+  }>>(new Map());
+
+  const handlePpgCommit = useCallback(async (playerId: string, ppg: number) => {
+    setPpgOverrides(prev => { const next = new Map(prev); next.set(playerId, ppg); return next; });
+    setOverridePredictions(prev => {
+      const next = new Map(prev);
+      next.set(playerId, { loading: true, predicted_end_ktc: prev.get(playerId)?.predicted_end_ktc ?? null });
+      return next;
+    });
+    try {
+      const batch = await predictPlayerWhatIfBatch(playerId, { games_played: 17, ppg_values: [ppg] }, selectedModelId);
+      const pred = batch?.predictions[0]?.predicted_end_ktc ?? null;
+      setOverridePredictions(prev => {
+        const next = new Map(prev);
+        next.set(playerId, { loading: false, predicted_end_ktc: pred });
+        return next;
+      });
+    } catch {
+      setOverridePredictions(prev => {
+        const next = new Map(prev);
+        next.set(playerId, { loading: false, predicted_end_ktc: null });
+        return next;
+      });
+    }
+  }, [selectedModelId]);
+
+  const handlePpgReset = useCallback((playerId: string) => {
+    setPpgOverrides(prev => { const next = new Map(prev); next.delete(playerId); return next; });
+    setOverridePredictions(prev => { const next = new Map(prev); next.delete(playerId); return next; });
+  }, []);
+
+  const handleResetAllPpg = useCallback(() => {
+    setPpgOverrides(new Map());
+    setOverridePredictions(new Map());
+  }, []);
+
+  // Clear stale override predictions when model changes
+  useEffect(() => {
+    if (ppgOverrides.size === 0) return;
+    setOverridePredictions(new Map());
+    ppgOverrides.forEach((ppg, playerId) => { handlePpgCommit(playerId, ppg); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModelId]);
+
   // Search
   useEffect(() => {
     const fetchPlayers = async () => {
@@ -86,6 +136,34 @@ function HomeContent() {
     const debounce = setTimeout(fetchPlayers, 300);
     return () => clearTimeout(debounce);
   }, [query, position, sortBy, sortDesc]);
+
+  // Re-sort client-side when PPG overrides affect sort order
+  const sortedResults = useMemo(() => {
+    if (ppgOverrides.size === 0 && overridePredictions.size === 0) return searchResults;
+
+    const sign = sortDesc ? -1 : 1;
+    return [...searchResults].sort((a, b) => {
+      const getValue = (p: PlayerSummary) => {
+        const oPpg = ppgOverrides.get(p.player_id);
+        const oPred = overridePredictions.get(p.player_id);
+        const pred = oPred ? oPred.predicted_end_ktc : p.predicted_end_ktc;
+
+        if (sortBy === 'ppg') return oPpg ?? p.ppg ?? null;
+        if (sortBy === 'predicted') return pred ?? null;
+        if (sortBy === 'change') {
+          return (pred != null && p.latest_ktc != null) ? pred - p.latest_ktc : null;
+        }
+        if (sortBy === 'ktc') return p.latest_ktc;
+        return null;
+      };
+      const va = getValue(a);
+      const vb = getValue(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (va - vb) * sign;
+    });
+  }, [searchResults, ppgOverrides, overridePredictions, sortBy, sortDesc]);
 
   // Fetch primary player data
   useEffect(() => {
@@ -213,7 +291,7 @@ function HomeContent() {
       </div>
 
       {/* Sort options */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-500 dark:text-gray-400">Sort:</span>
         {([['ktc', 'Value'], ['predicted', 'Predicted'], ['change', 'Change'], ['ppg', 'PPG']] as const).map(([key, label]) => (
           <button
@@ -235,6 +313,14 @@ function HomeContent() {
             )}
           </button>
         ))}
+        {ppgOverrides.size > 0 && (
+          <button
+            onClick={handleResetAllPpg}
+            className="ml-auto px-2 py-1 rounded text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all"
+          >
+            Reset PPG edits ({ppgOverrides.size})
+          </button>
+        )}
       </div>
 
       {/* Search results as selectable cards */}
@@ -249,23 +335,27 @@ function HomeContent() {
           <span className="w-6 text-right shrink-0">#</span>
           <span className="flex-1 min-w-0">Player</span>
           <span className="w-7 text-center shrink-0">Pos</span>
-          <span className="w-10 text-right shrink-0">PPG</span>
+          <span className="w-12 text-right shrink-0">PPG</span>
           <span className="w-14 text-right shrink-0">Value</span>
           <span className="w-14 text-right shrink-0">Pred</span>
           <span className="w-14 text-right shrink-0">+/-</span>
         </div>
         <div className="max-h-[480px] overflow-y-auto">
         <div className="divide-y divide-gray-100 dark:divide-gray-700">
-          {searchResults.map((player, idx) => {
+          {sortedResults.map((player, idx) => {
             const isPrimary = player.player_id === primaryId;
             const isCompare = player.player_id === compareId;
-            const delta = (player.predicted_end_ktc != null && player.latest_ktc != null)
-              ? player.predicted_end_ktc - player.latest_ktc : null;
+            const override = overridePredictions.get(player.player_id);
+            const overridePpg = ppgOverrides.get(player.player_id);
+            const displayPred = override ? override.predicted_end_ktc : player.predicted_end_ktc;
+            const isRowLoading = override?.loading ?? false;
+            const delta = (displayPred != null && player.latest_ktc != null)
+              ? displayPred - player.latest_ktc : null;
             return (
-              <button
+              <div
                 key={player.player_id}
                 onClick={() => handleSelectPlayer(player)}
-                className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors ${
+                className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors cursor-pointer ${
                   isPrimary
                     ? 'bg-blue-50 dark:bg-blue-950/30'
                     : isCompare
@@ -283,19 +373,37 @@ function HomeContent() {
                   )}
                 </span>
                 <span className="text-xs text-gray-400 dark:text-gray-500 w-7 text-center shrink-0">{player.position}</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400 w-10 text-right shrink-0">{player.ppg ?? '—'}</span>
+                <EditablePpg
+                  defaultValue={player.ppg}
+                  overrideValue={overridePpg}
+                  isLoading={isRowLoading}
+                  onCommit={(ppg) => handlePpgCommit(player.player_id, ppg)}
+                  onReset={() => handlePpgReset(player.player_id)}
+                />
                 <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-14 text-right shrink-0">
                   {player.latest_ktc != null ? formatKtc(player.latest_ktc) : '—'}
                 </span>
-                <span className="text-xs text-gray-400 dark:text-gray-500 w-14 text-right shrink-0">
-                  {player.predicted_end_ktc != null ? formatKtc(player.predicted_end_ktc) : '—'}
-                </span>
-                <span className={`text-xs font-semibold w-14 text-right shrink-0 ${
-                  delta == null ? 'text-gray-400' : delta >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                }`}>
-                  {delta != null ? `${delta >= 0 ? '+' : ''}${Math.round(delta).toLocaleString()}` : '—'}
-                </span>
-              </button>
+                {isRowLoading ? (
+                  <span className="w-14 flex justify-end shrink-0">
+                    <span className="w-3 h-3 border border-gray-300 dark:border-gray-600 border-t-blue-500 rounded-full animate-spin" />
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-400 dark:text-gray-500 w-14 text-right shrink-0">
+                    {displayPred != null ? formatKtc(displayPred) : '—'}
+                  </span>
+                )}
+                {isRowLoading ? (
+                  <span className="w-14 flex justify-end shrink-0">
+                    <span className="w-3 h-3 border border-gray-300 dark:border-gray-600 border-t-blue-500 rounded-full animate-spin" />
+                  </span>
+                ) : (
+                  <span className={`text-xs font-semibold w-14 text-right shrink-0 ${
+                    delta == null ? 'text-gray-400' : delta >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                  }`}>
+                    {delta != null ? `${delta >= 0 ? '+' : ''}${Math.round(delta).toLocaleString()}` : '—'}
+                  </span>
+                )}
+              </div>
             );
           })}
         </div>
@@ -303,7 +411,7 @@ function HomeContent() {
         </div>
       )}
 
-      {!searchLoading && searchResults.length === 0 && (
+      {!searchLoading && sortedResults.length === 0 && (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">No players found.</div>
       )}
 
