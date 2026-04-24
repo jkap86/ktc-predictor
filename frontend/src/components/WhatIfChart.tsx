@@ -39,6 +39,8 @@ interface WhatIfChartProps {
   playerId?: string;
   /** Optional comparison player config */
   compare?: PlayerCurveConfig & { name: string; playerId?: string };
+  /** Independent PPG for compare player's reference dot */
+  comparePpg?: number;
 }
 
 interface ChartPoint {
@@ -117,6 +119,7 @@ export default function WhatIfChart({
   weeksMissed,
   playerId,
   compare,
+  comparePpg,
 }: WhatIfChartProps) {
   const [data, setData] = useState<ChartPoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -177,6 +180,15 @@ export default function WhatIfChart({
     if (!best) return pt;
     return Math.abs(pt.ppg - currentPpg) < Math.abs(best.ppg - currentPpg) ? pt : best;
   }, null), [data, currentPpg]);
+
+  const comparePoint = useMemo(() => {
+    const ppg = comparePpg ?? currentPpg;
+    return data.reduce<ChartPoint | null>((best, pt) => {
+      if (pt.compareEos === null) return best;
+      if (!best) return pt;
+      return Math.abs(pt.ppg - ppg) < Math.abs(best.ppg - ppg) ? pt : best;
+    }, null);
+  }, [data, comparePpg, currentPpg]);
 
   const hasBands = useMemo(() => data.some((d) => d.low !== null && d.high !== null), [data]);
   const hasCompare = useMemo(() => data.some((d) => d.compareEos !== null), [data]);
@@ -343,10 +355,10 @@ export default function WhatIfChart({
           )}
 
           {/* Current PPG marker (comparison) */}
-          {currentPoint && currentPoint.compareEos !== null && (
+          {comparePoint && comparePoint.compareEos !== null && (
             <ReferenceDot
-              x={currentPoint.ppg}
-              y={currentPoint.compareEos}
+              x={comparePoint.ppg}
+              y={comparePoint.compareEos}
               r={6}
               fill="#f97316"
               stroke="white"

@@ -67,11 +67,13 @@ function HomeContent() {
   const [primaryLoading, setPrimaryLoading] = useState(false);
   const [compareLoading, setCompareLoading] = useState(false);
 
-  // What-If
+  // What-If (independent per player)
   const [whatIfPpg, setWhatIfPpg] = useState(15);
+  const [compareWhatIfPpg, setCompareWhatIfPpg] = useState(15);
   const [whatIfResult, setWhatIfResult] = useState<EOSPrediction | null>(null);
   const [compareWhatIfResult, setCompareWhatIfResult] = useState<EOSPrediction | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compareDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // PPG overrides for inline editing in ranking list
   const [ppgOverrides, setPpgOverrides] = useState<Map<string, number>>(new Map());
@@ -176,9 +178,18 @@ function HomeContent() {
         const player = await getPlayer(primaryId);
         const prediction = await getPrediction(primaryId, selectedModelId);
         setPrimary({ player, prediction });
-        if (player.seasons.length > 0) {
-          const latest = player.seasons.reduce((a, b) => (a.year > b.year ? a : b));
-          setWhatIfPpg(Math.round((latest.games_played > 0 ? latest.fantasy_points / latest.games_played : 15) * 2) / 2);
+        // Initialize What-If PPG: use override > search result projected PPG > last-season PPG
+        const overridePpgVal = ppgOverrides.get(primaryId);
+        if (overridePpgVal !== undefined) {
+          setWhatIfPpg(overridePpgVal);
+        } else {
+          const searchEntry = searchResults.find(p => p.player_id === primaryId);
+          if (searchEntry?.ppg != null) {
+            setWhatIfPpg(searchEntry.ppg);
+          } else if (player.seasons.length > 0) {
+            const latest = player.seasons.reduce((a, b) => (a.year > b.year ? a : b));
+            setWhatIfPpg(Math.round((latest.games_played > 0 ? latest.fantasy_points / latest.games_played : 15) * 2) / 2);
+          }
         }
       } catch { setPrimary(null); }
       finally { setPrimaryLoading(false); }
@@ -196,6 +207,19 @@ function HomeContent() {
         const player = await getPlayer(compareId);
         const prediction = await getPrediction(compareId, selectedModelId);
         setCompare({ player, prediction });
+        // Initialize compare PPG from override > search projected > last-season
+        const cOverride = ppgOverrides.get(compareId);
+        if (cOverride !== undefined) {
+          setCompareWhatIfPpg(cOverride);
+        } else {
+          const searchEntry = searchResults.find(p => p.player_id === compareId);
+          if (searchEntry?.ppg != null) {
+            setCompareWhatIfPpg(searchEntry.ppg);
+          } else if (player.seasons.length > 0) {
+            const latest = player.seasons.reduce((a, b) => (a.year > b.year ? a : b));
+            setCompareWhatIfPpg(Math.round((latest.games_played > 0 ? latest.fantasy_points / latest.games_played : 15) * 2) / 2);
+          }
+        }
       } catch { setCompare(null); }
       finally { setCompareLoading(false); }
     })();
@@ -210,20 +234,26 @@ function HomeContent() {
     } catch { /* */ }
   }, [primaryId, primary?.player, whatIfPpg, selectedModelId]);
 
-  // What-If for compare
+  // What-If for compare (independent PPG)
   const fetchCompareWhatIf = useCallback(async () => {
     if (!compareId || !compare?.prediction) return;
     try {
-      const batch = await predictPlayerWhatIfBatch(compareId, { games_played: 17, ppg_values: [whatIfPpg] }, selectedModelId);
+      const batch = await predictPlayerWhatIfBatch(compareId, { games_played: 17, ppg_values: [compareWhatIfPpg] }, selectedModelId);
       setCompareWhatIfResult(batch?.predictions[0] ?? null);
     } catch { /* */ }
-  }, [compareId, compare?.prediction, whatIfPpg, selectedModelId]);
+  }, [compareId, compare?.prediction, compareWhatIfPpg, selectedModelId]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => { fetchWhatIf(); fetchCompareWhatIf(); }, 200);
+    debounceRef.current = setTimeout(fetchWhatIf, 200);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [fetchWhatIf, fetchCompareWhatIf]);
+  }, [fetchWhatIf]);
+
+  useEffect(() => {
+    if (compareDebounceRef.current) clearTimeout(compareDebounceRef.current);
+    compareDebounceRef.current = setTimeout(fetchCompareWhatIf, 200);
+    return () => { if (compareDebounceRef.current) clearTimeout(compareDebounceRef.current); };
+  }, [fetchCompareWhatIf]);
 
   // Click handler for search result cards
   const handleSelectPlayer = (player: PlayerSummary) => {
@@ -448,14 +478,14 @@ function HomeContent() {
             </div>
           )}
 
-          {/* EOS Predictions */}
-          {primaryPlayer && (primaryPrediction || comparePrediction) && (
+          {/* EOS Predictions — use What-If result (tied to current PPG) over base prediction */}
+          {primaryPlayer && (whatIfResult || primaryPrediction || compareWhatIfResult || comparePrediction) && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">End-of-Season Prediction</h3>
               <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-                {primaryPrediction && <PredictionStats prediction={primaryPrediction} label={hasCompare ? primaryPlayer.name : 'Predicted'} color="blue" />}
-                {hasCompare && comparePrediction && (
-                  <PredictionStats prediction={comparePrediction} label={comparePlayer!.name} color="orange" />
+                {(whatIfResult || primaryPrediction) && <PredictionStats prediction={whatIfResult ?? primaryPrediction!} label={hasCompare ? primaryPlayer.name : 'Predicted'} color="blue" />}
+                {hasCompare && (compareWhatIfResult || comparePrediction) && (
+                  <PredictionStats prediction={compareWhatIfResult ?? comparePrediction!} label={comparePlayer!.name} color="orange" />
                 )}
               </div>
             </div>
@@ -486,16 +516,38 @@ function HomeContent() {
           {primaryPlayer && (primaryPrediction || primaryPlayer.live_ktc || primaryPlayer.seasons?.length > 0) && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-6">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">What-If Scenario</h3>
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-300 w-14">PPG</label>
-                <input type="range" min="0" max="25" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" aria-label="PPG slider" />
-                <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-8 text-center">{whatIfPpg}</span>
-              </div>
-              {latestSeason && latestSeason.games_played > 0 && (
-                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-14">
-                  Last season: {(latestSeason.fantasy_points / latestSeason.games_played).toFixed(1)} ppg
+              <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                {/* Primary slider */}
+                <div>
+                  {hasCompare && <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">{primaryPlayer.name}</div>}
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 w-10">PPG</label>
+                    <input type="range" min="0" max="25" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" aria-label={`${primaryPlayer.name} PPG slider`} />
+                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-8 text-center">{whatIfPpg}</span>
+                  </div>
+                  {latestSeason && latestSeason.games_played > 0 && (
+                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-10">
+                      Last season: {(latestSeason.fantasy_points / latestSeason.games_played).toFixed(1)} ppg
+                    </div>
+                  )}
                 </div>
-              )}
+                {/* Compare slider */}
+                {hasCompare && comparePlayer && (
+                  <div>
+                    <div className="text-xs font-medium text-orange-500 dark:text-orange-400 mb-1">{comparePlayer.name}</div>
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-medium text-gray-700 dark:text-gray-300 w-10">PPG</label>
+                      <input type="range" min="0" max="25" step="0.5" value={compareWhatIfPpg} onChange={(e) => setCompareWhatIfPpg(parseFloat(e.target.value))} className="flex-1" aria-label={`${comparePlayer.name} PPG slider`} />
+                      <span className="text-sm font-bold text-orange-500 dark:text-orange-400 w-8 text-center">{compareWhatIfPpg}</span>
+                    </div>
+                    {compareLatest && compareLatest.games_played > 0 && (
+                      <div className="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-10">
+                        Last season: {(compareLatest.fantasy_points / compareLatest.games_played).toFixed(1)} ppg
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <WhatIfChart
                 position={primaryPrediction?.position ?? primaryPlayer.position}
@@ -504,6 +556,7 @@ function HomeContent() {
                 currentPpg={whatIfPpg}
                 modelId={selectedModelId}
                 playerId={primaryId!}
+                comparePpg={hasCompare ? compareWhatIfPpg : undefined}
                 compare={hasCompare && comparePlayer && comparePrediction ? {
                   name: comparePlayer.name,
                   position: comparePlayer.position,
