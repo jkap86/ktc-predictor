@@ -52,7 +52,7 @@ export default function HistoricalAccuracy({ playerId }: HistoricalAccuracyProps
 
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+      <div className="glass-card p-6">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
           Historical Accuracy
         </h3>
@@ -88,13 +88,13 @@ export default function HistoricalAccuracy({ playerId }: HistoricalAccuracyProps
       : null;
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+    <div className="glass-card p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
           Historical Accuracy
         </h3>
         {mae !== null && (
-          <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full">
+          <span className="text-xs px-2 py-1 bg-white/40 dark:bg-white/5 text-gray-600 dark:text-gray-400 rounded-full border border-gray-200/30 dark:border-white/10">
             MAE: {formatKtc(mae)}
           </span>
         )}
@@ -177,7 +177,7 @@ export default function HistoricalAccuracy({ playerId }: HistoricalAccuracyProps
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+            <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200/30 dark:border-white/[0.06]">
               <th className="py-2 pr-3">Year</th>
               <th className="py-2 pr-3 text-right">Start</th>
               <th className="py-2 pr-3 text-right">Predicted</th>
@@ -189,7 +189,7 @@ export default function HistoricalAccuracy({ playerId }: HistoricalAccuracyProps
           </thead>
           <tbody>
             {predictions.map((p) => (
-              <tr key={p.year} className="border-b border-gray-50 dark:border-gray-700/50">
+              <tr key={p.year} className="border-b border-gray-100/30 dark:border-white/[0.03]">
                 <td className="py-2 pr-3 font-medium text-gray-900 dark:text-white">{p.year}</td>
                 <td className="py-2 pr-3 text-right text-gray-600 dark:text-gray-400">{formatKtc(p.start_ktc)}</td>
                 <td className="py-2 pr-3 text-right text-blue-600 dark:text-blue-400 font-medium">{formatKtc(p.predicted_end_ktc)}</td>

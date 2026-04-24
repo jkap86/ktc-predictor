@@ -73,7 +73,7 @@ export const EditablePpg = memo(function EditablePpg({
         onBlur={commitEdit}
         onKeyDown={handleKeyDown}
         onClick={(e) => e.stopPropagation()}
-        className="w-12 text-base sm:text-xs text-right bg-white dark:bg-gray-700 border border-blue-400 rounded px-1 py-0.5 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className="w-12 text-base sm:text-xs text-right bg-white/80 dark:bg-white/10 border border-blue-400/50 dark:border-blue-500/30 rounded-md px-1 py-0.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 input-recessed backdrop-blur-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
     );
   }

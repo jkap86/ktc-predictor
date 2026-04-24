@@ -289,8 +289,8 @@ function HomeContent() {
     <div className="space-y-6">
       {/* Title */}
       <div className="text-center">
-        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-1">KTC Value Predictor</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Select up to two players to compare predictions</p>
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 dark:text-white mb-1 tracking-tight">KTC Value Predictor</h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400/80">Select up to two players to compare predictions</p>
       </div>
 
       {/* Search bar + position filters */}
@@ -300,7 +300,7 @@ function HomeContent() {
           placeholder="Search players..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-base placeholder-gray-400 dark:placeholder-gray-500 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="flex-1 px-4 py-3 rounded-xl border border-gray-200/60 dark:border-white/10 bg-white/80 dark:bg-white/5 text-gray-900 dark:text-white text-base placeholder-gray-400 dark:placeholder-gray-500 input-recessed backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all"
         />
         <div className="flex gap-2">
           {POSITIONS.map((pos) => (
@@ -310,8 +310,8 @@ function HomeContent() {
               aria-label={`Filter by ${pos === 'All' ? 'all positions' : pos}`}
               className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                 position === pos
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  ? 'btn-glossy text-white'
+                  : 'bg-white/60 dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200/60 dark:border-white/10 hover:bg-white dark:hover:bg-white/10 btn-metal'
               }`}
             >
               {pos}
@@ -322,7 +322,7 @@ function HomeContent() {
 
       {/* Sort options */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-500 dark:text-gray-400">Sort:</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400/80">Sort:</span>
         {([['ktc', 'Value'], ['predicted', 'Predicted'], ['change', 'Change'], ['ppg', 'PPG']] as const).map(([key, label]) => (
           <button
             key={key}
@@ -331,10 +331,10 @@ function HomeContent() {
               else { setSortBy(key); setSortDesc(true); }
             }}
             aria-label={`Sort by ${label}`}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
               sortBy === key
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                ? 'btn-glossy text-white'
+                : 'bg-white/50 dark:bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-white/80 dark:hover:bg-white/10 border border-transparent dark:border-white/5'
             }`}
           >
             {label}
@@ -346,7 +346,7 @@ function HomeContent() {
         {ppgOverrides.size > 0 && (
           <button
             onClick={handleResetAllPpg}
-            className="ml-auto px-2 py-1 rounded text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all"
+            className="ml-auto px-2 py-1 rounded-md text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all"
           >
             Reset PPG edits ({ppgOverrides.size})
           </button>
@@ -359,9 +359,9 @@ function HomeContent() {
           <div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-600 border-t-blue-600 rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="glass-card overflow-hidden">
         {/* Fixed header */}
-        <div className="px-4 py-2 flex items-center gap-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 sticky top-0 z-10 text-xs text-gray-500 dark:text-gray-400 font-medium">
+        <div className="px-4 py-2.5 flex items-center gap-3 bg-gray-100/50 dark:bg-white/[0.03] border-b border-gray-200/50 dark:border-white/5 sticky top-0 z-10 text-xs text-gray-500 dark:text-gray-400/80 font-semibold uppercase tracking-wider">
           <span className="w-6 text-right shrink-0">#</span>
           <span className="flex-1 min-w-0">Player</span>
           <span className="w-7 text-center shrink-0">Pos</span>
@@ -371,7 +371,7 @@ function HomeContent() {
           <span className="w-14 text-right shrink-0">+/-</span>
         </div>
         <div className="max-h-[480px] overflow-y-auto">
-        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+        <div className="divide-y divide-gray-100/50 dark:divide-white/[0.04]">
           {sortedResults.map((player, idx) => {
             const isPrimary = player.player_id === primaryId;
             const isCompare = player.player_id === compareId;
@@ -385,12 +385,12 @@ function HomeContent() {
               <div
                 key={player.player_id}
                 onClick={() => handleSelectPlayer(player)}
-                className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors cursor-pointer ${
+                className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-all duration-150 cursor-pointer shine-hover ${
                   isPrimary
-                    ? 'bg-blue-50 dark:bg-blue-950/30'
+                    ? 'bg-blue-500/10 dark:bg-blue-500/10 border-l-2 border-l-blue-500'
                     : isCompare
-                    ? 'bg-orange-50 dark:bg-orange-950/30'
-                    : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                    ? 'bg-orange-500/10 dark:bg-orange-500/10 border-l-2 border-l-orange-500'
+                    : 'border-l-2 border-l-transparent hover:bg-white/50 dark:hover:bg-white/[0.04]'
                 }`}
               >
                 <span className="text-xs text-gray-400 dark:text-gray-500 w-6 text-right shrink-0">{idx + 1}</span>
@@ -452,7 +452,7 @@ function HomeContent() {
           Player detail sections (shown when at least one player selected)
           ══════════════════════════════════════════════════════════════════ */}
       {hasAnySelected && (
-        <div className="space-y-6 pt-2 border-t border-gray-200 dark:border-gray-700">
+        <div className="space-y-6 pt-4 border-t border-gray-200/40 dark:border-white/[0.06]">
           {/* Player Headers */}
           {(primaryLoading || compareLoading) && (
             <div className="flex justify-center py-6">
@@ -480,7 +480,7 @@ function HomeContent() {
 
           {/* EOS Predictions — use What-If result (tied to current PPG) over base prediction */}
           {primaryPlayer && (whatIfResult || primaryPrediction || compareWhatIfResult || comparePrediction) && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+            <div className="glass-card p-4">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">End-of-Season Prediction</h3>
               <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                 {(whatIfResult || primaryPrediction) && <PredictionStats prediction={whatIfResult ?? primaryPrediction!} label={hasCompare ? primaryPlayer.name : 'Predicted'} color="blue" />}
@@ -493,17 +493,17 @@ function HomeContent() {
 
           {/* Season Stats */}
           {primaryPlayer && (latestSeason || compareLatest) && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+            <div className="glass-card p-4">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Latest Season</h3>
               <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                 {latestSeason && (
-                  <div className={hasCompare ? 'bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 rounded-lg p-3' : ''}>
-                    {hasCompare && <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">{primaryPlayer.name}</div>}
+                  <div className={hasCompare ? 'bg-blue-500/5 dark:bg-blue-500/10 border border-blue-200/30 dark:border-blue-500/15 rounded-xl p-3' : ''}>
+                    {hasCompare && <div className="text-xs font-medium text-blue-500 dark:text-blue-400 mb-1">{primaryPlayer.name}</div>}
                     <SeasonRow season={latestSeason} />
                   </div>
                 )}
                 {hasCompare && compareLatest && (
-                  <div className="bg-orange-50/50 dark:bg-orange-950/20 border border-orange-100 dark:border-orange-900/30 rounded-lg p-3">
+                  <div className="bg-orange-500/5 dark:bg-orange-500/10 border border-orange-200/30 dark:border-orange-500/15 rounded-xl p-3">
                     <div className="text-xs font-medium text-orange-500 dark:text-orange-400 mb-1">{comparePlayer!.name}</div>
                     <SeasonRow season={compareLatest} />
                   </div>
@@ -514,7 +514,7 @@ function HomeContent() {
 
           {/* What-If */}
           {primaryPlayer && (primaryPrediction || primaryPlayer.live_ktc || primaryPlayer.seasons?.length > 0) && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-6">
+            <div className="glass-card p-4 sm:p-6">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">What-If Scenario</h3>
               <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                 {/* Primary slider */}

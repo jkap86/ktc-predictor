@@ -8,19 +8,20 @@ export const ConfidenceBand = memo(function ConfidenceBand({ prediction, color =
   if (!prediction.low_end_ktc || !prediction.high_end_ktc) return null;
   const isOrange = color === 'orange';
   return (
-    <div className={`mt-2 px-3 py-2 rounded-lg border ${isOrange ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800' : 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800'}`}>
+    <div className={`mt-2 px-3 py-2 rounded-lg border ${isOrange ? 'bg-orange-500/5 dark:bg-orange-500/10 border-orange-200/30 dark:border-orange-500/20' : 'bg-blue-500/5 dark:bg-blue-500/10 border-blue-200/30 dark:border-blue-500/20'}`}>
       <div className="flex items-center gap-2 text-xs">
-        <span className="text-gray-500 dark:text-gray-400">{formatKtc(prediction.low_end_ktc)}</span>
-        <div className={`flex-1 h-1.5 rounded-full relative ${isOrange ? 'bg-orange-100 dark:bg-orange-800' : 'bg-blue-100 dark:bg-blue-800'}`}>
+        <span className="text-gray-500 dark:text-gray-400/80">{formatKtc(prediction.low_end_ktc)}</span>
+        <div className={`flex-1 h-1.5 rounded-full relative ${isOrange ? 'bg-orange-200/50 dark:bg-orange-900/40' : 'bg-blue-200/50 dark:bg-blue-900/40'}`} style={{boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)'}}>
           <div
             className={`absolute h-1.5 rounded-full ${isOrange ? 'bg-orange-500' : 'bg-blue-500'}`}
             style={{
               left: `${Math.max(0, Math.min(100, ((prediction.predicted_end_ktc - prediction.low_end_ktc) / (prediction.high_end_ktc - prediction.low_end_ktc)) * 100))}%`,
               width: '8px', transform: 'translateX(-50%)',
+              boxShadow: `0 0 6px ${isOrange ? 'rgba(249,115,22,0.5)' : 'rgba(59,130,246,0.5)'}`,
             }}
           />
         </div>
-        <span className="text-gray-500 dark:text-gray-400">{formatKtc(prediction.high_end_ktc)}</span>
+        <span className="text-gray-500 dark:text-gray-400/80">{formatKtc(prediction.high_end_ktc)}</span>
       </div>
     </div>
   );
@@ -33,11 +34,11 @@ export const PredictionStats = memo(function PredictionStats({ prediction, label
   const delta = prediction.predicted_delta_ktc;
   const changeColor = pct >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
   const bg = color === 'orange'
-    ? 'bg-orange-50/50 dark:bg-orange-950/20 border border-orange-100 dark:border-orange-900/30'
-    : 'bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30';
-  const labelColor = color === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400';
+    ? 'bg-orange-500/5 dark:bg-orange-500/10 border border-orange-200/30 dark:border-orange-500/15'
+    : 'bg-blue-500/5 dark:bg-blue-500/10 border border-blue-200/30 dark:border-blue-500/15';
+  const labelColor = color === 'orange' ? 'text-orange-500 dark:text-orange-400' : 'text-blue-500 dark:text-blue-400';
   return (
-    <div className={`${bg} rounded-lg p-3`}>
+    <div className={`${bg} rounded-xl p-3`} style={{boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)'}}>
       <div className={`text-xs font-medium ${labelColor} mb-1`}>{label}</div>
       <div className="flex items-baseline gap-3">
         <span className="text-xl font-bold text-gray-900 dark:text-white">
@@ -74,14 +75,16 @@ export const SeasonRow = memo(function SeasonRow({ season, showRank = false }: {
 export const PlayerHeader = memo(function PlayerHeader({ player, prediction, color = 'blue', onRemove, onSwap }: {
   player: Player; prediction: EOSPrediction | null; color?: 'blue' | 'orange'; onRemove?: () => void; onSwap?: () => void;
 }) {
-  const accent = color === 'orange' ? 'text-orange-500 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400';
-  const border = color === 'orange' ? 'border-orange-200 dark:border-orange-800' : 'border-blue-200 dark:border-blue-800';
-  const bg = color === 'orange' ? 'bg-orange-50 dark:bg-orange-950/30' : 'bg-blue-50 dark:bg-blue-950/30';
+  const accent = color === 'orange' ? 'text-orange-400 dark:text-orange-400' : 'text-blue-500 dark:text-blue-400';
+  const borderColor = color === 'orange' ? 'border-orange-300/40 dark:border-orange-500/20' : 'border-blue-300/40 dark:border-blue-500/20';
+  const bgStyle = color === 'orange'
+    ? 'bg-gradient-to-br from-orange-50/80 to-orange-100/40 dark:from-orange-950/30 dark:to-orange-900/10'
+    : 'bg-gradient-to-br from-blue-50/80 to-blue-100/40 dark:from-blue-950/30 dark:to-blue-900/10';
   return (
-    <div className={`${bg} rounded-xl shadow-sm border ${border} p-4 flex items-center justify-between gap-2`}>
+    <div className={`${bgStyle} rounded-2xl border ${borderColor} p-4 flex items-center justify-between gap-2 backdrop-blur-sm`} style={{boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), 0 2px 8px rgba(0,0,0,0.06)'}}>
       <div className="min-w-0">
         <h2 className={`text-lg font-bold truncate ${accent}`}>{player.name}</h2>
-        <span className="inline-block px-2 py-0.5 bg-white/60 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs mt-0.5">
+        <span className="inline-block px-2 py-0.5 bg-white/50 dark:bg-white/5 text-gray-600 dark:text-gray-400 rounded-md text-xs mt-0.5 border border-gray-200/30 dark:border-white/10">
           {player.position}
         </span>
       </div>

@@ -72,12 +72,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={inter.className}>
         <ModelProvider>
-          <nav className="bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg w-full overflow-hidden">
+          <nav className="nav-metallic text-gray-200 w-full overflow-hidden border-b border-white/5">
             <div className="max-w-7xl mx-auto px-4 py-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <Link
                   href="/"
-                  className="text-lg sm:text-xl font-bold tracking-tight hover:opacity-90 transition-opacity shrink-0"
+                  className="text-lg sm:text-xl font-bold tracking-tight text-white hover:text-blue-300 transition-colors shrink-0"
                 >
                   KTC Predictor
                 </Link>

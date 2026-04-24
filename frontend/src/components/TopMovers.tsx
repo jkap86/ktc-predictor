@@ -9,10 +9,10 @@ function MoverRow({ player, onSelect }: { player: TopMover; onSelect?: (id: stri
   return (
     <button
       onClick={() => onSelect?.(player.player_id)}
-      className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+      className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-white/50 dark:hover:bg-white/[0.04] transition-all shine-hover"
     >
       <div className="flex items-center gap-3">
-        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 w-8 text-center">
+        <span className="text-xs font-medium px-1.5 py-0.5 rounded-md bg-white/50 dark:bg-white/5 text-gray-600 dark:text-gray-400 w-8 text-center border border-gray-200/30 dark:border-white/10">
           {player.position}
         </span>
         <span className="text-sm font-medium text-gray-900 dark:text-white">{player.name}</span>
@@ -56,21 +56,21 @@ export default function TopMovers({ onSelect }: { onSelect?: (id: string) => voi
   return (
     <div className="grid gap-6 md:grid-cols-2">
       {risers.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+        <div className="glass-card p-4">
           <h3 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-3 px-3">
             Predicted Risers
           </h3>
-          <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
+          <div className="divide-y divide-gray-100/50 dark:divide-white/[0.04]">
             {risers.map((p) => <MoverRow key={p.player_id} player={p} onSelect={onSelect} />)}
           </div>
         </div>
       )}
       {fallers.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+        <div className="glass-card p-4">
           <h3 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-3 px-3">
             Predicted Fallers
           </h3>
-          <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
+          <div className="divide-y divide-gray-100/50 dark:divide-white/[0.04]">
             {fallers.map((p) => <MoverRow key={p.player_id} player={p} onSelect={onSelect} />)}
           </div>
         </div>

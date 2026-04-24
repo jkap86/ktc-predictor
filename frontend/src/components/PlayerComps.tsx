@@ -44,7 +44,7 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
 
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+      <div className="glass-card p-6">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
           Historical Comps
         </h3>
@@ -58,7 +58,7 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   if (comps.length === 0) return null;
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+    <div className="glass-card p-6">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
           Historical Comps
@@ -71,21 +71,21 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
       {/* Summary row */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
         {compAvgPpg != null && (
-          <span className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
+          <span className="text-xs px-2 py-1 rounded-full bg-blue-500/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 font-medium border border-blue-200/30 dark:border-blue-500/20">
             Projected PPG: {compAvgPpg}
           </span>
         )}
         <span className={`text-xs px-2 py-1 rounded-full font-medium ${
           avgDelta >= 0
-            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-            : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+            ? 'bg-green-500/10 dark:bg-green-500/15 text-green-600 dark:text-green-300 border border-green-200/30 dark:border-green-500/20'
+            : 'bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-300 border border-red-200/30 dark:border-red-500/20'
         }`}>
           Avg Change: {avgDelta >= 0 ? '+' : ''}{Math.round(avgDelta).toLocaleString()}
         </span>
-        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+        <span className="text-xs px-2 py-1 rounded-full bg-white/40 dark:bg-white/5 text-gray-600 dark:text-gray-400 border border-gray-200/30 dark:border-white/10 font-medium">
           Avg Start: {formatKtc(Math.round(avgStartKtc))}
         </span>
-        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+        <span className="text-xs px-2 py-1 rounded-full bg-white/40 dark:bg-white/5 text-gray-600 dark:text-gray-400 border border-gray-200/30 dark:border-white/10 font-medium">
           Avg End: {formatKtc(Math.round(avgEndKtc))}
         </span>
       </div>
@@ -97,7 +97,7 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+            <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200/30 dark:border-white/[0.06]">
               <th className="py-2 pr-3">Player</th>
               <th className="py-2 pr-3 text-right">Year</th>
               <th className="py-2 pr-3 text-right">Age</th>
@@ -111,7 +111,7 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
           </thead>
           <tbody>
             {comps.map((c, i) => (
-              <tr key={`${c.player_id}-${c.year}`} className="border-b border-gray-50 dark:border-gray-700/50">
+              <tr key={`${c.player_id}-${c.year}`} className="border-b border-gray-100/30 dark:border-white/[0.03]">
                 <td className="py-2.5 pr-3 font-medium text-gray-900 dark:text-white">
                   {c.name}
                 </td>
