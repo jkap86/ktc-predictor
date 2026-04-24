@@ -53,7 +53,7 @@ export default function HistoricalAccuracy({ playerId }: HistoricalAccuracyProps
   if (loading) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
           Historical Accuracy
         </h3>
         <div className="flex justify-center items-center py-8">
@@ -90,7 +90,7 @@ export default function HistoricalAccuracy({ playerId }: HistoricalAccuracyProps
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
           Historical Accuracy
         </h3>
         {mae !== null && (

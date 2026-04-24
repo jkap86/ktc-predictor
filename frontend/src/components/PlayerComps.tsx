@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import Link from 'next/link';
 import { getComps, CompPlayer } from '../lib/api';
 import { formatKtc } from '../lib/format';
 
@@ -43,7 +42,7 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   if (loading) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
           Historical Comps
         </h3>
         <div className="flex justify-center items-center py-8">
@@ -58,7 +57,7 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
           Historical Comps
         </h3>
         <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -108,13 +107,8 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
           <tbody>
             {comps.map((c, i) => (
               <tr key={`${c.player_id}-${c.year}`} className="border-b border-gray-50 dark:border-gray-700/50">
-                <td className="py-2.5 pr-3">
-                  <Link
-                    href={`/player/${c.player_id}`}
-                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
-                  >
-                    {c.name}
-                  </Link>
+                <td className="py-2.5 pr-3 font-medium text-gray-900 dark:text-white">
+                  {c.name}
                 </td>
                 <td className="py-2.5 pr-3 text-right text-gray-600 dark:text-gray-400">{c.year}</td>
                 <td className="py-2.5 pr-3 text-right text-gray-600 dark:text-gray-400">{c.age}</td>

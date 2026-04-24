@@ -33,6 +33,7 @@ function HomeContent() {
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('All');
   const [sortBy, setSortBy] = useState<'ktc' | 'predicted' | 'change' | 'ppg'>('ktc');
+  const [sortDesc, setSortDesc] = useState(true);
   const [searchResults, setSearchResults] = useState<PlayerSummary[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -77,14 +78,14 @@ function HomeContent() {
       setSearchLoading(true);
       try {
         const pos = position === 'All' ? undefined : position;
-        const result = await searchPlayers(query, pos, 200, sortBy, 'desc');
+        const result = await searchPlayers(query, pos, 200, sortBy, sortDesc ? 'desc' : 'asc');
         setSearchResults(result.players);
       } catch { /* */ }
       finally { setSearchLoading(false); }
     };
     const debounce = setTimeout(fetchPlayers, 300);
     return () => clearTimeout(debounce);
-  }, [query, position, sortBy]);
+  }, [query, position, sortBy, sortDesc]);
 
   // Fetch primary player data
   useEffect(() => {
@@ -198,6 +199,7 @@ function HomeContent() {
             <button
               key={pos}
               onClick={() => setPosition(pos)}
+              aria-label={`Filter by ${pos === 'All' ? 'all positions' : pos}`}
               className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                 position === pos
                   ? 'bg-blue-600 text-white shadow-sm'
@@ -216,7 +218,11 @@ function HomeContent() {
         {([['ktc', 'Value'], ['predicted', 'Predicted'], ['change', 'Change'], ['ppg', 'PPG']] as const).map(([key, label]) => (
           <button
             key={key}
-            onClick={() => setSortBy(key)}
+            onClick={() => {
+              if (sortBy === key) setSortDesc((d) => !d);
+              else { setSortBy(key); setSortDesc(true); }
+            }}
+            aria-label={`Sort by ${label}`}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
               sortBy === key
                 ? 'bg-blue-600 text-white'
@@ -224,6 +230,9 @@ function HomeContent() {
             }`}
           >
             {label}
+            {sortBy === key && (
+              <span className="ml-1">{sortDesc ? '\u25BE' : '\u25B4'}</span>
+            )}
           </button>
         ))}
       </div>
@@ -299,7 +308,7 @@ function HomeContent() {
       )}
 
       {/* Show TopMovers only when no player is selected */}
-      {!hasAnySelected && <TopMovers />}
+      {!hasAnySelected && <TopMovers onSelect={(id) => setPrimaryId(id)} />}
 
       {/* ══════════════════════════════════════════════════════════════════
           Player detail sections (shown when at least one player selected)
@@ -314,7 +323,7 @@ function HomeContent() {
           )}
 
           {primaryPlayer && (
-            <div className={`grid gap-4 ${hasCompare ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
               <PlayerHeader player={primaryPlayer} prediction={primaryPrediction} color="blue"
                 onSwap={hasCompare ? () => { const tmp = primaryId; setPrimaryId(compareId); setCompareId(tmp); } : undefined}
                 onRemove={() => {
@@ -334,8 +343,8 @@ function HomeContent() {
           {/* EOS Predictions */}
           {primaryPlayer && (primaryPrediction || comparePrediction) && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">End-of-Season Prediction</div>
-              <div className={`grid gap-4 ${hasCompare ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">End-of-Season Prediction</h3>
+              <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                 {primaryPrediction && <PredictionStats prediction={primaryPrediction} label={hasCompare ? primaryPlayer.name : 'Predicted'} color="blue" />}
                 {hasCompare && comparePrediction && (
                   <PredictionStats prediction={comparePrediction} label={comparePlayer!.name} color="orange" />
@@ -347,8 +356,8 @@ function HomeContent() {
           {/* Season Stats */}
           {primaryPlayer && (latestSeason || compareLatest) && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">Latest Season</div>
-              <div className={`grid gap-4 ${hasCompare ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Latest Season</h3>
+              <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                 {latestSeason && (
                   <div className={hasCompare ? 'bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 rounded-lg p-3' : ''}>
                     {hasCompare && <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">{primaryPlayer.name}</div>}
@@ -371,9 +380,14 @@ function HomeContent() {
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">What-If Scenario</h3>
               <div className="flex items-center gap-3">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-300 w-14">PPG</label>
-                <input type="range" min="0" max="25" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" />
+                <input type="range" min="0" max="25" step="0.5" value={whatIfPpg} onChange={(e) => setWhatIfPpg(parseFloat(e.target.value))} className="flex-1" aria-label="PPG slider" />
                 <span className="text-sm font-bold text-blue-600 dark:text-blue-400 w-8 text-center">{whatIfPpg}</span>
               </div>
+              {latestSeason && latestSeason.games_played > 0 && (
+                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-14">
+                  Last season: {(latestSeason.fantasy_points / latestSeason.games_played).toFixed(1)} ppg
+                </div>
+              )}
 
               <WhatIfChart
                 position={primaryPrediction?.position ?? primaryPlayer.position}
@@ -392,7 +406,7 @@ function HomeContent() {
               />
 
               {(whatIfResult || compareWhatIfResult) && (
-                <div className={`mt-4 grid gap-4 ${hasCompare ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <div className={`mt-4 grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                   {whatIfResult ? (
                     <PredictionStats prediction={whatIfResult} label={hasCompare ? primaryPlayer.name : 'What-If'} color="blue" />
                   ) : <div />}
@@ -406,7 +420,7 @@ function HomeContent() {
 
           {/* Comps */}
           {primaryId && (
-            <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 lg:grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
               <PlayerComps playerId={primaryId} modelId={selectedModelId} />
               {hasCompare && compareId && <PlayerComps playerId={compareId} modelId={selectedModelId} />}
             </div>
@@ -414,7 +428,7 @@ function HomeContent() {
 
           {/* Historical */}
           {primaryId && (
-            <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 lg:grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
               <HistoricalAccuracy playerId={primaryId} />
               {hasCompare && compareId && <HistoricalAccuracy playerId={compareId} />}
             </div>

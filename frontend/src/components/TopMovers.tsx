@@ -1,16 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { getTopMovers, TopMover } from '../lib/api';
 import { formatKtc } from '../lib/format';
 
-function MoverRow({ player }: { player: TopMover }) {
+function MoverRow({ player, onSelect }: { player: TopMover; onSelect?: (id: string) => void }) {
   const isUp = player.predicted_pct_change >= 0;
   return (
-    <Link
-      href={`/player/${player.player_id}`}
-      className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+    <button
+      onClick={() => onSelect?.(player.player_id)}
+      className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
     >
       <div className="flex items-center gap-3">
         <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 w-8 text-center">
@@ -24,11 +23,11 @@ function MoverRow({ player }: { player: TopMover }) {
           {isUp ? '+' : ''}{player.predicted_pct_change.toFixed(1)}%
         </span>
       </div>
-    </Link>
+    </button>
   );
 }
 
-export default function TopMovers() {
+export default function TopMovers({ onSelect }: { onSelect?: (id: string) => void } = {}) {
   const [risers, setRisers] = useState<TopMover[]>([]);
   const [fallers, setFallers] = useState<TopMover[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +61,7 @@ export default function TopMovers() {
             Predicted Risers
           </h3>
           <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
-            {risers.map((p) => <MoverRow key={p.player_id} player={p} />)}
+            {risers.map((p) => <MoverRow key={p.player_id} player={p} onSelect={onSelect} />)}
           </div>
         </div>
       )}
@@ -72,7 +71,7 @@ export default function TopMovers() {
             Predicted Fallers
           </h3>
           <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
-            {fallers.map((p) => <MoverRow key={p.player_id} player={p} />)}
+            {fallers.map((p) => <MoverRow key={p.player_id} player={p} onSelect={onSelect} />)}
           </div>
         </div>
       )}

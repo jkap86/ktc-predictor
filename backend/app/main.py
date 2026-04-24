@@ -114,13 +114,6 @@ if FRONTEND_DIR.is_dir():
         if index_path.is_file():
             return FileResponse(index_path)
 
-        # Dynamic routes: /player/anything/ -> /player/[id]/index.html
-        parts = full_path.strip("/").split("/")
-        if len(parts) >= 2 and parts[0] == "player":
-            dynamic_index = FRONTEND_DIR / "player" / "[id]" / "index.html"
-            if dynamic_index.is_file():
-                return FileResponse(dynamic_index)
-
         # Fallback to root index.html (SPA client-side routing)
         root_index = FRONTEND_DIR / "index.html"
         if root_index.is_file():

@@ -16,7 +16,7 @@ export const ConfidenceBand = memo(function ConfidenceBand({ prediction, color =
             className={`absolute h-1.5 rounded-full ${isOrange ? 'bg-orange-500' : 'bg-blue-500'}`}
             style={{
               left: `${Math.max(0, Math.min(100, ((prediction.predicted_end_ktc - prediction.low_end_ktc) / (prediction.high_end_ktc - prediction.low_end_ktc)) * 100))}%`,
-              width: '3px', transform: 'translateX(-50%)',
+              width: '8px', transform: 'translateX(-50%)',
             }}
           />
         </div>
