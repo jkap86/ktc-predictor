@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import {
   ResponsiveContainer,
   Area,
@@ -122,9 +122,9 @@ export default function WhatIfChart({
   const [loading, setLoading] = useState(false);
   const abortRef = useRef(0);
 
-  const primaryConfig: PlayerCurveConfig = {
+  const primaryConfig = useMemo<PlayerCurveConfig>(() => ({
     position, startKtc, age, draftPick, yearsRemaining, weeksMissed,
-  };
+  }), [position, startKtc, age, draftPick, yearsRemaining, weeksMissed]);
 
   useEffect(() => {
     const generation = ++abortRef.current;
@@ -172,14 +172,14 @@ export default function WhatIfChart({
     compare?.position, compare?.startKtc, compare?.age, compare?.playerId,
   ]);
 
-  const currentPoint = data.reduce<ChartPoint | null>((best, pt) => {
+  const currentPoint = useMemo(() => data.reduce<ChartPoint | null>((best, pt) => {
     if (pt.predictedEos === null) return best;
     if (!best) return pt;
     return Math.abs(pt.ppg - currentPpg) < Math.abs(best.ppg - currentPpg) ? pt : best;
-  }, null);
+  }, null), [data, currentPpg]);
 
-  const hasBands = data.some((d) => d.low !== null && d.high !== null);
-  const hasCompare = data.some((d) => d.compareEos !== null);
+  const hasBands = useMemo(() => data.some((d) => d.low !== null && d.high !== null), [data]);
+  const hasCompare = useMemo(() => data.some((d) => d.compareEos !== null), [data]);
 
   if (loading && data.length === 0) {
     return (

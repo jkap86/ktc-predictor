@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { ModelInfo, ModelsListResponse } from '../types/player';
 
 interface ModelContextType {
@@ -58,8 +58,13 @@ export function ModelProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(STORAGE_KEY, id);
   }, []);
 
+  const value = useMemo(
+    () => ({ models, selectedModelId, setSelectedModelId, loading }),
+    [models, selectedModelId, setSelectedModelId, loading],
+  );
+
   return (
-    <ModelContext.Provider value={{ models, selectedModelId, setSelectedModelId, loading }}>
+    <ModelContext.Provider value={value}>
       {children}
     </ModelContext.Provider>
   );

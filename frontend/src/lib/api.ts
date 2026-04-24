@@ -15,6 +15,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 const _cache = new Map<string, { data: unknown; ts: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 500;
 
 function getCached<T>(key: string): T | undefined {
   const entry = _cache.get(key);
@@ -27,6 +28,15 @@ function getCached<T>(key: string): T | undefined {
 }
 
 function setCache(key: string, data: unknown): void {
+  // Evict oldest entries when cache exceeds max size
+  if (_cache.size >= CACHE_MAX_SIZE) {
+    const it = _cache.keys();
+    for (let i = 0; i < 50; i++) {
+      const oldest = it.next();
+      if (oldest.done) break;
+      _cache.delete(oldest.value);
+    }
+  }
   _cache.set(key, { data, ts: Date.now() });
 }
 
@@ -71,7 +81,7 @@ export async function searchPlayers(
   query: string = '',
   position?: string,
   limit: number = 50,
-  sortBy: 'name' | 'ktc' | 'predicted' | 'change' = 'name',
+  sortBy: 'name' | 'ktc' | 'predicted' | 'change' | 'ppg' = 'name',
   sortOrder: 'asc' | 'desc' = 'asc'
 ): Promise<PlayerList> {
   const params = new URLSearchParams();
@@ -155,8 +165,8 @@ export async function predictPlayerWhatIfBatch(
   payload: { games_played: number; ppg_values: number[] },
   modelId?: string | null,
 ): Promise<EOSBatchResponse | null> {
-  // Cache the full PPG curve per player — only games_played varies
-  const key = `whatif:${playerId}:${payload.games_played}:${modelId ?? 'default'}`;
+  // Cache by player + games + ppg_values + model
+  const key = `whatif:${playerId}:${payload.games_played}:${JSON.stringify(payload.ppg_values)}:${modelId ?? 'default'}`;
   const cached = getCached<EOSBatchResponse | null>(key);
   if (cached !== undefined) return cached;
 

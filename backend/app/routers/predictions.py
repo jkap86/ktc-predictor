@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.services.model_registry import get_registry
 from app.services.data_loader import get_data_loader
-from app.services.eos_model_service import predict_from_inputs, predict_for_player, predict_for_player_whatif, predict_historical
+from app.services.eos_model_service import predict_from_inputs, predict_for_player, predict_for_player_whatif, predict_historical, _compute_player_features
 from app.services.ktc_db import get_latest_ktc_batch
 from app.services.prediction_cache import get_prediction_cache
 from app.schemas.player import EOSPredictionResponse, EOSPredictRequest, EOSBatchRequest, EOSBatchResponse, PlayerWhatIfBatchRequest, HistoricalResponse, HistoricalPrediction
@@ -56,12 +56,19 @@ async def predict_player_whatif_batch(
         raise HTTPException(status_code=400, detail=str(e))
 
     data_loader = get_data_loader()
+
+    # Compute features once, reuse across all PPG values
+    features = await _compute_player_features(player_id, data_loader)
+    if not features:
+        raise HTTPException(status_code=404, detail="Player not found")
+
     predictions = []
     for ppg in request.ppg_values:
         try:
             result = await predict_for_player_whatif(
                 iteration, player_id, data_loader,
                 games_played=request.games_played, ppg=ppg,
+                _features=features,
             )
             if result:
                 predictions.append(EOSPredictionResponse(**result))
@@ -69,7 +76,7 @@ async def predict_player_whatif_batch(
                 raise ValueError("Player not found")
         except Exception:
             predictions.append(EOSPredictionResponse(
-                position="QB", start_ktc=0,
+                position=features.get("position", "QB"), start_ktc=0,
                 predicted_end_ktc=0, predicted_delta_ktc=0, predicted_pct_change=0,
             ))
 
@@ -176,6 +183,8 @@ async def top_movers(
     players = data_loader.get_players()
     pred_cache = get_prediction_cache()
 
+    from app.services.ktc_utils import select_anchor_ktc
+
     valid_positions = {"QB", "RB", "WR", "TE"}
     results = []
     for player in players:
@@ -191,7 +200,6 @@ async def top_movers(
 
         # Get start_ktc from training data
         seasons = player.get("seasons", [])
-        from app.services.ktc_utils import select_anchor_ktc
         anchor = select_anchor_ktc(seasons) if seasons else None
         start_ktc = anchor[0] if anchor else None
         if not start_ktc:

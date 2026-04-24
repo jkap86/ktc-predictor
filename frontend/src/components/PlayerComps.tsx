@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { getComps, CompPlayer } from '../lib/api';
 import { formatKtc } from '../lib/format';
@@ -28,6 +28,18 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
     })();
   }, [playerId, modelId]);
 
+  // Summary stats — must be before early returns to satisfy rules of hooks
+  const { avgDelta, avgPpg, avgStartKtc, avgEndKtc, risers } = useMemo(() => {
+    const n = comps.length || 1;
+    return {
+      avgDelta: comps.reduce((sum, c) => sum + c.delta_ktc, 0) / n,
+      avgPpg: comps.reduce((sum, c) => sum + c.ppg, 0) / n,
+      avgStartKtc: comps.reduce((sum, c) => sum + c.start_ktc, 0) / n,
+      avgEndKtc: comps.reduce((sum, c) => sum + c.end_ktc, 0) / n,
+      risers: comps.filter((c) => c.delta_ktc > 0).length,
+    };
+  }, [comps]);
+
   if (loading) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
@@ -42,13 +54,6 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   }
 
   if (comps.length === 0) return null;
-
-  // Summary stats
-  const avgDelta = comps.reduce((sum, c) => sum + c.delta_ktc, 0) / comps.length;
-  const avgPpg = comps.reduce((sum, c) => sum + c.ppg, 0) / comps.length;
-  const avgStartKtc = comps.reduce((sum, c) => sum + c.start_ktc, 0) / comps.length;
-  const avgEndKtc = comps.reduce((sum, c) => sum + c.end_ktc, 0) / comps.length;
-  const risers = comps.filter((c) => c.delta_ktc > 0).length;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">

@@ -192,115 +192,32 @@ async def predict_for_player(
     data_loader,
 ) -> dict | None:
     """Predict EOS KTC for a player using a specific model iteration."""
-    player = data_loader.get_player_by_id(player_id)
-    if not player:
+    features = await _compute_player_features(player_id, data_loader)
+    if not features:
         return None
 
-    seasons = player.get("seasons", [])
-    if not seasons:
-        return None
+    player = features["_player"]
+    anchor_year = features["_anchor_year"]
+    baseline_year = features["_baseline_year"]
+    games = features["_baseline_games"]
+    ppg = features["_baseline_ppg"]
 
-    # Prefer live KTC from database, fall back to training data
+    # Determine anchor source
+    anchor = select_anchor_ktc(player.get("seasons", []))
     live_ktc = None
     try:
         live_ktc = await get_latest_ktc(player_id)
     except Exception:
         pass
+    anchor_source = "live_db" if live_ktc and live_ktc > 0 else (anchor[2] if anchor else "unknown")
 
-    anchor = select_anchor_ktc(seasons)
-    if live_ktc and live_ktc > 0:
-        start_ktc = live_ktc
-        anchor_year = anchor[1] if anchor else max(s["year"] for s in seasons)
-        anchor_source = "live_db"
-    elif anchor:
-        start_ktc, anchor_year, anchor_source = anchor
-    else:
-        return None
-
-    # Baseline stats
-    latest = max(seasons, key=lambda s: s["year"])
-    baseline_info = select_baseline_stats(seasons)
-    if baseline_info:
-        baseline_year, games, ppg = baseline_info
-    else:
-        baseline_year = latest["year"]
-        games = 0
-        ppg = 0.0
-
-    baseline_season = next(
-        (s for s in seasons if s["year"] == baseline_year), latest
-    )
-    age = baseline_season.get("age") or latest.get("age")
-
-    # Prior-season features (all positions — model trains with these for everyone)
-    prior_end_ktc = None
-    max_ktc_prior = None
-    prior_ppg = None
-    prior_ref_year = anchor_year if anchor_year else (latest["year"] + 1)
-    prior_end_ktc, max_ktc_prior, initial_ktc, min_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
-    prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
-
-    # Prior-season behavioral signals (v3+). Computed for all positions;
-    # older iterations receive them as kwargs and ignore via **_unused_kwargs.
-    prior_behavioral = compute_prior_behavioral_features(seasons, prior_ref_year) or {}
-
-    # v4+ momentum features (from current/anchor season)
-    momentum = compute_momentum_features(seasons, anchor_year) or {}
-
-    # v4+ position-specific prior stats
-    prior_pos = compute_prior_position_stats(seasons, player["position"], prior_ref_year) or {}
-
-    # Career trajectory (2-year lookback)
-    trajectory = compute_career_trajectory(seasons, prior_ref_year) or {}
-
-    start_position_rank = latest.get("start_position_rank")
+    feat = {k: v for k, v in features.items() if not k.startswith("_")}
 
     result = predict_from_inputs(
         iteration=iteration,
-        position=player["position"],
-        start_ktc=start_ktc,
         games_played=games,
         ppg=ppg,
-        age=float(age) if age is not None else None,
-        start_position_rank=float(start_position_rank) if start_position_rank is not None else None,
-        initial_ktc=initial_ktc,
-        min_ktc_prior=min_ktc_prior,
-        prior_end_ktc=prior_end_ktc,
-        max_ktc_prior=max_ktc_prior,
-        prior_ppg=prior_ppg,
-        prior_weekly_fp_cv=prior_behavioral.get("prior_weekly_fp_cv"),
-        prior_boom_rate=prior_behavioral.get("prior_boom_rate"),
-        prior_bust_rate=prior_behavioral.get("prior_bust_rate"),
-        prior_snap_pct=prior_behavioral.get("prior_snap_pct"),
-        prior_ktc_volatility=prior_behavioral.get("prior_ktc_volatility"),
-        ktc_30d_trend=momentum.get("ktc_30d_trend"),
-        ktc_90d_trend=momentum.get("ktc_90d_trend"),
-        momentum_ratio=momentum.get("momentum_ratio"),
-        max_games_missed_streak=momentum.get("max_games_missed_streak"),
-        prior_passing_tds=prior_pos.get("prior_passing_tds"),
-        prior_interceptions=prior_pos.get("prior_interceptions"),
-        prior_carries=prior_pos.get("prior_carries"),
-        prior_red_zone_touches=prior_pos.get("prior_red_zone_touches"),
-        prior_targets=prior_pos.get("prior_targets"),
-        prior_red_zone_targets=prior_pos.get("prior_red_zone_targets"),
-        prior_completion_rate=prior_pos.get("prior_completion_rate"),
-        prior_rushing_yards=prior_pos.get("prior_rushing_yards"),
-        prior_pass_sacks=prior_pos.get("prior_pass_sacks"),
-        prior_yards_per_carry=prior_pos.get("prior_yards_per_carry"),
-        prior_receiving_yards=prior_pos.get("prior_receiving_yards"),
-        prior_rushing_tds=prior_pos.get("prior_rushing_tds"),
-        prior_yards_per_target=prior_pos.get("prior_yards_per_target"),
-        prior_air_yards_per_target=prior_pos.get("prior_air_yards_per_target"),
-        prior_receiving_tds=prior_pos.get("prior_receiving_tds"),
-        prior_drop_rate=prior_pos.get("prior_drop_rate"),
-        # Career trajectory
-        prior_2yr_ppg=trajectory.get("prior_2yr_ppg"),
-        ppg_trend=trajectory.get("ppg_trend"),
-        prior_2yr_end_ktc=trajectory.get("prior_2yr_end_ktc"),
-        # Team context features: pulled from latest season training data.
-        qb_ktc=latest.get("qb_ktc") if latest else None,
-        team_total_ktc=latest.get("team_total_ktc") if latest else None,
-        positional_competition=latest.get("positional_competition") if latest else None,
+        **feat,
     )
     result["player_id"] = player_id
     result["name"] = player["name"]
@@ -310,18 +227,10 @@ async def predict_for_player(
     return result
 
 
-async def predict_for_player_whatif(
-    iteration: ModelIteration,
-    player_id: str,
-    data_loader,
-    games_played: int,
-    ppg: float,
-) -> dict | None:
-    """Like predict_for_player but with overridden games_played and ppg.
-
-    Uses all the player's real context (prior stats, momentum, team, etc.)
-    but lets the caller control the scenario inputs.
-    """
+async def _compute_player_features(player_id: str, data_loader) -> dict | None:
+    """Compute all model features for a player. Returns a kwargs dict for predict_from_inputs,
+    or None if insufficient data. The returned dict omits games_played and ppg so the caller
+    can supply scenario overrides."""
     player = data_loader.get_player_by_id(player_id)
     if not player:
         return None
@@ -355,59 +264,89 @@ async def predict_for_player_whatif(
 
     prior_ref_year = anchor_year if anchor_year else (latest["year"] + 1)
     prior_end_ktc, max_ktc_prior, initial_ktc, min_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
-    prior_ppg = compute_prior_ppg(seasons, prior_ref_year)
+    prior_ppg_val = compute_prior_ppg(seasons, prior_ref_year)
     prior_behavioral = compute_prior_behavioral_features(seasons, prior_ref_year) or {}
     momentum = compute_momentum_features(seasons, anchor_year) or {}
     prior_pos = compute_prior_position_stats(seasons, player["position"], prior_ref_year) or {}
     trajectory = compute_career_trajectory(seasons, prior_ref_year) or {}
     start_position_rank = latest.get("start_position_rank")
 
-    result = predict_from_inputs(
+    return {
+        "position": player["position"],
+        "start_ktc": start_ktc,
+        "age": float(age) if age is not None else None,
+        "start_position_rank": float(start_position_rank) if start_position_rank is not None else None,
+        "initial_ktc": initial_ktc,
+        "min_ktc_prior": min_ktc_prior,
+        "prior_end_ktc": prior_end_ktc,
+        "max_ktc_prior": max_ktc_prior,
+        "prior_ppg": prior_ppg_val,
+        "prior_weekly_fp_cv": prior_behavioral.get("prior_weekly_fp_cv"),
+        "prior_boom_rate": prior_behavioral.get("prior_boom_rate"),
+        "prior_bust_rate": prior_behavioral.get("prior_bust_rate"),
+        "prior_snap_pct": prior_behavioral.get("prior_snap_pct"),
+        "prior_ktc_volatility": prior_behavioral.get("prior_ktc_volatility"),
+        "ktc_30d_trend": momentum.get("ktc_30d_trend"),
+        "ktc_90d_trend": momentum.get("ktc_90d_trend"),
+        "momentum_ratio": momentum.get("momentum_ratio"),
+        "max_games_missed_streak": momentum.get("max_games_missed_streak"),
+        "prior_passing_tds": prior_pos.get("prior_passing_tds"),
+        "prior_interceptions": prior_pos.get("prior_interceptions"),
+        "prior_carries": prior_pos.get("prior_carries"),
+        "prior_red_zone_touches": prior_pos.get("prior_red_zone_touches"),
+        "prior_targets": prior_pos.get("prior_targets"),
+        "prior_red_zone_targets": prior_pos.get("prior_red_zone_targets"),
+        "prior_completion_rate": prior_pos.get("prior_completion_rate"),
+        "prior_rushing_yards": prior_pos.get("prior_rushing_yards"),
+        "prior_pass_sacks": prior_pos.get("prior_pass_sacks"),
+        "prior_yards_per_carry": prior_pos.get("prior_yards_per_carry"),
+        "prior_receiving_yards": prior_pos.get("prior_receiving_yards"),
+        "prior_rushing_tds": prior_pos.get("prior_rushing_tds"),
+        "prior_yards_per_target": prior_pos.get("prior_yards_per_target"),
+        "prior_air_yards_per_target": prior_pos.get("prior_air_yards_per_target"),
+        "prior_receiving_tds": prior_pos.get("prior_receiving_tds"),
+        "prior_drop_rate": prior_pos.get("prior_drop_rate"),
+        "prior_2yr_ppg": trajectory.get("prior_2yr_ppg"),
+        "ppg_trend": trajectory.get("ppg_trend"),
+        "prior_2yr_end_ktc": trajectory.get("prior_2yr_end_ktc"),
+        "qb_ktc": latest.get("qb_ktc") if latest else None,
+        "team_total_ktc": latest.get("team_total_ktc") if latest else None,
+        "positional_competition": latest.get("positional_competition") if latest else None,
+        # Extra context for caller
+        "_player": player,
+        "_anchor_year": anchor_year,
+        "_baseline_year": baseline_year,
+        "_baseline_games": baseline_info[1] if baseline_info else 0,
+        "_baseline_ppg": baseline_info[2] if baseline_info else 0.0,
+    }
+
+
+async def predict_for_player_whatif(
+    iteration: ModelIteration,
+    player_id: str,
+    data_loader,
+    games_played: int,
+    ppg: float,
+    _features: dict | None = None,
+) -> dict | None:
+    """Like predict_for_player but with overridden games_played and ppg.
+
+    Accepts pre-computed _features dict to avoid redundant computation
+    when called in a batch loop.
+    """
+    features = _features or await _compute_player_features(player_id, data_loader)
+    if not features:
+        return None
+
+    # Extract and remove internal keys
+    feat = {k: v for k, v in features.items() if not k.startswith("_")}
+
+    return predict_from_inputs(
         iteration=iteration,
-        position=player["position"],
-        start_ktc=start_ktc,
         games_played=games_played,
         ppg=ppg,
-        age=float(age) if age is not None else None,
-        start_position_rank=float(start_position_rank) if start_position_rank is not None else None,
-        initial_ktc=initial_ktc,
-        min_ktc_prior=min_ktc_prior,
-        prior_end_ktc=prior_end_ktc,
-        max_ktc_prior=max_ktc_prior,
-        prior_ppg=prior_ppg,
-        prior_weekly_fp_cv=prior_behavioral.get("prior_weekly_fp_cv"),
-        prior_boom_rate=prior_behavioral.get("prior_boom_rate"),
-        prior_bust_rate=prior_behavioral.get("prior_bust_rate"),
-        prior_snap_pct=prior_behavioral.get("prior_snap_pct"),
-        prior_ktc_volatility=prior_behavioral.get("prior_ktc_volatility"),
-        ktc_30d_trend=momentum.get("ktc_30d_trend"),
-        ktc_90d_trend=momentum.get("ktc_90d_trend"),
-        momentum_ratio=momentum.get("momentum_ratio"),
-        max_games_missed_streak=momentum.get("max_games_missed_streak"),
-        prior_passing_tds=prior_pos.get("prior_passing_tds"),
-        prior_interceptions=prior_pos.get("prior_interceptions"),
-        prior_carries=prior_pos.get("prior_carries"),
-        prior_red_zone_touches=prior_pos.get("prior_red_zone_touches"),
-        prior_targets=prior_pos.get("prior_targets"),
-        prior_red_zone_targets=prior_pos.get("prior_red_zone_targets"),
-        prior_completion_rate=prior_pos.get("prior_completion_rate"),
-        prior_rushing_yards=prior_pos.get("prior_rushing_yards"),
-        prior_pass_sacks=prior_pos.get("prior_pass_sacks"),
-        prior_yards_per_carry=prior_pos.get("prior_yards_per_carry"),
-        prior_receiving_yards=prior_pos.get("prior_receiving_yards"),
-        prior_rushing_tds=prior_pos.get("prior_rushing_tds"),
-        prior_yards_per_target=prior_pos.get("prior_yards_per_target"),
-        prior_air_yards_per_target=prior_pos.get("prior_air_yards_per_target"),
-        prior_receiving_tds=prior_pos.get("prior_receiving_tds"),
-        prior_drop_rate=prior_pos.get("prior_drop_rate"),
-        prior_2yr_ppg=trajectory.get("prior_2yr_ppg"),
-        ppg_trend=trajectory.get("ppg_trend"),
-        prior_2yr_end_ktc=trajectory.get("prior_2yr_end_ktc"),
-        qb_ktc=latest.get("qb_ktc") if latest else None,
-        team_total_ktc=latest.get("team_total_ktc") if latest else None,
-        positional_competition=latest.get("positional_competition") if latest else None,
+        **feat,
     )
-    return result
 
 
 def predict_historical(
