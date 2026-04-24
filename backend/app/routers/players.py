@@ -222,16 +222,17 @@ async def player_comps(
         red_zone_targets=latest.get("red_zone_targets"),
     )
 
+    comp_avg_ppg = round(sum(c["ppg"] for c in comps) / len(comps), 1) if comps else None
+
     return {
         "player_id": player_id,
         "name": player["name"],
         "position": pos,
         "query": {
             "start_ktc": round(start_ktc, 1),
-            "ppg": round(ppg, 1),
             "age": age,
-            "games_played": gp,
         },
+        "comp_avg_ppg": comp_avg_ppg,
         "comps": comps,
     }
 

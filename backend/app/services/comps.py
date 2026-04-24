@@ -69,15 +69,14 @@ def _extract_feature_importances(model, n_features: int) -> np.ndarray:
 # index for a specific model, we select only the features that model uses
 # and weight them by that model's importances.
 
+# Pre-season only features — no current-season PPG/games/performance.
+# Comps should match on who the player is going INTO the season,
+# so comp avg PPG can serve as an unbiased PPG projection.
 _ALL_SEASON_FEATURES = [
-    "games_played_so_far",
-    "ppg_so_far",
-    "weeks_missed_so_far",
     "draft_pick",
     "years_remaining",
     "start_ktc_quartile",
     "age_prime_distance",
-    "is_breakout_candidate",
     "start_position_rank",
     "start_ktc",
     "start_ktc_was_sentinel",
@@ -86,25 +85,24 @@ _ALL_SEASON_FEATURES = [
     "ktc_peak_drawdown",
     "has_prior_season",
     "prior_ppg",
-    "ppg_yoy_log",
     "has_prior_ppg",
     "apy_cap_pct",
     "is_contract_year",
     "apy_position_rank",
     "has_contract_data",
-    # v3 behavioral
+    # v3 behavioral (prior season)
     "prior_weekly_fp_cv",
     "prior_boom_rate",
     "prior_bust_rate",
     "prior_snap_pct",
     "prior_ktc_volatility",
     "has_prior_behavioral",
-    # v4 momentum
+    # v4 momentum (pre-season KTC trends)
     "ktc_30d_trend",
     "ktc_90d_trend",
     "momentum_ratio",
     "max_games_missed_streak",
-    # Position-specific
+    # Position-specific (prior season)
     "prior_passing_tds",
     "prior_interceptions",
     "prior_carries",
@@ -116,7 +114,11 @@ _ALL_SEASON_FEATURES = [
 
 
 def _compute_all_features(season: dict, prior: dict | None, position: str, start_ktc: float, ppg: float, gp: int, age: float) -> dict[str, float]:
-    """Compute all possible features from a season record."""
+    """Compute pre-season features from a season record.
+
+    Only uses data known before the season starts (KTC, age, prior stats).
+    Current-season PPG/games are excluded so comps match on profile, not results.
+    """
     # KTC YoY
     ktc_yoy_log = 0.0
     has_prior = 0
@@ -127,7 +129,6 @@ def _compute_all_features(season: dict, prior: dict | None, position: str, start
 
     # Prior PPG
     prior_ppg = 0.0
-    ppg_yoy_log = 0.0
     has_prior_ppg = 0
     if prior:
         pgp = prior.get("games_played", 0) or 0
@@ -135,30 +136,15 @@ def _compute_all_features(season: dict, prior: dict | None, position: str, start
         if pgp >= 4:
             prior_ppg = pfp / pgp
             has_prior_ppg = 1
-            if ppg > 0 and prior_ppg > 0:
-                ppg_yoy_log = float(np.clip(np.log((ppg + 0.1) / (prior_ppg + 0.1)), -1.0, 1.0))
-
-    # Weeks missed estimate
-    weekly = season.get("weekly_stats", [])
-    last_week = weekly[-1].get("week", gp) if weekly else gp
-    weeks_missed = max(0, last_week - gp)
-
-    # Breakout candidate
-    from iterations.v1_hgb_baseline.predict import _is_breakout_candidate
-    breakout = _is_breakout_candidate(age, start_ktc, ppg, position)
 
     # Peak drawdown (simplified — use ktc_yoy as proxy)
-    ktc_peak_drawdown = ktc_yoy_log  # simplified
+    ktc_peak_drawdown = ktc_yoy_log
 
     return {
-        "games_played_so_far": gp,
-        "ppg_so_far": ppg,
-        "weeks_missed_so_far": weeks_missed,
         "draft_pick": float(season.get("draft_pick") or 0),
         "years_remaining": float(season.get("years_remaining") or 0),
         "start_ktc_quartile": _get_ktc_quartile(start_ktc),
         "age_prime_distance": _age_prime_distance(age, position),
-        "is_breakout_candidate": breakout,
         "start_position_rank": float(season.get("start_position_rank") or 0),
         "start_ktc": start_ktc,
         "start_ktc_was_sentinel": 1 if start_ktc >= 9999 else 0,
@@ -167,25 +153,24 @@ def _compute_all_features(season: dict, prior: dict | None, position: str, start
         "ktc_peak_drawdown": ktc_peak_drawdown,
         "has_prior_season": has_prior,
         "prior_ppg": prior_ppg,
-        "ppg_yoy_log": ppg_yoy_log,
         "has_prior_ppg": has_prior_ppg,
         "apy_cap_pct": float(season.get("apy_cap_pct") or 0),
         "is_contract_year": float(season.get("is_contract_year") or 0),
         "apy_position_rank": float(season.get("apy_position_rank") or 0),
         "has_contract_data": 1 if season.get("apy_cap_pct") else 0,
-        # v3
+        # v3 (prior season behavioral)
         "prior_weekly_fp_cv": float(prior.get("weekly_fp_cv") or 0) if prior else 0,
         "prior_boom_rate": float(prior.get("boom_rate") or 0) if prior else 0,
         "prior_bust_rate": float(prior.get("bust_rate") or 0) if prior else 0,
         "prior_snap_pct": float(prior.get("snap_pct") or 0) if prior else 0,
         "prior_ktc_volatility": float(prior.get("ktc_volatility") or 0) if prior else 0,
         "has_prior_behavioral": 1 if prior and (prior.get("games_played", 0) or 0) >= 4 else 0,
-        # v4
+        # v4 (pre-season KTC trends)
         "ktc_30d_trend": float(season.get("ktc_30d_trend") or 0),
         "ktc_90d_trend": float(season.get("ktc_90d_trend") or 0),
         "momentum_ratio": float(season.get("momentum_ratio") or 0),
         "max_games_missed_streak": float(season.get("max_games_missed_streak") or 0),
-        # Position-specific
+        # Position-specific (prior season)
         "prior_passing_tds": float(prior.get("passing_tds") or 0) if prior else 0,
         "prior_interceptions": float(prior.get("interceptions") or 0) if prior else 0,
         "prior_carries": float(prior.get("carries") or 0) if prior else 0,
@@ -258,6 +243,19 @@ class CompsIndex:
                 continue
 
             importances = _extract_feature_importances(pos_model, len(model_features))
+
+            # Remove current-season features from the model's feature list.
+            # Comps match on pre-season profile only.
+            _CURRENT_SEASON_FEATURES = {
+                "games_played", "ppg", "games_played_so_far", "ppg_so_far",
+                "weeks_missed", "weeks_missed_so_far", "ppg_yoy_log",
+                "is_breakout_candidate",
+            }
+            keep = [(i, f) for i, f in enumerate(model_features) if f not in _CURRENT_SEASON_FEATURES]
+            if len(keep) < len(model_features):
+                kept_idx, model_features = zip(*keep)
+                model_features = list(model_features)
+                importances = importances[list(kept_idx)]
 
             # Add extra features that aren't in the model but matter for comps.
             # years_exp ensures rookies match rookies, not 3rd-year players.
@@ -359,31 +357,26 @@ class CompsIndex:
         self,
         position: str,
         start_ktc: float,
-        ppg: float,
         age: float,
-        games_played: int,
         k: int = 10,
         exclude_player_id: str | None = None,
+        # Legacy params accepted but not used for matching
+        ppg: float = 0.0,
+        games_played: int = 0,
         **kwargs,
     ) -> list[dict]:
-        """Find the k most similar historical player-seasons."""
+        """Find the k most similar historical player-seasons.
+
+        Matches on pre-season features only (KTC, age, prior stats, etc.).
+        Current-season PPG/games are not used for matching.
+        """
         if position not in self.nn:
             return []
 
         feature_names = self.feature_names[position]
         weights = self.weights[position]
 
-        # Compute all possible features from the query inputs
-        # Build a synthetic "season" dict from kwargs for _compute_all_features
-        season_proxy = dict(kwargs)
-        prior_proxy = {}
-        for k_name, v in kwargs.items():
-            if k_name.startswith("prior_") or k_name.startswith("has_prior"):
-                prior_proxy[k_name.replace("prior_", "", 1)] = v
-
         all_feats = {
-            "games_played_so_far": games_played,
-            "ppg_so_far": ppg,
             "start_ktc": start_ktc,
             "age_prime_distance": _age_prime_distance(age, position),
             "start_ktc_quartile": _get_ktc_quartile(start_ktc),

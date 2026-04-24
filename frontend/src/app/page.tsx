@@ -551,7 +551,7 @@ function HomeContent() {
 
               <WhatIfChart
                 position={primaryPrediction?.position ?? primaryPlayer.position}
-                startKtc={primaryPrediction?.start_ktc ?? primaryPlayer.live_ktc ?? 0}
+                startKtc={primaryPlayer.live_ktc ?? primaryPrediction?.start_ktc ?? 0}
                 gamesPlayed={17}
                 currentPpg={whatIfPpg}
                 modelId={selectedModelId}

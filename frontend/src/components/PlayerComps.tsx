@@ -11,6 +11,7 @@ interface PlayerCompsProps {
 
 export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   const [comps, setComps] = useState<CompPlayer[]>([]);
+  const [compAvgPpg, setCompAvgPpg] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,8 +20,10 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
       try {
         const data = await getComps(playerId, 10, modelId);
         setComps(data?.comps ?? []);
+        setCompAvgPpg(data?.comp_avg_ppg ?? null);
       } catch {
         setComps([]);
+        setCompAvgPpg(null);
       } finally {
         setLoading(false);
       }
@@ -67,15 +70,17 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
 
       {/* Summary row */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
+        {compAvgPpg != null && (
+          <span className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
+            Projected PPG: {compAvgPpg}
+          </span>
+        )}
         <span className={`text-xs px-2 py-1 rounded-full font-medium ${
           avgDelta >= 0
             ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
             : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
         }`}>
           Avg Change: {avgDelta >= 0 ? '+' : ''}{Math.round(avgDelta).toLocaleString()}
-        </span>
-        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
-          Avg PPG: {avgPpg.toFixed(1)}
         </span>
         <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
           Avg Start: {formatKtc(Math.round(avgStartKtc))}
@@ -86,7 +91,7 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
       </div>
 
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-        Similar players from prior seasons based on model features. Shows what actually happened to their value.
+        Players with similar pre-season profiles (KTC, age, prior stats). Projected PPG is their avg season PPG.
       </p>
 
       <div className="overflow-x-auto">

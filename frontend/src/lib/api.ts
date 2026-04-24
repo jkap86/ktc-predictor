@@ -230,10 +230,9 @@ export interface CompsResponse {
   position: string;
   query: {
     start_ktc: number;
-    ppg: number;
     age: number;
-    games_played: number;
   };
+  comp_avg_ppg: number | null;
   comps: CompPlayer[];
 }
 
