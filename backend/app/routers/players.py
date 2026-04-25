@@ -84,7 +84,7 @@ async def list_players(
         })
 
     # Add cached predictions + metadata
-    pred_cache = get_prediction_cache(model)
+    pred_cache = await get_prediction_cache(model)
     for r in results:
         cached = pred_cache.get(r["player_id"])
         if cached:
@@ -197,6 +197,13 @@ async def player_comps(
     prior_ppg = 0.0
     if prior and (prior.get("games_played", 0) or 0) > 0:
         prior_ppg = (prior.get("fantasy_points", 0) or 0) / prior["games_played"]
+
+    if model:
+        from app.services.model_registry import get_registry
+        try:
+            get_registry().get(model)
+        except KeyError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     comps_index = get_comps_index(model)
     comps = comps_index.find_comps(

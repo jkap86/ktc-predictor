@@ -3,7 +3,7 @@
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app.services.model_registry import get_registry
 from app.schemas.player import ModelInfo, ModelsListResponse
@@ -30,8 +30,8 @@ def model_diagnostics(
     registry = get_registry()
     try:
         iteration = registry.get(model)
-    except KeyError:
-        iteration = registry.get()
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     metrics = iteration.get_metrics()
 

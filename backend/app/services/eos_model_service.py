@@ -386,14 +386,25 @@ async def predict_for_player_whatif(
         return None
 
     # Extract and remove internal keys
+    player = features.get("_player", {})
     feat = {k: v for k, v in features.items() if not k.startswith("_")}
 
-    return predict_from_inputs(
+    result = predict_from_inputs(
         iteration=iteration,
         games_played=games_played,
         ppg=ppg,
         **feat,
     )
+    result["player_id"] = player_id
+    result["name"] = player.get("name")
+    result["prediction_meta"] = {
+        "model_id": iteration.id,
+        "start_ktc_used": result["start_ktc"],
+        "ppg_used": round(ppg, 1),
+        "ppg_source": "manual_override",
+        "ktc_source": features.get("_ktc_source"),
+    }
+    return result
 
 
 def predict_historical(

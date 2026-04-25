@@ -182,7 +182,7 @@ async def top_movers(
 
     data_loader = get_data_loader()
     players = data_loader.get_players()
-    pred_cache = get_prediction_cache(model)
+    pred_cache = await get_prediction_cache(model)
 
     valid_positions = {"QB", "RB", "WR", "TE"}
     results = []

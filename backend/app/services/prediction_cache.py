@@ -2,12 +2,12 @@
 
 Built lazily on first access per model. Takes ~30s but only happens once per model.
 Uses the same build_prediction_inputs() as detail/what-if paths for consistency.
+Cache is async — uses the app's event loop for DB access (no threading hacks).
 """
 
 import asyncio
 import logging
 import os
-import threading
 import time
 
 from app.services.data_loader import get_data_loader
@@ -20,41 +20,29 @@ CACHE_TTL_SECONDS = int(os.environ.get("KTC_CACHE_TTL", "900"))  # 15 min defaul
 
 _caches: dict[str, dict[str, dict]] = {}
 _built_at: dict[str, float] = {}
-_lock = threading.Lock()
+_building: set[str] = set()  # models currently being built (async lock)
 
 
-def _fetch_live_ktc_batch(player_ids: list[str]) -> dict[str, float]:
-    """Fetch live KTC values from the DB (sync wrapper for async batch call).
+async def _build(iteration) -> dict[str, dict]:
+    """Compute predictions for all players using the shared input builder.
 
-    Falls back gracefully to empty dict if DB is unavailable.
+    Async so it can call get_latest_ktc_batch on the app's event loop.
     """
-    import os
-    if not os.getenv("DATABASE_URL"):
-        return {}
-
-    from app.services.ktc_db import get_latest_ktc_batch
-    try:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            return pool.submit(
-                lambda: asyncio.run(get_latest_ktc_batch(player_ids))
-            ).result(timeout=30)
-    except Exception as e:
-        logger.warning("Live KTC batch fetch failed (%s), using training data KTC", e)
-        return {}
-
-
-def _build(iteration) -> dict[str, dict]:
-    """Compute predictions for all players using the shared input builder."""
     dl = get_data_loader()
     players = dl.get_players()
     projected_ppg = get_projections()
     results = {}
     start = time.time()
 
-    # Batch-fetch live KTC values (same source as /api/players display)
+    # Batch-fetch live KTC values on the running event loop (no threading)
     all_pids = [p["player_id"] for p in players]
-    live_ktc_map = _fetch_live_ktc_batch(all_pids)
+    live_ktc_map: dict[str, float] = {}
+    try:
+        from app.services.ktc_db import get_latest_ktc_batch
+        live_ktc_map = await get_latest_ktc_batch(all_pids)
+    except Exception as e:
+        logger.warning("Live KTC batch fetch failed (%s), using training data KTC", e)
+
     logger.info("Live KTC fetched for %d/%d players", len(live_ktc_map), len(all_pids))
 
     for player in players:
@@ -100,10 +88,11 @@ def _build(iteration) -> dict[str, dict]:
     return results
 
 
-def get_prediction_cache(model_id: str | None = None) -> dict[str, dict]:
+async def get_prediction_cache(model_id: str | None = None) -> dict[str, dict]:
     """Get the prediction cache for a model. Builds on first call per model (~30s).
 
     Rebuilds automatically after CACHE_TTL_SECONDS to pick up live KTC changes.
+    Must be called from an async context (route handler or startup).
     """
     from app.services.model_registry import get_registry
     registry = get_registry()
@@ -117,17 +106,21 @@ def get_prediction_cache(model_id: str | None = None) -> dict[str, dict]:
     if mid in _built_at and not is_stale:
         return _caches.get(mid, {})
 
-    with _lock:
-        # Double-check after acquiring lock
-        built_time = _built_at.get(mid, 0)
-        is_stale = (now - built_time) > CACHE_TTL_SECONDS if built_time else True
-        if is_stale:
-            try:
-                _caches[mid] = _build(iteration)
-            except Exception:
-                logger.exception("Failed to build prediction cache for model '%s'", mid)
-                if mid not in _caches:
-                    _caches[mid] = {}
-            _built_at[mid] = time.time()
+    # Async guard: if another coroutine is already building, wait for it
+    if mid in _building:
+        while mid in _building:
+            await asyncio.sleep(0.1)
+        return _caches.get(mid, {})
+
+    _building.add(mid)
+    try:
+        _caches[mid] = await _build(iteration)
+    except Exception:
+        logger.exception("Failed to build prediction cache for model '%s'", mid)
+        if mid not in _caches:
+            _caches[mid] = {}
+    finally:
+        _built_at[mid] = time.time()
+        _building.discard(mid)
 
     return _caches.get(mid, {})

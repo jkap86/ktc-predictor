@@ -133,7 +133,7 @@ function HomeContent() {
         const pos = position === 'All' ? undefined : position;
         const result = await searchPlayers(query, pos, 200, sortBy, sortDesc ? 'desc' : 'asc', selectedModelId);
         setSearchResults(result.players);
-      } catch { /* */ }
+      } catch (err) { if (process.env.NODE_ENV !== 'production') console.warn(err); }
       finally { setSearchLoading(false); }
     };
     const debounce = setTimeout(fetchPlayers, 300);
@@ -154,7 +154,9 @@ function HomeContent() {
         if (sortBy === 'ppg') return oPpg ?? p.ppg ?? null;
         if (sortBy === 'predicted') return pred ?? null;
         if (sortBy === 'change') {
-          return (pred != null && p.latest_ktc != null) ? pred - p.latest_ktc : null;
+          // Use override delta if PPG was edited, otherwise backend's predicted_delta_ktc
+          if (oPred) return (pred != null && p.latest_ktc != null) ? pred - p.latest_ktc : null;
+          return p.predicted_delta_ktc ?? null;
         }
         if (sortBy === 'ktc') return p.latest_ktc;
         return null;
@@ -236,7 +238,7 @@ function HomeContent() {
     try {
       const batch = await predictPlayerWhatIfBatch(primaryId, { games_played: 17, ppg_values: [whatIfPpg] }, selectedModelId);
       setWhatIfResult(batch?.predictions[0] ?? null);
-    } catch { /* */ }
+    } catch (err) { if (process.env.NODE_ENV !== 'production') console.warn(err); }
   }, [primaryId, primary?.player, whatIfPpg, selectedModelId]);
 
   // What-If for compare (independent PPG)
@@ -245,7 +247,7 @@ function HomeContent() {
     try {
       const batch = await predictPlayerWhatIfBatch(compareId, { games_played: 17, ppg_values: [compareWhatIfPpg] }, selectedModelId);
       setCompareWhatIfResult(batch?.predictions[0] ?? null);
-    } catch { /* */ }
+    } catch (err) { if (process.env.NODE_ENV !== 'production') console.warn(err); }
   }, [compareId, compare?.prediction, compareWhatIfPpg, selectedModelId]);
 
   useEffect(() => {
@@ -384,8 +386,11 @@ function HomeContent() {
             const overridePpg = ppgOverrides.get(player.player_id);
             const displayPred = override ? override.predicted_end_ktc : player.predicted_end_ktc;
             const isRowLoading = override?.loading ?? false;
-            const delta = (displayPred != null && player.latest_ktc != null)
-              ? displayPred - player.latest_ktc : null;
+            // Use backend-computed delta when no override (consistent with start_ktc_used),
+            // recompute only when user has manually overridden PPG
+            const delta = override
+              ? (displayPred != null && player.latest_ktc != null ? displayPred - player.latest_ktc : null)
+              : (player.predicted_delta_ktc ?? null);
             return (
               <div
                 key={player.player_id}
