@@ -137,6 +137,7 @@ def _build(iteration) -> dict[str, dict]:
                 qb_ktc=latest.get("qb_ktc"),
                 team_total_ktc=latest.get("team_total_ktc"),
                 positional_competition=latest.get("positional_competition"),
+                projected_ppg=proj_ppg,
             )
             results[pid] = {
                 "predicted_end_ktc": round(pred["predicted_end_ktc"], 1),

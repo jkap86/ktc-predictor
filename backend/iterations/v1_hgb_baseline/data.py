@@ -1,6 +1,7 @@
 """Build weekly cumulative snapshot DataFrame from training data."""
 
 import json
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -352,6 +353,32 @@ def _compute_offseason_features(players: list[dict]) -> dict[tuple[str, int], di
     return result
 
 
+def _fetch_sleeper_projections(years: list[int]) -> dict[tuple[str, int], float]:
+    """Fetch preseason projected PPG from Sleeper for given years.
+
+    Returns {(player_id, year): projected_ppg}.
+    """
+    result = {}
+    for yr in years:
+        try:
+            url = f"https://api.sleeper.com/projections/nfl/{yr}/?season_type=regular"
+            req = urllib.request.Request(url, headers={"User-Agent": "KTC-Predictor/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
+            count = 0
+            for item in data:
+                pid = str(item.get("player_id", ""))
+                stats = item.get("stats", {})
+                pts = stats.get("pts_half_ppr")
+                gp = stats.get("gp")
+                if pts and gp and gp > 0:
+                    result[(pid, yr)] = round(pts / gp, 2)
+                    count += 1
+        except Exception:
+            pass
+    return result
+
+
 def build_weekly_snapshot_df(
     zip_path: str, json_name: str = "training-data.json"
 ) -> pd.DataFrame:
@@ -400,6 +427,15 @@ def build_weekly_snapshot_df(
     except Exception as e:
         print(f"  Warning: Could not load PFF grades: {e}")
         pff_feats = {}
+
+    # Sleeper preseason projected PPG (consensus expectations)
+    all_years = sorted({s["year"] for p in data["players"] for s in p.get("seasons", [])})
+    try:
+        proj_feats = _fetch_sleeper_projections(all_years)
+        print(f"  Sleeper projections loaded for {len(proj_feats)} player-seasons")
+    except Exception as e:
+        print(f"  Warning: Could not load Sleeper projections: {e}")
+        proj_feats = {}
 
     rows: list[dict] = []
 
@@ -456,6 +492,7 @@ def build_weekly_snapshot_df(
                 ppg_feat = prior_ppg_feats.get((pid, year), {})
                 contract_feat = contract_feats.get((pid, year), {})
                 pff_feat = pff_feats.get((pid, year), {})
+                proj_ppg = proj_feats.get((pid, year))
 
                 rows.append(
                     {
@@ -543,6 +580,9 @@ def build_weekly_snapshot_df(
                         # snap_pct: offensive snap percentage (role stability)
                         "snap_pct": season.get("snap_pct", 0) or 0,
                         "has_snap_data": 1 if (season.get("snap_pct") or 0) > 0 else 0,
+                        # Sleeper preseason projected PPG (consensus expectations)
+                        "projected_ppg": proj_ppg,
+                        "has_projected_ppg": 1 if proj_ppg is not None else 0,
                     }
                 )
 

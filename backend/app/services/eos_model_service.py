@@ -97,6 +97,8 @@ def predict_from_inputs(
     qb_ktc: float | None = None,
     team_total_ktc: float | None = None,
     positional_competition: float | None = None,
+    # Sleeper preseason projected PPG
+    projected_ppg: float | None = None,
 ) -> dict:
     """Predict EOS KTC using a specific model iteration."""
     result = iteration.predict_end_ktc(
@@ -145,6 +147,8 @@ def predict_from_inputs(
         qb_ktc=qb_ktc,
         team_total_ktc=team_total_ktc,
         positional_competition=positional_competition,
+        projected_ppg=projected_ppg,
+        has_projected_ppg=1 if projected_ppg is not None else 0,
     )
 
     effective_ktc = result.get("effective_start_ktc", start_ktc)
@@ -312,6 +316,8 @@ async def _compute_player_features(player_id: str, data_loader) -> dict | None:
         "qb_ktc": latest.get("qb_ktc") if latest else None,
         "team_total_ktc": latest.get("team_total_ktc") if latest else None,
         "positional_competition": latest.get("positional_competition") if latest else None,
+        # projected_ppg: not in training data, passed by callers that have it
+        "projected_ppg": None,
         # Extra context for caller
         "_player": player,
         "_anchor_year": anchor_year,

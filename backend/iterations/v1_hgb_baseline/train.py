@@ -211,6 +211,9 @@ KTC_TIER_MIN_SAMPLES = 30
 KTC_TIER_POSITION_OVERRIDES = {
     # RB: calibrate mid and high tiers to fix negative bias in elite RBs
     "RB": [(2000, 4000), (4000, 6000), (6000, 99999)],
+    # QB: low tier has negative bias (-212)
+    "QB": [(0, 2000), (2000, 4000), (4000, 6000), (6000, 99999)],
+    # TE/WR: use all tiers (default) — elite bias needs correction
 }
 
 # Ensemble configuration: train multiple models with different seeds for variance reduction
@@ -1077,9 +1080,14 @@ def train_all(
                 tkey = f"tier_{tlo}_{thi}"
                 tier_mask = (start_ktc_train_vals >= tlo) & (start_ktc_train_vals < thi) & valid_oof
                 if tier_mask.sum() >= KTC_TIER_MIN_SAMPLES:
-                    # RB needs stronger correction (2.0) due to persistent
-                    # negative bias in mid/high tiers. Other positions use 3.0.
-                    id_str = 2.0 if pos == "RB" else 3.0
+                    # Position-specific identity strength for tier calibration.
+                    # Lower = stronger correction. RB/TE need more correction.
+                    if pos == "TE" and tlo >= 6000:
+                        id_str = 1.0  # TE 6K+ has consistent +600 overprediction
+                    elif pos in ("RB", "TE"):
+                        id_str = 2.0
+                    else:
+                        id_str = 3.0
                     tier_cal = MonotoneLinearCalibrator(min_slope=0.01, identity_strength=id_str)
                     tier_cal.fit(oof_preds_pos[tier_mask], y_train[tier_mask])
                     calibrator_dict[tkey] = tier_cal
