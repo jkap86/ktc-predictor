@@ -208,9 +208,9 @@ GP_BUCKET_MIN_SAMPLES = 30
 KTC_TIER_BUCKETS = [(0, 2000), (2000, 4000), (4000, 6000), (6000, 99999)]
 KTC_TIER_MIN_SAMPLES = 30
 # Per-position tier overrides: only calibrate tiers with clear systematic bias.
-# RB tier calibration consistently hurts overall MAE — skip entirely.
 KTC_TIER_POSITION_OVERRIDES = {
-    "RB": [],  # skip all tier calibration for RB
+    # RB: calibrate mid and high tiers to fix negative bias in elite RBs
+    "RB": [(2000, 4000), (4000, 6000), (6000, 99999)],
 }
 
 # Ensemble configuration: train multiple models with different seeds for variance reduction
@@ -222,7 +222,7 @@ POSITION_HYPERPARAMS = {
             "loss": "absolute_error", "min_samples_leaf": 50,
             "l2_regularization": 0.0014, "max_leaf_nodes": 55},
     "RB": {"max_depth": 4, "learning_rate": 0.02, "n_estimators": 500,
-            "loss": "squared_error", "min_samples_leaf": 10,
+            "loss": "absolute_error", "min_samples_leaf": 10,
             "l2_regularization": 2.5, "max_leaf_nodes": 40},
     "WR": {"max_depth": 5, "learning_rate": 0.10, "n_estimators": 200},
     "TE": {"max_depth": 6, "learning_rate": 0.08, "n_estimators": 300},
@@ -886,14 +886,23 @@ def train_all(
         start_ktc_test = start_ktc[test_idx]
         y_end_ktc_test = y_end_ktc[test_idx]
 
-        # Sample weights: upweight elite tier (4k+) for WR only.
-        # WR has enough elite samples to benefit; smaller positions overfit.
+        # Sample weights: upweight elite tier (4k+) for WR and RB.
+        # Also upweight young RBs (≤23) which are systematically underpredicted.
         start_ktc_train = start_ktc[train_idx]
         sample_weights = np.ones(len(X_train))
-        if pos == "WR":
+        if pos in ("WR", "RB"):
             sample_weights[start_ktc_train >= 6000] = 1.5
             sample_weights[start_ktc_train >= 4000] = np.maximum(
                 sample_weights[start_ktc_train >= 4000], 1.25
+            )
+        if pos == "RB":
+            age_train = pos_df.iloc[train_idx]["age"].values
+            # Young high-value RBs are heavily underpredicted — strong upweight
+            sample_weights[(age_train <= 23) & (start_ktc_train >= 3000)] = np.maximum(
+                sample_weights[(age_train <= 23) & (start_ktc_train >= 3000)], 2.0
+            )
+            sample_weights[(age_train <= 23) & (start_ktc_train >= 5000)] = np.maximum(
+                sample_weights[(age_train <= 23) & (start_ktc_train >= 5000)], 2.5
             )
 
         # Select backend and build model(s)
@@ -1068,20 +1077,49 @@ def train_all(
                 tkey = f"tier_{tlo}_{thi}"
                 tier_mask = (start_ktc_train_vals >= tlo) & (start_ktc_train_vals < thi) & valid_oof
                 if tier_mask.sum() >= KTC_TIER_MIN_SAMPLES:
-                    # Weaker identity shrinkage (3.0 vs default 10.0) lets
-                    # the calibrator correct larger systematic biases per tier.
-                    tier_cal = MonotoneLinearCalibrator(min_slope=0.01, identity_strength=3.0)
+                    # RB needs stronger correction (2.0) due to persistent
+                    # negative bias in mid/high tiers. Other positions use 3.0.
+                    id_str = 2.0 if pos == "RB" else 3.0
+                    tier_cal = MonotoneLinearCalibrator(min_slope=0.01, identity_strength=id_str)
                     tier_cal.fit(oof_preds_pos[tier_mask], y_train[tier_mask])
                     calibrator_dict[tkey] = tier_cal
+
+            # RB age-tier interaction calibrators: young high-value RBs
+            # have persistent negative bias that tier-only cal can't fix.
+            if pos == "RB":
+                age_train_vals = pos_df.iloc[train_idx]["age"].values
+                age_test_vals = pos_df.iloc[test_idx]["age"].values
+                for tlo, thi in [(2000, 5000), (5000, 99999)]:
+                    akey = f"young_tier_{tlo}_{thi}"
+                    mask = (age_train_vals <= 24) & (start_ktc_train_vals >= tlo) & (start_ktc_train_vals < thi) & valid_oof
+                    if mask.sum() >= 25:
+                        age_tier_cal = MonotoneLinearCalibrator(min_slope=0.01, identity_strength=1.5)
+                        age_tier_cal.fit(oof_preds_pos[mask], y_train[mask])
+                        calibrator_dict[akey] = age_tier_cal
 
             # Apply tier calibration to test predictions
             test_preds_tier = test_preds.copy()
             for i in range(len(test_preds)):
-                tkey = _ktc_tier_key(start_ktc_test_vals[i])
-                if tkey and tkey in calibrator_dict:
-                    calibrated = float(calibrator_dict[tkey].predict([test_preds[i]])[0])
-                    if not np.isnan(calibrated):
-                        test_preds_tier[i] = calibrated
+                # Try age-tier cal first (RB only), fall back to tier cal
+                applied = False
+                if pos == "RB":
+                    age_val = pos_df.iloc[test_idx[i]]["age"]
+                    if age_val <= 24:
+                        for tlo, thi in [(2000, 5000), (5000, 99999)]:
+                            if start_ktc_test_vals[i] >= tlo and start_ktc_test_vals[i] < thi:
+                                akey = f"young_tier_{tlo}_{thi}"
+                                if akey in calibrator_dict:
+                                    calibrated = float(calibrator_dict[akey].predict([test_preds[i]])[0])
+                                    if not np.isnan(calibrated):
+                                        test_preds_tier[i] = calibrated
+                                        applied = True
+                                break
+                if not applied:
+                    tkey = _ktc_tier_key(start_ktc_test_vals[i])
+                    if tkey and tkey in calibrator_dict:
+                        calibrated = float(calibrator_dict[tkey].predict([test_preds[i]])[0])
+                        if not np.isnan(calibrated):
+                            test_preds_tier[i] = calibrated
             test_preds = test_preds_tier
 
             tier_end_ktc = _reconstruct_end_ktc(test_preds, start_ktc_test, target_name)
@@ -1089,10 +1127,14 @@ def train_all(
             tier_post_bias = float(np.mean(tier_end_ktc - y_end_ktc_test))
             print(f"  tier_cal: MAE {tier_pre_mae:.1f} -> {tier_post_mae:.1f}, bias {tier_pre_bias:+.1f} -> {tier_post_bias:+.1f}")
 
-        # Clip bounds: 2nd/97th percentile of y_train
-        # Tightened from p99 — extreme shrinkage handles remaining outliers
-        low = float(np.percentile(y_train, 2))
-        high = float(np.percentile(y_train, 97))
+        # Clip bounds: percentile-based.
+        # RB uses wider bounds (1st/99th) to allow bigger predicted gains.
+        if pos == "RB":
+            low = float(np.percentile(y_train, 1))
+            high = float(np.percentile(y_train, 99))
+        else:
+            low = float(np.percentile(y_train, 2))
+            high = float(np.percentile(y_train, 97))
 
         # Verify PPG sensitivity wasn't collapsed by calibration (HGB only)
         if calibrator_dict and not is_linear:

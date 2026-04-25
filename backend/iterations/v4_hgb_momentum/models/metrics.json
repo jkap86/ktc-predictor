@@ -9,13 +9,13 @@
     "clip_high": 1.0
   },
   "RB": {
-    "mae": 508.4,
-    "r2": 0.894,
+    "mae": 536.1,
+    "r2": 0.8757,
     "n_train": 4798,
     "n_test": 1145,
     "backend": "HGB",
-    "clip_low": -0.8,
-    "clip_high": 1.1
+    "clip_low": -1.2,
+    "clip_high": 1.8
   },
   "WR": {
     "mae": 403.7,
