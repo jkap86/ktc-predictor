@@ -131,14 +131,14 @@ function HomeContent() {
       setSearchLoading(true);
       try {
         const pos = position === 'All' ? undefined : position;
-        const result = await searchPlayers(query, pos, 200, sortBy, sortDesc ? 'desc' : 'asc');
+        const result = await searchPlayers(query, pos, 200, sortBy, sortDesc ? 'desc' : 'asc', selectedModelId);
         setSearchResults(result.players);
       } catch { /* */ }
       finally { setSearchLoading(false); }
     };
     const debounce = setTimeout(fetchPlayers, 300);
     return () => clearTimeout(debounce);
-  }, [query, position, sortBy, sortDesc]);
+  }, [query, position, sortBy, sortDesc, selectedModelId]);
 
   // Re-sort client-side when PPG overrides affect sort order
   const sortedResults = useMemo(() => {
@@ -449,7 +449,7 @@ function HomeContent() {
       {/* Show TopMovers only when no player is selected */}
       {!hasAnySelected && (
         <>
-          <TopMovers onSelect={(id) => setPrimaryId(id)} />
+          <TopMovers onSelect={(id) => setPrimaryId(id)} modelId={selectedModelId} />
           <ModelInsights />
         </>
       )}

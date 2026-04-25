@@ -27,21 +27,22 @@ function MoverRow({ player, onSelect }: { player: TopMover; onSelect?: (id: stri
   );
 }
 
-export default function TopMovers({ onSelect }: { onSelect?: (id: string) => void } = {}) {
+export default function TopMovers({ onSelect, modelId }: { onSelect?: (id: string) => void; modelId?: string | null } = {}) {
   const [risers, setRisers] = useState<TopMover[]>([]);
   const [fallers, setFallers] = useState<TopMover[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     (async () => {
-      const data = await getTopMovers(10);
+      const data = await getTopMovers(10, modelId);
       if (data) {
         setRisers(data.risers);
         setFallers(data.fallers);
       }
       setLoading(false);
     })();
-  }, []);
+  }, [modelId]);
 
   if (loading) {
     return (

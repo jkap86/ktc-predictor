@@ -1,13 +1,12 @@
 """Precomputed prediction cache for all players.
 
-Built lazily on first access. Takes ~30s but only happens once.
+Built lazily on first access per model. Takes ~30s but only happens once per model.
 Uses Sleeper projections for default PPG when available.
 """
 
-import json
 import logging
+import threading
 import time
-import urllib.request
 
 from app.services.data_loader import get_data_loader
 from app.services.ktc_utils import (
@@ -21,40 +20,20 @@ from app.services.ktc_utils import (
     compute_career_trajectory,
 )
 from app.services.eos_model_service import predict_from_inputs
+from app.services.sleeper import get_projections
 
 logger = logging.getLogger(__name__)
 
-_cache: dict[str, dict] = {}
-_built = False
-
-
-def _fetch_projections(season: int = 2026) -> dict[str, float]:
-    """Fetch projected PPG from Sleeper API. Returns {player_id: ppg}."""
-    try:
-        url = f"https://api.sleeper.com/projections/nfl/{season}/?season_type=regular"
-        req = urllib.request.Request(url, headers={"User-Agent": "KTC-Predictor/1.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-        result = {}
-        for item in data:
-            pid = str(item.get("player_id", ""))
-            stats = item.get("stats", {})
-            pts = stats.get("pts_half_ppr")
-            gp = stats.get("gp")
-            if pts and gp and gp > 0:
-                result[pid] = round(pts / gp, 2)
-        logger.info("Fetched %d projected PPG values from Sleeper", len(result))
-        return result
-    except Exception:
-        logger.warning("Failed to fetch Sleeper projections, using last-season PPG")
-        return {}
+_caches: dict[str, dict[str, dict]] = {}
+_built_models: set[str] = set()
+_lock = threading.Lock()
 
 
 def _build(iteration) -> dict[str, dict]:
-    """Compute predictions for all players."""
+    """Compute predictions for all players using a specific model iteration."""
     dl = get_data_loader()
     players = dl.get_players()
-    projected_ppg = _fetch_projections()
+    projected_ppg = get_projections()
     results = {}
     start = time.time()
 
@@ -77,9 +56,11 @@ def _build(iteration) -> dict[str, dict]:
 
         # Use Sleeper projected PPG if available (better than last-season PPG)
         proj_ppg = projected_ppg.get(pid)
+        ppg_source = "last_season"
         if proj_ppg is not None:
             ppg = proj_ppg
             gp = 17  # projected for full season
+            ppg_source = "projected"
 
         latest = max(seasons, key=lambda s: s["year"])
         age = latest.get("age") or 25
@@ -144,24 +125,35 @@ def _build(iteration) -> dict[str, dict]:
                 "predicted_delta_ktc": round(pred["predicted_delta_ktc"], 1),
                 "predicted_pct_change": round(pred["predicted_pct_change"], 1),
                 "projected_ppg": round(ppg, 1),
+                "ppg_source": ppg_source,
+                "model_id": iteration.id,
             }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Cache prediction failed for %s (%s): %s", pid, player.get("name", "?"), e)
 
     elapsed = time.time() - start
-    logger.info("Prediction cache built: %d players in %.1fs", len(results), elapsed)
+    logger.info("Prediction cache built for model '%s': %d players in %.1fs", iteration.id, len(results), elapsed)
     return results
 
 
-def get_prediction_cache() -> dict[str, dict]:
-    """Get the prediction cache. Builds on first call (~30s)."""
-    global _cache, _built
-    if not _built:
-        try:
-            from app.services.model_registry import get_registry
-            iteration = get_registry().get()
-            _cache = _build(iteration)
-        except Exception:
-            logger.exception("Failed to build prediction cache")
-        _built = True
-    return _cache
+def get_prediction_cache(model_id: str | None = None) -> dict[str, dict]:
+    """Get the prediction cache for a model. Builds on first call per model (~30s)."""
+    from app.services.model_registry import get_registry
+    registry = get_registry()
+    iteration = registry.get(model_id)
+    mid = iteration.id
+
+    if mid in _built_models:
+        return _caches.get(mid, {})
+
+    with _lock:
+        # Double-check after acquiring lock
+        if mid not in _built_models:
+            try:
+                _caches[mid] = _build(iteration)
+            except Exception:
+                logger.exception("Failed to build prediction cache for model '%s'", mid)
+                _caches[mid] = {}
+            _built_models.add(mid)
+
+    return _caches.get(mid, {})

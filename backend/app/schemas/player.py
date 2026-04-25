@@ -56,6 +56,15 @@ class PlayerList(BaseModel):
     total: int
 
 
+class PredictionMeta(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    model_id: str | None = None
+    start_ktc_used: float | None = None
+    ppg_used: float | None = None
+    ppg_source: str | None = None
+    ktc_source: str | None = None
+
+
 class EOSPredictionResponse(BaseModel):
     model_config = {"protected_namespaces": ()}
 
@@ -72,6 +81,7 @@ class EOSPredictionResponse(BaseModel):
     anchor_year: int | None = None
     anchor_source: str | None = None
     baseline_year: int | None = None
+    prediction_meta: PredictionMeta | None = None
 
 
 class EOSPredictRequest(BaseModel):

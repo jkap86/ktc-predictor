@@ -24,6 +24,7 @@ async def list_players(
     limit: int = Query(50, ge=1, le=2000, description="Maximum number of results"),
     sort_by: str = Query("name", regex="^(name|ktc|predicted|change|ppg)$", description="Sort by field"),
     sort_order: str = Query("asc", regex="^(asc|desc)$", description="Sort order"),
+    model: Optional[str] = Query(None, description="Model iteration ID"),
 ):
     """Search and list players."""
     data_loader = get_data_loader()
@@ -76,7 +77,7 @@ async def list_players(
         })
 
     # Add cached predictions + projected PPG (precomputed at startup)
-    pred_cache = get_prediction_cache()
+    pred_cache = get_prediction_cache(model)
     for r in results:
         cached = pred_cache.get(r["player_id"])
         if cached:
@@ -109,11 +110,12 @@ async def list_players(
 
     results.sort(key=_sort_key)
 
+    total = len(results)
     results = results[:limit]
 
     return PlayerList(
         players=[PlayerSummary(**p) for p in results],
-        total=len(results),
+        total=total,
     )
 
 

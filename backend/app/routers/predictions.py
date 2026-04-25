@@ -177,11 +177,12 @@ def predict_eos(
 async def top_movers(
     limit: int = Query(20, ge=1, le=100),
     position: Optional[str] = Query(None),
+    model: Optional[str] = Query(None, description="Model iteration ID"),
 ):
     """Get players with the biggest predicted EOS changes (risers + fallers)."""
     data_loader = get_data_loader()
     players = data_loader.get_players()
-    pred_cache = get_prediction_cache()
+    pred_cache = get_prediction_cache(model)
 
     from app.services.ktc_utils import select_anchor_ktc
 

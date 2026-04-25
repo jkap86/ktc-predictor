@@ -102,14 +102,23 @@ if FRONTEND_DIR.is_dir():
     app.mount("/_next", StaticFiles(directory=FRONTEND_DIR / "_next"), name="next_static")
 
     # SPA catch-all: serve index.html for any non-API, non-static route
+    _FRONTEND_ROOT = FRONTEND_DIR.resolve()
+
     @app.get("/{full_path:path}")
     async def serve_frontend(request: Request, full_path: str):
+        # Path traversal protection: resolve and verify within frontend dir
+        try:
+            file_path = (FRONTEND_DIR / full_path).resolve()
+            if not str(file_path).startswith(str(_FRONTEND_ROOT)):
+                return {"message": "Not found"}
+        except (ValueError, OSError):
+            return {"message": "Not found"}
+
         # Try exact file first (e.g. /favicon.ico, /robots.txt)
-        file_path = FRONTEND_DIR / full_path
         if file_path.is_file():
             return FileResponse(file_path)
 
-        # Try directory with index.html (e.g. /player/123/ -> /player/[id]/index.html)
+        # Try directory with index.html
         index_path = file_path / "index.html"
         if index_path.is_file():
             return FileResponse(index_path)

@@ -205,15 +205,8 @@ async def predict_for_player(
     baseline_year = features["_baseline_year"]
     games = features["_baseline_games"]
     ppg = features["_baseline_ppg"]
-
-    # Determine anchor source
-    anchor = select_anchor_ktc(player.get("seasons", []))
-    live_ktc = None
-    try:
-        live_ktc = await get_latest_ktc(player_id)
-    except Exception:
-        pass
-    anchor_source = "live_db" if live_ktc and live_ktc > 0 else (anchor[2] if anchor else "unknown")
+    ppg_source = features.get("_ppg_source", "last_season")
+    ktc_source = features.get("_ktc_source", "unknown")
 
     feat = {k: v for k, v in features.items() if not k.startswith("_")}
 
@@ -226,8 +219,15 @@ async def predict_for_player(
     result["player_id"] = player_id
     result["name"] = player["name"]
     result["anchor_year"] = anchor_year
-    result["anchor_source"] = anchor_source
+    result["anchor_source"] = ktc_source
     result["baseline_year"] = baseline_year
+    result["prediction_meta"] = {
+        "model_id": iteration.id,
+        "start_ktc_used": result["start_ktc"],
+        "ppg_used": round(ppg, 1),
+        "ppg_source": ppg_source,
+        "ktc_source": ktc_source,
+    }
     return result
 
 
@@ -247,14 +247,16 @@ async def _compute_player_features(player_id: str, data_loader) -> dict | None:
     try:
         live_ktc = await get_latest_ktc(player_id)
     except Exception:
-        pass
+        logger.debug("Live KTC unavailable for %s", player_id)
 
     anchor = select_anchor_ktc(seasons)
     if live_ktc and live_ktc > 0:
         start_ktc = live_ktc
         anchor_year = anchor[1] if anchor else max(s["year"] for s in seasons)
+        ktc_source = "live_db"
     elif anchor:
         start_ktc, anchor_year, _ = anchor
+        ktc_source = "training_data"
     else:
         return None
 
@@ -265,6 +267,20 @@ async def _compute_player_features(player_id: str, data_loader) -> dict | None:
         (s for s in seasons if s["year"] == baseline_year), latest
     )
     age = baseline_season.get("age") or latest.get("age")
+
+    # Unify PPG source: prefer Sleeper projections (matches cache)
+    from app.services.sleeper import get_projections
+    baseline_gp = baseline_info[1] if baseline_info else 0
+    baseline_ppg = baseline_info[2] if baseline_info else 0.0
+    proj_ppg = get_projections().get(player_id)
+    if proj_ppg is not None:
+        ppg_used = proj_ppg
+        gp_used = 17
+        ppg_source = "projected"
+    else:
+        ppg_used = baseline_ppg
+        gp_used = baseline_gp
+        ppg_source = "last_season"
 
     prior_ref_year = anchor_year if anchor_year else (latest["year"] + 1)
     prior_end_ktc, max_ktc_prior, initial_ktc, min_ktc_prior = compute_prior_ktc_features(seasons, prior_ref_year)
@@ -316,14 +332,15 @@ async def _compute_player_features(player_id: str, data_loader) -> dict | None:
         "qb_ktc": latest.get("qb_ktc") if latest else None,
         "team_total_ktc": latest.get("team_total_ktc") if latest else None,
         "positional_competition": latest.get("positional_competition") if latest else None,
-        # projected_ppg: not in training data, passed by callers that have it
-        "projected_ppg": None,
+        "projected_ppg": proj_ppg,
         # Extra context for caller
         "_player": player,
         "_anchor_year": anchor_year,
         "_baseline_year": baseline_year,
-        "_baseline_games": baseline_info[1] if baseline_info else 0,
-        "_baseline_ppg": baseline_info[2] if baseline_info else 0.0,
+        "_baseline_games": gp_used,
+        "_baseline_ppg": ppg_used,
+        "_ppg_source": ppg_source,
+        "_ktc_source": ktc_source,
     }
 
 

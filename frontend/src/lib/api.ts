@@ -8,7 +8,7 @@ import type {
   HistoricalResponse,
 } from '../types/player';
 
-const API_BASE = '/api';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 // ── Simple in-memory cache ───────────────────────────────────────────────
@@ -82,7 +82,8 @@ export async function searchPlayers(
   position?: string,
   limit: number = 50,
   sortBy: 'name' | 'ktc' | 'predicted' | 'change' | 'ppg' = 'name',
-  sortOrder: 'asc' | 'desc' = 'asc'
+  sortOrder: 'asc' | 'desc' = 'asc',
+  modelId?: string | null,
 ): Promise<PlayerList> {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
@@ -90,6 +91,7 @@ export async function searchPlayers(
   params.set('limit', limit.toString());
   params.set('sort_by', sortBy);
   params.set('sort_order', sortOrder);
+  if (modelId) params.set('model', modelId);
 
   const key = `search:${params}`;
   const cached = getCached<PlayerList>(key);
@@ -195,13 +197,14 @@ export interface TopMover {
   predicted_pct_change: number;
 }
 
-export async function getTopMovers(limit: number = 10): Promise<{ risers: TopMover[]; fallers: TopMover[] } | null> {
-  const key = `movers:${limit}`;
+export async function getTopMovers(limit: number = 10, modelId?: string | null): Promise<{ risers: TopMover[]; fallers: TopMover[] } | null> {
+  const key = `movers:${limit}:${modelId ?? 'default'}`;
   const cached = getCached<{ risers: TopMover[]; fallers: TopMover[] }>(key);
   if (cached) return cached;
 
   try {
-    const result = await fetchApi<{ risers: TopMover[]; fallers: TopMover[] }>(`/top-movers?limit=${limit}`);
+    const mp = modelParam(modelId);
+    const result = await fetchApi<{ risers: TopMover[]; fallers: TopMover[] }>(`/top-movers?limit=${limit}${mp ? '&' + mp : ''}`);
     setCache(key, result);
     return result;
   } catch {
