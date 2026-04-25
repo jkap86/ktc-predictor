@@ -9,6 +9,7 @@ import WhatIfChart from '../components/WhatIfChart';
 import PlayerComps from '../components/PlayerComps';
 import HistoricalAccuracy from '../components/HistoricalAccuracy';
 import TopMovers from '../components/TopMovers';
+import ModelInsights from '../components/ModelInsights';
 import { ConfidenceBand, PredictionStats, SeasonRow, PlayerHeader } from '../components/PlayerCards';
 import { EditablePpg } from '../components/EditablePpg';
 import type { Player, PlayerSummary, EOSPrediction } from '../types/player';
@@ -446,7 +447,12 @@ function HomeContent() {
       )}
 
       {/* Show TopMovers only when no player is selected */}
-      {!hasAnySelected && <TopMovers onSelect={(id) => setPrimaryId(id)} />}
+      {!hasAnySelected && (
+        <>
+          <TopMovers onSelect={(id) => setPrimaryId(id)} />
+          <ModelInsights />
+        </>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════
           Player detail sections (shown when at least one player selected)

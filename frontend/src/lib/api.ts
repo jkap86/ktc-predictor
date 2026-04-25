@@ -263,3 +263,32 @@ export async function getHistorical(playerId: string): Promise<HistoricalRespons
   setCache(key, result);
   return result;
 }
+
+export interface ModelDiagnostics {
+  model_id: string;
+  metrics: Record<string, { mae: number; r2: number; n_train: number; n_test: number }>;
+  diagnostics: {
+    positions: Record<string, {
+      n: number;
+      mae: number;
+      bias: number;
+      tiers: Record<string, { n: number; mae: number; bias: number }>;
+    }>;
+  };
+}
+
+export async function getModelDiagnostics(modelId?: string | null): Promise<ModelDiagnostics | null> {
+  const mp = modelParam(modelId);
+  const qs = mp ? `?${mp}` : '';
+  const key = `diag:${modelId ?? 'default'}`;
+  const cached = getCached<ModelDiagnostics | null>(key);
+  if (cached !== undefined) return cached;
+
+  try {
+    const result = await fetchApi<ModelDiagnostics>(`/models/diagnostics${qs}`);
+    setCache(key, result);
+    return result;
+  } catch {
+    return null;
+  }
+}
