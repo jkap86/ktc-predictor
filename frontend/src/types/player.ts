@@ -39,6 +39,14 @@ export interface Player {
   live_ktc?: number;
 }
 
+export interface PredictionMeta {
+  model_id?: string | null;
+  start_ktc_used?: number | null;
+  ppg_used?: number | null;
+  ppg_source?: string | null;
+  ktc_source?: string | null;
+}
+
 export interface PlayerSummary {
   player_id: string;
   name: string;
@@ -46,6 +54,9 @@ export interface PlayerSummary {
   latest_ktc: number | null;
   ppg?: number | null;
   predicted_end_ktc?: number | null;
+  predicted_delta_ktc?: number | null;
+  predicted_pct_change?: number | null;
+  prediction_meta?: PredictionMeta | null;
 }
 
 export interface PlayerList {
@@ -67,6 +78,7 @@ export interface EOSPrediction {
   anchor_year?: number;
   anchor_source?: string;
   baseline_year?: number;
+  prediction_meta?: PredictionMeta | null;
 }
 
 export interface EOSPredictRequest {

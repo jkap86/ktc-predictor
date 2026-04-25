@@ -184,8 +184,6 @@ async def top_movers(
     players = data_loader.get_players()
     pred_cache = get_prediction_cache(model)
 
-    from app.services.ktc_utils import select_anchor_ktc
-
     valid_positions = {"QB", "RB", "WR", "TE"}
     results = []
     for player in players:
@@ -199,10 +197,8 @@ async def top_movers(
         if not cached:
             continue
 
-        # Get start_ktc from training data
-        seasons = player.get("seasons", [])
-        anchor = select_anchor_ktc(seasons) if seasons else None
-        start_ktc = anchor[0] if anchor else None
+        # Use the same start_ktc that the prediction was generated from
+        start_ktc = cached.get("start_ktc_used")
         if not start_ktc:
             continue
 
@@ -210,10 +206,14 @@ async def top_movers(
             "player_id": pid,
             "name": player["name"],
             "position": player["position"],
-            "start_ktc": round(start_ktc, 1),
+            "start_ktc": start_ktc,
             "predicted_end_ktc": cached["predicted_end_ktc"],
             "predicted_delta_ktc": cached["predicted_delta_ktc"],
             "predicted_pct_change": cached["predicted_pct_change"],
+            "ppg_used": cached.get("ppg_used"),
+            "ppg_source": cached.get("ppg_source"),
+            "ktc_source": cached.get("ktc_source"),
+            "model_id": cached.get("model_id"),
         })
 
     results.sort(key=lambda r: r["predicted_delta_ktc"], reverse=True)

@@ -83,7 +83,7 @@ async def list_players(
             "ppg": ppg,
         })
 
-    # Add cached predictions + projected PPG (precomputed at startup)
+    # Add cached predictions + metadata
     pred_cache = get_prediction_cache(model)
     for r in results:
         cached = pred_cache.get(r["player_id"])
@@ -91,13 +91,13 @@ async def list_players(
             r["predicted_end_ktc"] = cached["predicted_end_ktc"]
             r["predicted_delta_ktc"] = cached.get("predicted_delta_ktc")
             r["predicted_pct_change"] = cached.get("predicted_pct_change")
-            # Use projected PPG (from Sleeper) if available, over last-season
-            if cached.get("projected_ppg") is not None:
-                r["ppg"] = cached["projected_ppg"]
+            # Use the PPG that was used for prediction
+            if cached.get("ppg_used") is not None:
+                r["ppg"] = cached["ppg_used"]
             r["prediction_meta"] = {
                 "model_id": cached.get("model_id"),
                 "start_ktc_used": cached.get("start_ktc_used"),
-                "ppg_used": cached.get("projected_ppg"),
+                "ppg_used": cached.get("ppg_used"),
                 "ppg_source": cached.get("ppg_source"),
                 "ktc_source": cached.get("ktc_source"),
             }

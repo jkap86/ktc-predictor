@@ -6,6 +6,7 @@ Uses the same build_prediction_inputs() as detail/what-if paths for consistency.
 
 import asyncio
 import logging
+import os
 import threading
 import time
 
@@ -15,8 +16,10 @@ from app.services.sleeper import get_projections
 
 logger = logging.getLogger(__name__)
 
+CACHE_TTL_SECONDS = int(os.environ.get("KTC_CACHE_TTL", "900"))  # 15 min default
+
 _caches: dict[str, dict[str, dict]] = {}
-_built_models: set[str] = set()
+_built_at: dict[str, float] = {}
 _lock = threading.Lock()
 
 
@@ -83,7 +86,7 @@ def _build(iteration) -> dict[str, dict]:
                 "predicted_end_ktc": round(pred["predicted_end_ktc"], 1),
                 "predicted_delta_ktc": round(pred["predicted_delta_ktc"], 1),
                 "predicted_pct_change": round(pred["predicted_pct_change"], 1),
-                "projected_ppg": round(ppg, 1),
+                "ppg_used": round(ppg, 1),
                 "ppg_source": ppg_source,
                 "model_id": iteration.id,
                 "start_ktc_used": round(features["start_ktc"], 1),
@@ -98,22 +101,33 @@ def _build(iteration) -> dict[str, dict]:
 
 
 def get_prediction_cache(model_id: str | None = None) -> dict[str, dict]:
-    """Get the prediction cache for a model. Builds on first call per model (~30s)."""
+    """Get the prediction cache for a model. Builds on first call per model (~30s).
+
+    Rebuilds automatically after CACHE_TTL_SECONDS to pick up live KTC changes.
+    """
     from app.services.model_registry import get_registry
     registry = get_registry()
     iteration = registry.get(model_id)
     mid = iteration.id
 
-    if mid in _built_models:
+    now = time.time()
+    built_time = _built_at.get(mid, 0)
+    is_stale = (now - built_time) > CACHE_TTL_SECONDS if built_time else True
+
+    if mid in _built_at and not is_stale:
         return _caches.get(mid, {})
 
     with _lock:
-        if mid not in _built_models:
+        # Double-check after acquiring lock
+        built_time = _built_at.get(mid, 0)
+        is_stale = (now - built_time) > CACHE_TTL_SECONDS if built_time else True
+        if is_stale:
             try:
                 _caches[mid] = _build(iteration)
             except Exception:
                 logger.exception("Failed to build prediction cache for model '%s'", mid)
-                _caches[mid] = {}
-            _built_models.add(mid)
+                if mid not in _caches:
+                    _caches[mid] = {}
+            _built_at[mid] = time.time()
 
     return _caches.get(mid, {})

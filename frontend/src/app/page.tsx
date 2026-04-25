@@ -179,10 +179,12 @@ function HomeContent() {
         const player = await getPlayer(primaryId);
         const prediction = await getPrediction(primaryId, selectedModelId);
         setPrimary({ player, prediction });
-        // Initialize What-If PPG: use override > search result projected PPG > last-season PPG
+        // Initialize What-If PPG: override > prediction metadata > search > last-season
         const overridePpgVal = ppgOverrides.get(primaryId);
         if (overridePpgVal !== undefined) {
           setWhatIfPpg(overridePpgVal);
+        } else if (prediction?.prediction_meta?.ppg_used != null) {
+          setWhatIfPpg(prediction.prediction_meta.ppg_used);
         } else {
           const searchEntry = searchResults.find(p => p.player_id === primaryId);
           if (searchEntry?.ppg != null) {
@@ -208,10 +210,12 @@ function HomeContent() {
         const player = await getPlayer(compareId);
         const prediction = await getPrediction(compareId, selectedModelId);
         setCompare({ player, prediction });
-        // Initialize compare PPG from override > search projected > last-season
+        // Initialize compare PPG from override > prediction metadata > search > last-season
         const cOverride = ppgOverrides.get(compareId);
         if (cOverride !== undefined) {
           setCompareWhatIfPpg(cOverride);
+        } else if (prediction?.prediction_meta?.ppg_used != null) {
+          setCompareWhatIfPpg(prediction.prediction_meta.ppg_used);
         } else {
           const searchEntry = searchResults.find(p => p.player_id === compareId);
           if (searchEntry?.ppg != null) {

@@ -10,9 +10,10 @@ os.environ.pop("DATABASE_URL", None)
 
 
 @pytest.fixture(autouse=True)
-def mock_db():
-    """Mock all DB calls so tests don't need a running postgres."""
+def mock_external():
+    """Mock DB and Sleeper API so tests are fast and deterministic."""
     with patch("app.services.ktc_db.get_pool", new_callable=AsyncMock, side_effect=RuntimeError("DATABASE_URL not set")):
         with patch("app.services.ktc_db.get_latest_ktc", new_callable=AsyncMock, return_value=None):
             with patch("app.services.ktc_db.get_latest_ktc_batch", new_callable=AsyncMock, return_value={}):
-                yield
+                with patch("app.services.sleeper.fetch_projections", return_value={}):
+                    yield

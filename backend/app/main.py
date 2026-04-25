@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -111,7 +111,7 @@ if FRONTEND_DIR.is_dir():
             file_path = (FRONTEND_DIR / full_path).resolve()
             file_path.relative_to(_FRONTEND_ROOT)
         except (ValueError, OSError):
-            return {"message": "Not found"}
+            raise HTTPException(status_code=404, detail="Not found")
 
         # Try exact file first (e.g. /favicon.ico, /robots.txt)
         if file_path.is_file():
