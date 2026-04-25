@@ -31,7 +31,10 @@ export function ModelProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function fetchModels() {
       try {
-        const response = await fetch('/api/models');
+        const apiBase = process.env.NEXT_PUBLIC_API_URL
+          ? `${process.env.NEXT_PUBLIC_API_URL}/api`
+          : '/api';
+        const response = await fetch(`${apiBase}/models`);
         if (!response.ok) throw new Error('Failed to fetch models');
         const data: ModelsListResponse = await response.json();
         setModels(data.models);

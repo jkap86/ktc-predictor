@@ -8,7 +8,8 @@ import type {
   HistoricalResponse,
 } from '../types/player';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api';
+const _URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE = _URL ? `${_URL}/api` : '/api';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 // ── Simple in-memory cache ───────────────────────────────────────────────

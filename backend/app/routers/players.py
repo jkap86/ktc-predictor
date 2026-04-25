@@ -27,6 +27,13 @@ async def list_players(
     model: Optional[str] = Query(None, description="Model iteration ID"),
 ):
     """Search and list players."""
+    if model:
+        from app.services.model_registry import get_registry
+        try:
+            get_registry().get(model)
+        except KeyError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     data_loader = get_data_loader()
     players = data_loader.get_players()
 
@@ -82,9 +89,18 @@ async def list_players(
         cached = pred_cache.get(r["player_id"])
         if cached:
             r["predicted_end_ktc"] = cached["predicted_end_ktc"]
+            r["predicted_delta_ktc"] = cached.get("predicted_delta_ktc")
+            r["predicted_pct_change"] = cached.get("predicted_pct_change")
             # Use projected PPG (from Sleeper) if available, over last-season
             if cached.get("projected_ppg") is not None:
                 r["ppg"] = cached["projected_ppg"]
+            r["prediction_meta"] = {
+                "model_id": cached.get("model_id"),
+                "start_ktc_used": cached.get("start_ktc_used"),
+                "ppg_used": cached.get("projected_ppg"),
+                "ppg_source": cached.get("ppg_source"),
+                "ktc_source": cached.get("ktc_source"),
+            }
 
     desc = sort_order == "desc"
     sign = -1 if desc else 1

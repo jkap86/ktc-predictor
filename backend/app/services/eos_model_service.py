@@ -231,23 +231,33 @@ async def predict_for_player(
     return result
 
 
-async def _compute_player_features(player_id: str, data_loader) -> dict | None:
-    """Compute all model features for a player. Returns a kwargs dict for predict_from_inputs,
-    or None if insufficient data. The returned dict omits games_played and ppg so the caller
-    can supply scenario overrides."""
-    player = data_loader.get_player_by_id(player_id)
-    if not player:
-        return None
+def build_prediction_inputs(
+    player: dict,
+    live_ktc: float | None = None,
+    projected_ppg_map: dict[str, float] | None = None,
+) -> dict | None:
+    """Shared sync builder for prediction inputs. Used by cache, detail, and what-if paths.
 
+    Returns a kwargs dict for predict_from_inputs with metadata in underscore-prefixed keys,
+    or None if insufficient data.
+
+    Parameters
+    ----------
+    player : dict
+        Player dict with seasons, player_id, name, position.
+    live_ktc : float | None
+        Pre-fetched live KTC value from DB. If None, falls back to training data.
+    projected_ppg_map : dict | None
+        Sleeper projections map. If None, fetches via get_projections().
+    """
+    player_id = player["player_id"]
     seasons = player.get("seasons", [])
     if not seasons:
         return None
 
-    live_ktc = None
-    try:
-        live_ktc = await get_latest_ktc(player_id)
-    except Exception:
-        logger.debug("Live KTC unavailable for %s", player_id)
+    if projected_ppg_map is None:
+        from app.services.sleeper import get_projections
+        projected_ppg_map = get_projections()
 
     anchor = select_anchor_ktc(seasons)
     if live_ktc and live_ktc > 0:
@@ -268,11 +278,10 @@ async def _compute_player_features(player_id: str, data_loader) -> dict | None:
     )
     age = baseline_season.get("age") or latest.get("age")
 
-    # Unify PPG source: prefer Sleeper projections (matches cache)
-    from app.services.sleeper import get_projections
+    # Unify PPG source: prefer Sleeper projections
     baseline_gp = baseline_info[1] if baseline_info else 0
     baseline_ppg = baseline_info[2] if baseline_info else 0.0
-    proj_ppg = get_projections().get(player_id)
+    proj_ppg = projected_ppg_map.get(player_id)
     if proj_ppg is not None:
         ppg_used = proj_ppg
         gp_used = 17
@@ -342,6 +351,21 @@ async def _compute_player_features(player_id: str, data_loader) -> dict | None:
         "_ppg_source": ppg_source,
         "_ktc_source": ktc_source,
     }
+
+
+async def _compute_player_features(player_id: str, data_loader) -> dict | None:
+    """Async wrapper around build_prediction_inputs that fetches live KTC from DB."""
+    player = data_loader.get_player_by_id(player_id)
+    if not player:
+        return None
+
+    live_ktc = None
+    try:
+        live_ktc = await get_latest_ktc(player_id)
+    except Exception:
+        logger.debug("Live KTC unavailable for %s", player_id)
+
+    return build_prediction_inputs(player, live_ktc=live_ktc)
 
 
 async def predict_for_player_whatif(

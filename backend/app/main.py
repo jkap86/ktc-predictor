@@ -109,8 +109,7 @@ if FRONTEND_DIR.is_dir():
         # Path traversal protection: resolve and verify within frontend dir
         try:
             file_path = (FRONTEND_DIR / full_path).resolve()
-            if not str(file_path).startswith(str(_FRONTEND_ROOT)):
-                return {"message": "Not found"}
+            file_path.relative_to(_FRONTEND_ROOT)
         except (ValueError, OSError):
             return {"message": "Not found"}
 

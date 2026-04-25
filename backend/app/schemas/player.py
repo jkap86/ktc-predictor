@@ -42,20 +42,6 @@ class Player(BaseModel):
     live_ktc: float | None = None
 
 
-class PlayerSummary(BaseModel):
-    player_id: str
-    name: str
-    position: str
-    latest_ktc: Optional[float] = None
-    ppg: Optional[float] = None
-    predicted_end_ktc: Optional[float] = None
-
-
-class PlayerList(BaseModel):
-    players: list[PlayerSummary]
-    total: int
-
-
 class PredictionMeta(BaseModel):
     model_config = {"protected_namespaces": ()}
     model_id: str | None = None
@@ -63,6 +49,24 @@ class PredictionMeta(BaseModel):
     ppg_used: float | None = None
     ppg_source: str | None = None
     ktc_source: str | None = None
+
+
+class PlayerSummary(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    player_id: str
+    name: str
+    position: str
+    latest_ktc: Optional[float] = None
+    ppg: Optional[float] = None
+    predicted_end_ktc: Optional[float] = None
+    predicted_delta_ktc: Optional[float] = None
+    predicted_pct_change: Optional[float] = None
+    prediction_meta: PredictionMeta | None = None
+
+
+class PlayerList(BaseModel):
+    players: list[PlayerSummary]
+    total: int
 
 
 class EOSPredictionResponse(BaseModel):

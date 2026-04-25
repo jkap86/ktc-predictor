@@ -74,11 +74,9 @@ async def predict_player_whatif_batch(
                 predictions.append(EOSPredictionResponse(**result))
             else:
                 raise ValueError("Player not found")
-        except Exception:
-            predictions.append(EOSPredictionResponse(
-                position=features.get("position", "QB"), start_ktc=0,
-                predicted_end_ktc=0, predicted_delta_ktc=0, predicted_pct_change=0,
-            ))
+        except Exception as e:
+            logger.warning("What-if prediction failed for %s ppg=%.1f: %s", player_id, ppg, e)
+            raise HTTPException(status_code=500, detail=f"Prediction failed for ppg={ppg}")
 
     return EOSBatchResponse(predictions=predictions, model_version=iteration.id)
 
@@ -127,14 +125,9 @@ def predict_eos_batch(
                 years_remaining=request.years_remaining,
             )
             predictions.append(EOSPredictionResponse(**result))
-        except Exception:
-            predictions.append(EOSPredictionResponse(
-                position=request.position,
-                start_ktc=request.start_ktc,
-                predicted_end_ktc=0,
-                predicted_delta_ktc=0,
-                predicted_pct_change=0,
-            ))
+        except Exception as e:
+            logger.warning("Batch EOS prediction failed for ppg=%.1f: %s", ppg, e)
+            raise HTTPException(status_code=500, detail=f"Prediction failed for ppg={ppg}")
 
     return EOSBatchResponse(
         predictions=predictions,
@@ -180,6 +173,13 @@ async def top_movers(
     model: Optional[str] = Query(None, description="Model iteration ID"),
 ):
     """Get players with the biggest predicted EOS changes (risers + fallers)."""
+    if model:
+        from app.services.model_registry import get_registry
+        try:
+            get_registry().get(model)
+        except KeyError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     data_loader = get_data_loader()
     players = data_loader.get_players()
     pred_cache = get_prediction_cache(model)
