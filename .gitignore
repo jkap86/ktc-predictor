@@ -44,3 +44,4 @@ backend/data/pff-grades-*.json
 
 # Claude
 .claude/
+catboost_info/

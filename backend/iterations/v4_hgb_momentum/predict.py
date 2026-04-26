@@ -95,6 +95,9 @@ _TRAJECTORY_FEATURES = [
 _TEAM_FEATURES = ["qb_ktc", "team_total_ktc", "positional_competition"]
 _POSITIONS_WITH_TEAM_FEATURES = {"WR"}
 
+_MARKET_FEATURES = ["preseason_ktc_slope", "position_rank_at_start", "has_market_data"]
+_POSITIONS_WITH_MARKET_FEATURES = {"TE"}
+
 
 def get_expected_features(position: str) -> list[str]:
     """Get the expected feature list for v4 for a given position."""
@@ -119,6 +122,8 @@ def get_expected_features(position: str) -> list[str]:
         extras.extend(_TRAJECTORY_FEATURES)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         extras.extend(_TEAM_FEATURES)
+    if position in _POSITIONS_WITH_MARKET_FEATURES:
+        extras.extend(_MARKET_FEATURES)
     if not extras:
         return base
     return base + extras
@@ -214,6 +219,9 @@ def predict_end_ktc(
     qb_ktc: float | None = None,
     team_total_ktc: float | None = None,
     positional_competition: float | None = None,
+    # v4 pre-season market features (QB/TE only)
+    preseason_ktc_slope: float | None = None,
+    position_rank_at_start: float | None = None,
     sentinel_impute: dict | None = None,
     residual_correction: dict | None = None,
     target_type: str | dict = "log_ratio",
@@ -381,21 +389,61 @@ def predict_end_ktc(
             positional_competition if positional_competition is not None else np.nan,
         ])
 
+    # v4 pre-season market features (QB/TE only)
+    if position in _POSITIONS_WITH_MARKET_FEATURES:
+        has_market = 1 if preseason_ktc_slope is not None else 0
+        linear_features.extend([
+            preseason_ktc_slope if preseason_ktc_slope is not None else np.nan,
+            position_rank_at_start if position_rank_at_start is not None else np.nan,
+            has_market,
+        ])
+
     X = np.array([core_features + linear_features])
 
     raw_pred_log_ratio = float(model.predict(X)[0])
     pred_log_ratio = raw_pred_log_ratio
 
     # Tier-aware calibration (corrects systematic bias per KTC tier)
+    # Tries age-tier calibrators first, then falls back to plain tier cal.
     pos_calibrators = calibrators.get(position, {}) if calibrators else {}
     if pos_calibrators:
         from iterations.v1_hgb_baseline.train import _ktc_tier_key
-        tkey = _ktc_tier_key(start_ktc)
-        tier_cal = pos_calibrators.get(tkey) if tkey else None
-        if tier_cal is not None:
-            calibrated = float(tier_cal.predict([pred_log_ratio])[0])
-            if not np.isnan(calibrated):
-                pred_log_ratio = calibrated
+        applied = False
+
+        # RB young-tier calibrators (age <= 24)
+        if position == "RB" and age is not None and age <= 24:
+            for tlo, thi in [(0, 3000), (2000, 5000), (5000, 99999)]:
+                if start_ktc >= tlo and start_ktc < thi:
+                    akey = f"young_tier_{tlo}_{thi}"
+                    acal = pos_calibrators.get(akey)
+                    if acal is not None:
+                        calibrated = float(acal.predict([pred_log_ratio])[0])
+                        if not np.isnan(calibrated):
+                            pred_log_ratio = calibrated
+                            applied = True
+                    break
+
+        # WR aging-tier calibrators (age 27-30)
+        if not applied and position == "WR" and age is not None and 27 <= age <= 30:
+            for tlo, thi in [(2000, 6000), (6000, 99999)]:
+                if start_ktc >= tlo and start_ktc < thi:
+                    akey = f"aging_tier_{tlo}_{thi}"
+                    acal = pos_calibrators.get(akey)
+                    if acal is not None:
+                        calibrated = float(acal.predict([pred_log_ratio])[0])
+                        if not np.isnan(calibrated):
+                            pred_log_ratio = calibrated
+                            applied = True
+                    break
+
+        # Fallback: plain tier calibrator
+        if not applied:
+            tkey = _ktc_tier_key(start_ktc)
+            tier_cal = pos_calibrators.get(tkey) if tkey else None
+            if tier_cal is not None:
+                calibrated = float(tier_cal.predict([pred_log_ratio])[0])
+                if not np.isnan(calibrated):
+                    pred_log_ratio = calibrated
 
     # KNN elite adjustment
     if knn_adjuster is not None:

@@ -241,6 +241,33 @@ def _build_weekly_snapshot_df_v4(zip_path: str, json_name: str = "training-data.
         lambda r: 1 if trajectory_feats.get((r["player_id"], r["year"])) else 0, axis=1
     )
 
+    # Pre-season market features (from daily KTC DB data)
+    # These are season-level fields populated by scripts/populate_ktc_market_features.py
+    market_feats = {}
+    for player in data["players"]:
+        pid = player["player_id"]
+        for season in player.get("seasons", []):
+            mf = {}
+            for key in _MARKET_FEATURES:
+                v = season.get(key)
+                if v is not None:
+                    mf[key] = float(v)
+            if mf:
+                market_feats[(pid, season["year"])] = mf
+
+    n_market = len(market_feats)
+    if n_market > 0:
+        print(f"  Pre-season market features loaded for {n_market} player-seasons")
+
+    for col in _MARKET_FEATURES:
+        df[col] = df.apply(
+            lambda r, c=col: market_feats.get((r["player_id"], r["year"]), {}).get(c),
+            axis=1,
+        )
+    df["has_market_data"] = df.apply(
+        lambda r: 1 if market_feats.get((r["player_id"], r["year"])) else 0, axis=1
+    )
+
     return df
 
 
@@ -265,6 +292,18 @@ _TRAJECTORY_FEATURES = [
     "prior_2yr_end_ktc",
     "has_career_trajectory",
 ]
+
+# Pre-season market features (from daily KTC DB data)
+# preseason_ktc_slope: linear regression slope of log(KTC) over 60-day offseason (QB -19 MAE)
+# position_rank_at_start: positional rank at season start (QB -12, TE -6)
+_MARKET_FEATURES = [
+    "preseason_ktc_slope",
+    "position_rank_at_start",
+    "has_market_data",
+]
+# TE benefits consistently from these features across all splits (-4 to -40 MAE).
+# QB shows high variance (+42 on one split despite -28 on another) — too unreliable.
+_POSITIONS_WITH_MARKET_FEATURES = {"TE"}
 
 # Position-specific prior-season stat features (volume + efficiency)
 _POSITION_STAT_FEATURES = {
@@ -315,6 +354,11 @@ def _v4_get_features_for_position(position: str) -> list[str]:
     # Team context (WR only)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         extras.extend(_TEAM_FEATURES)
+    # Pre-season market features (QB/TE only)
+    # Disabled: raw 5-seed ensemble shows QB -8, TE -13 across random splits,
+    # but production holdout (seed=42) regresses. Needs more DB coverage or seasons.
+    # if position in _POSITIONS_WITH_MARKET_FEATURES:
+    #     extras.extend(_MARKET_FEATURES)
     if not extras:
         return base
     return base + extras
@@ -347,6 +391,9 @@ def _v4_build_monotonic_constraints(position: str) -> list[int]:
         n_new += len(_TRAJECTORY_FEATURES)
     if position in _POSITIONS_WITH_TEAM_FEATURES:
         n_new += len(_TEAM_FEATURES)
+    # Market features disabled — keep constraint builder in sync
+    # if position in _POSITIONS_WITH_MARKET_FEATURES:
+    #     n_new += len(_MARKET_FEATURES)
     if n_new == 0:
         return base
     return base + [0] * n_new
@@ -396,6 +443,7 @@ def _v4_monotonic_smoke_test(model, position: str) -> bool:
         # v4 team features (WR only)
         if position in _POSITIONS_WITH_TEAM_FEATURES:
             row.extend([5000, 30000, 3000])  # qb_ktc, team_total, positional_comp
+        # v4 market features disabled
         X_test.append(row)
 
     X_test = np.array(X_test)

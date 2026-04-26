@@ -209,11 +209,12 @@ KTC_TIER_BUCKETS = [(0, 2000), (2000, 4000), (4000, 6000), (6000, 99999)]
 KTC_TIER_MIN_SAMPLES = 30
 # Per-position tier overrides: only calibrate tiers with clear systematic bias.
 KTC_TIER_POSITION_OVERRIDES = {
-    # RB: calibrate mid and high tiers to fix negative bias in elite RBs
-    "RB": [(2000, 4000), (4000, 6000), (6000, 99999)],
-    # QB: low tier has negative bias (-212)
+    # RB: all tiers including low tier (cheap RBs breaking out are underpredicted)
+    "RB": [(0, 2000), (2000, 4000), (4000, 6000), (6000, 99999)],
+    # QB: all tiers
     "QB": [(0, 2000), (2000, 4000), (4000, 6000), (6000, 99999)],
     # TE/WR: use all tiers (default) — elite bias needs correction
+    # WR: use all tiers (default)
 }
 
 # Ensemble configuration: train multiple models with different seeds for variance reduction
@@ -1081,9 +1082,12 @@ def train_all(
                 tier_mask = (start_ktc_train_vals >= tlo) & (start_ktc_train_vals < thi) & valid_oof
                 if tier_mask.sum() >= KTC_TIER_MIN_SAMPLES:
                     # Position-specific identity strength for tier calibration.
-                    # Lower = stronger correction. RB/TE need more correction.
+                    # Lower = stronger correction.
+                    # Lower = stronger correction.
                     if pos == "TE" and tlo >= 6000:
-                        id_str = 1.0  # TE 6K+ has consistent +600 overprediction
+                        id_str = 0.5  # TE 6K+ has severe overprediction
+                    elif pos == "RB" and tlo < 2000:
+                        id_str = 1.5  # RB <2K underpredicts breakout cheap RBs
                     elif pos in ("RB", "TE"):
                         id_str = 2.0
                     else:
@@ -1092,14 +1096,25 @@ def train_all(
                     tier_cal.fit(oof_preds_pos[tier_mask], y_train[tier_mask])
                     calibrator_dict[tkey] = tier_cal
 
-            # RB age-tier interaction calibrators: young high-value RBs
-            # have persistent negative bias that tier-only cal can't fix.
+            # Age-tier interaction calibrators for positions with age-related bias.
+            age_train_vals = pos_df.iloc[train_idx]["age"].values
+            age_test_vals = pos_df.iloc[test_idx]["age"].values
+
+            # RB: young high-value RBs have persistent negative bias
             if pos == "RB":
-                age_train_vals = pos_df.iloc[train_idx]["age"].values
-                age_test_vals = pos_df.iloc[test_idx]["age"].values
-                for tlo, thi in [(2000, 5000), (5000, 99999)]:
+                for tlo, thi in [(0, 3000), (2000, 5000), (5000, 99999)]:
                     akey = f"young_tier_{tlo}_{thi}"
                     mask = (age_train_vals <= 24) & (start_ktc_train_vals >= tlo) & (start_ktc_train_vals < thi) & valid_oof
+                    if mask.sum() >= 25:
+                        age_tier_cal = MonotoneLinearCalibrator(min_slope=0.01, identity_strength=1.5)
+                        age_tier_cal.fit(oof_preds_pos[mask], y_train[mask])
+                        calibrator_dict[akey] = age_tier_cal
+
+            # WR: aging WRs (27-30) have +330 overprediction bias
+            if pos == "WR":
+                for tlo, thi in [(2000, 6000), (6000, 99999)]:
+                    akey = f"aging_tier_{tlo}_{thi}"
+                    mask = (age_train_vals >= 27) & (age_train_vals <= 30) & (start_ktc_train_vals >= tlo) & (start_ktc_train_vals < thi) & valid_oof
                     if mask.sum() >= 25:
                         age_tier_cal = MonotoneLinearCalibrator(min_slope=0.01, identity_strength=1.5)
                         age_tier_cal.fit(oof_preds_pos[mask], y_train[mask])
@@ -1108,20 +1123,32 @@ def train_all(
             # Apply tier calibration to test predictions
             test_preds_tier = test_preds.copy()
             for i in range(len(test_preds)):
-                # Try age-tier cal first (RB only), fall back to tier cal
+                # Try age-tier cal first, fall back to tier cal
                 applied = False
-                if pos == "RB":
-                    age_val = pos_df.iloc[test_idx[i]]["age"]
-                    if age_val <= 24:
-                        for tlo, thi in [(2000, 5000), (5000, 99999)]:
-                            if start_ktc_test_vals[i] >= tlo and start_ktc_test_vals[i] < thi:
-                                akey = f"young_tier_{tlo}_{thi}"
-                                if akey in calibrator_dict:
-                                    calibrated = float(calibrator_dict[akey].predict([test_preds[i]])[0])
-                                    if not np.isnan(calibrated):
-                                        test_preds_tier[i] = calibrated
-                                        applied = True
-                                break
+                age_val = pos_df.iloc[test_idx[i]]["age"]
+
+                if pos == "RB" and age_val <= 24:
+                    for tlo, thi in [(0, 3000), (2000, 5000), (5000, 99999)]:
+                        if start_ktc_test_vals[i] >= tlo and start_ktc_test_vals[i] < thi:
+                            akey = f"young_tier_{tlo}_{thi}"
+                            if akey in calibrator_dict:
+                                calibrated = float(calibrator_dict[akey].predict([test_preds[i]])[0])
+                                if not np.isnan(calibrated):
+                                    test_preds_tier[i] = calibrated
+                                    applied = True
+                            break
+
+                if not applied and pos == "WR" and 27 <= age_val <= 30:
+                    for tlo, thi in [(2000, 6000), (6000, 99999)]:
+                        if start_ktc_test_vals[i] >= tlo and start_ktc_test_vals[i] < thi:
+                            akey = f"aging_tier_{tlo}_{thi}"
+                            if akey in calibrator_dict:
+                                calibrated = float(calibrator_dict[akey].predict([test_preds[i]])[0])
+                                if not np.isnan(calibrated):
+                                    test_preds_tier[i] = calibrated
+                                    applied = True
+                            break
+
                 if not applied:
                     tkey = _ktc_tier_key(start_ktc_test_vals[i])
                     if tkey and tkey in calibrator_dict:
