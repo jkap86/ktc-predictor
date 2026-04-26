@@ -96,7 +96,7 @@ _TEAM_FEATURES = ["qb_ktc", "team_total_ktc", "positional_competition"]
 _POSITIONS_WITH_TEAM_FEATURES = {"WR"}
 
 _MARKET_FEATURES = ["preseason_ktc_slope", "position_rank_at_start", "has_market_data"]
-_POSITIONS_WITH_MARKET_FEATURES = {"TE"}
+_POSITIONS_WITH_MARKET_FEATURES: set[str] = set()  # disabled — see train.py
 
 
 def get_expected_features(position: str) -> list[str]:

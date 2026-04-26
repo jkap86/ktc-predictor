@@ -225,9 +225,9 @@ POSITION_HYPERPARAMS = {
     "QB": {"max_depth": 7, "learning_rate": 0.028, "n_estimators": 350,
             "loss": "absolute_error", "min_samples_leaf": 50,
             "l2_regularization": 0.0014, "max_leaf_nodes": 55},
-    "RB": {"max_depth": 4, "learning_rate": 0.02, "n_estimators": 500,
+    "RB": {"max_depth": 6, "learning_rate": 0.02, "n_estimators": 500,
             "loss": "absolute_error", "min_samples_leaf": 10,
-            "l2_regularization": 2.5, "max_leaf_nodes": 40},
+            "l2_regularization": 0.5, "max_leaf_nodes": 60},
     "WR": {"max_depth": 5, "learning_rate": 0.10, "n_estimators": 200},
     "TE": {"max_depth": 6, "learning_rate": 0.08, "n_estimators": 300},
 }

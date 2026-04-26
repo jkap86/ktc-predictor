@@ -37,35 +37,35 @@
     },
     "RB": {
       "n": 1145,
-      "mae": 535.4,
-      "bias": 177.1,
+      "mae": 527.3,
+      "bias": 202.4,
       "tiers": {
         "0-2k": {
           "n": 291,
-          "mae": 314.0,
-          "bias": -36.0
+          "mae": 295.0,
+          "bias": -29.4
         },
         "2k-4k": {
           "n": 442,
-          "mae": 660.1,
-          "bias": 407.2
+          "mae": 620.3,
+          "bias": 443.3
         },
         "4k-6k": {
           "n": 251,
-          "mae": 478.6,
-          "bias": -0.1,
-          "riser_bias": 724.0,
+          "mae": 508.3,
+          "bias": 7.4,
+          "riser_bias": 771.4,
           "riser_n": 60,
-          "faller_bias": -227.5,
+          "faller_bias": -232.7,
           "faller_n": 191
         },
         "6k+": {
           "n": 161,
-          "mae": 681.7,
-          "bias": 207.0,
-          "riser_bias": 572.7,
+          "mae": 721.3,
+          "bias": 264.2,
+          "riser_bias": 654.8,
           "riser_n": 99,
-          "faller_bias": -376.9,
+          "faller_bias": -359.4,
           "faller_n": 62
         }
       }
