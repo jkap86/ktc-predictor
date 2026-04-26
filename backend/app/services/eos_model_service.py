@@ -300,6 +300,63 @@ def build_prediction_inputs(
     trajectory = compute_career_trajectory(seasons, prior_ref_year) or {}
     start_position_rank = latest.get("start_position_rank")
 
+    # Fallback for year-1/2 players with no qualifying prior season:
+    # use the current season as "prior" so the model has something to work with.
+    # Without this, all prior features are NaN and prediction lines go flat.
+    if prior_ppg_val is None and baseline_gp >= 4:
+        prior_ppg_val = baseline_ppg
+    if not prior_behavioral and baseline_gp >= 4:
+        prior_behavioral = {
+            "prior_weekly_fp_cv": float(baseline_season.get("weekly_fp_cv") or 0.0),
+            "prior_boom_rate": float(baseline_season.get("boom_rate") or 0.0),
+            "prior_bust_rate": float(baseline_season.get("bust_rate") or 0.0),
+            "prior_snap_pct": float(baseline_season.get("snap_pct") or 0.0),
+            "prior_ktc_volatility": float(baseline_season.get("ktc_volatility") or 0.0),
+        }
+    if not prior_pos and baseline_gp >= 4:
+        prior_pos = compute_prior_position_stats(
+            seasons, player["position"], prior_ref_year, min_games=0
+        ) or {}
+        # If still nothing from prior seasons, use the current/baseline season directly
+        if not prior_pos:
+            pos = player["position"]
+            s = baseline_season
+            if pos == "RB":
+                carries = float(s.get("carries") or 0)
+                rush_yds = float(s.get("rushing_yards") or 0)
+                prior_pos = {
+                    "prior_carries": carries,
+                    "prior_red_zone_touches": float(s.get("red_zone_touches") or 0),
+                    "prior_yards_per_carry": rush_yds / carries if carries > 0 else 0.0,
+                    "prior_receiving_yards": float(s.get("receiving_yards") or 0),
+                    "prior_rushing_tds": float(s.get("rushing_tds") or 0),
+                }
+            elif pos == "WR":
+                prior_pos = {
+                    "prior_targets": float(s.get("targets") or 0),
+                    "prior_red_zone_targets": float(s.get("red_zone_targets") or 0),
+                    "prior_yards_per_target": float(s.get("yards_per_target") or 0),
+                    "prior_air_yards_per_target": float(s.get("air_yards_per_target") or 0),
+                    "prior_receiving_tds": float(s.get("receiving_tds") or 0),
+                    "prior_drop_rate": float(s.get("drop_rate") or 0),
+                }
+            elif pos == "TE":
+                prior_pos = {
+                    "prior_targets": float(s.get("targets") or 0),
+                    "prior_red_zone_targets": float(s.get("red_zone_targets") or 0),
+                    "prior_yards_per_target": float(s.get("yards_per_target") or 0),
+                    "prior_receiving_tds": float(s.get("receiving_tds") or 0),
+                    "prior_drop_rate": float(s.get("drop_rate") or 0),
+                }
+            elif pos == "QB":
+                prior_pos = {
+                    "prior_passing_tds": float(s.get("passing_tds") or 0),
+                    "prior_interceptions": float(s.get("interceptions") or 0),
+                    "prior_completion_rate": float(s.get("completion_rate") or 0),
+                    "prior_rushing_yards": float(s.get("rushing_yards") or 0),
+                    "prior_pass_sacks": float(s.get("pass_sacks") or 0),
+                }
+
     return {
         "position": player["position"],
         "start_ktc": start_ktc,
