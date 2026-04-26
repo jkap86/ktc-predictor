@@ -235,29 +235,31 @@ def _compute_prior_ppg_features(players: list[dict]) -> dict[tuple[str, int], di
         sorted_seasons = sorted(seasons, key=lambda s: s["year"])
 
         for i, season in enumerate(sorted_seasons):
-            if i == 0:
-                continue  # No prior data for first season
-
             year = season["year"]
-            prior_season = sorted_seasons[i - 1]
-
-            # Get prior season PPG
-            prior_games = prior_season.get("games_played", 0) or 0
-            prior_fp = prior_season.get("fantasy_points", 0) or 0
-
-            if prior_games < 4:  # Require meaningful sample
-                continue
-
-            prior_ppg = prior_fp / prior_games
 
             # Get current season PPG (full season for training)
             curr_games = season.get("games_played", 0) or 0
             curr_fp = season.get("fantasy_points", 0) or 0
-
             if curr_games < 1:
                 continue
-
             curr_ppg = curr_fp / curr_games
+
+            # Try prior season first
+            prior_ppg = None
+            if i > 0:
+                prior_season = sorted_seasons[i - 1]
+                prior_games = prior_season.get("games_played", 0) or 0
+                prior_fp = prior_season.get("fantasy_points", 0) or 0
+                if prior_games >= 4:
+                    prior_ppg = prior_fp / prior_games
+
+            # Fallback for RB/TE: use current season PPG when no prior exists.
+            # QB/WR are hurt by this (ppg_yoy_log~0 is a misleading signal).
+            if prior_ppg is None and curr_games >= 4 and player.get("position") in ("RB", "TE"):
+                prior_ppg = curr_ppg
+
+            if prior_ppg is None:
+                continue
 
             # Log ratio with epsilon to avoid log(0)
             eps = 0.1

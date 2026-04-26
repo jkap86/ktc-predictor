@@ -53,48 +53,57 @@ def _compute_prior_position_features(
         )
 
         for i, season in enumerate(seasons):
-            if i == 0:
-                continue
-            prior = seasons[i - 1]
-            gp = prior.get("games_played", 0) or 0
-            if gp < _MIN_GAMES:
+            # Try prior season first
+            source = None
+            if i > 0:
+                prior = seasons[i - 1]
+                gp = prior.get("games_played", 0) or 0
+                if gp >= _MIN_GAMES:
+                    source = prior
+
+            # Fallback for RB/TE: use current season when no prior exists
+            if source is None and pos in ("RB", "TE"):
+                curr_gp = season.get("games_played", 0) or 0
+                if curr_gp >= _MIN_GAMES:
+                    source = season
+
+            if source is None:
                 continue
 
             if pos == "QB":
                 result[(pid, season["year"])] = {
-                    "prior_passing_tds": float(prior.get("passing_tds") or 0),
-                    "prior_interceptions": float(prior.get("interceptions") or 0),
-                    "prior_completion_rate": float(prior.get("completion_rate") or 0),
-                    "prior_rushing_yards": float(prior.get("rushing_yards") or 0),
-                    "prior_pass_sacks": float(prior.get("pass_sacks") or 0),
+                    "prior_passing_tds": float(source.get("passing_tds") or 0),
+                    "prior_interceptions": float(source.get("interceptions") or 0),
+                    "prior_completion_rate": float(source.get("completion_rate") or 0),
+                    "prior_rushing_yards": float(source.get("rushing_yards") or 0),
+                    "prior_pass_sacks": float(source.get("pass_sacks") or 0),
                 }
             elif pos == "RB":
-                carries = float(prior.get("carries") or 0)
-                rush_yds = float(prior.get("rushing_yards") or 0)
+                carries = float(source.get("carries") or 0)
+                rush_yds = float(source.get("rushing_yards") or 0)
                 result[(pid, season["year"])] = {
                     "prior_carries": carries,
-                    "prior_red_zone_touches": float(prior.get("red_zone_touches") or 0),
+                    "prior_red_zone_touches": float(source.get("red_zone_touches") or 0),
                     "prior_yards_per_carry": rush_yds / carries if carries > 0 else 0.0,
-                    "prior_receiving_yards": float(prior.get("receiving_yards") or 0),
-                    "prior_rushing_tds": float(prior.get("rushing_tds") or 0),
+                    "prior_receiving_yards": float(source.get("receiving_yards") or 0),
+                    "prior_rushing_tds": float(source.get("rushing_tds") or 0),
                 }
             elif pos == "WR":
-                tgts = float(prior.get("targets") or 0)
                 result[(pid, season["year"])] = {
-                    "prior_targets": tgts,
-                    "prior_red_zone_targets": float(prior.get("red_zone_targets") or 0),
-                    "prior_yards_per_target": float(prior.get("yards_per_target") or 0),
-                    "prior_air_yards_per_target": float(prior.get("air_yards_per_target") or 0),
-                    "prior_receiving_tds": float(prior.get("receiving_tds") or 0),
-                    "prior_drop_rate": float(prior.get("drop_rate") or 0),
+                    "prior_targets": float(source.get("targets") or 0),
+                    "prior_red_zone_targets": float(source.get("red_zone_targets") or 0),
+                    "prior_yards_per_target": float(source.get("yards_per_target") or 0),
+                    "prior_air_yards_per_target": float(source.get("air_yards_per_target") or 0),
+                    "prior_receiving_tds": float(source.get("receiving_tds") or 0),
+                    "prior_drop_rate": float(source.get("drop_rate") or 0),
                 }
             elif pos == "TE":
                 result[(pid, season["year"])] = {
-                    "prior_targets": float(prior.get("targets") or 0),
-                    "prior_red_zone_targets": float(prior.get("red_zone_targets") or 0),
-                    "prior_yards_per_target": float(prior.get("yards_per_target") or 0),
-                    "prior_receiving_tds": float(prior.get("receiving_tds") or 0),
-                    "prior_drop_rate": float(prior.get("drop_rate") or 0),
+                    "prior_targets": float(source.get("targets") or 0),
+                    "prior_red_zone_targets": float(source.get("red_zone_targets") or 0),
+                    "prior_yards_per_target": float(source.get("yards_per_target") or 0),
+                    "prior_receiving_tds": float(source.get("receiving_tds") or 0),
+                    "prior_drop_rate": float(source.get("drop_rate") or 0),
                 }
 
     return result

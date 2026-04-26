@@ -60,19 +60,29 @@ def _compute_prior_behavioral_features(
         )
 
         for i, season in enumerate(seasons):
-            if i == 0:
-                continue
-            prior = seasons[i - 1]
-            prior_games = prior.get("games_played", 0) or 0
-            if prior_games < _MIN_GAMES_FOR_PRIOR_BEHAVIORAL:
+            # Try prior season first
+            source = None
+            if i > 0:
+                prior = seasons[i - 1]
+                prior_games = prior.get("games_played", 0) or 0
+                if prior_games >= _MIN_GAMES_FOR_PRIOR_BEHAVIORAL:
+                    source = prior
+
+            # Fallback for RB/TE: use current season when no prior exists
+            if source is None and player.get("position") in ("RB", "TE"):
+                curr_games = season.get("games_played", 0) or 0
+                if curr_games >= _MIN_GAMES_FOR_PRIOR_BEHAVIORAL:
+                    source = season
+
+            if source is None:
                 continue
 
             result[(pid, season["year"])] = {
-                "prior_weekly_fp_cv": float(prior.get("weekly_fp_cv") or 0.0),
-                "prior_boom_rate": float(prior.get("boom_rate") or 0.0),
-                "prior_bust_rate": float(prior.get("bust_rate") or 0.0),
-                "prior_snap_pct": float(prior.get("snap_pct") or 0.0),
-                "prior_ktc_volatility": float(prior.get("ktc_volatility") or 0.0),
+                "prior_weekly_fp_cv": float(source.get("weekly_fp_cv") or 0.0),
+                "prior_boom_rate": float(source.get("boom_rate") or 0.0),
+                "prior_bust_rate": float(source.get("bust_rate") or 0.0),
+                "prior_snap_pct": float(source.get("snap_pct") or 0.0),
+                "prior_ktc_volatility": float(source.get("ktc_volatility") or 0.0),
             }
 
     return result
