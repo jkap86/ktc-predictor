@@ -211,6 +211,11 @@ def predict_end_ktc(
     prior_air_yards_per_target: float | None = None,
     prior_receiving_tds: float | None = None,
     prior_drop_rate: float | None = None,
+    # v4 new: RB momentum, WR volume
+    prior_fp_change_yoy: float | None = None,
+    prior_last_4_vs_season: float | None = None,
+    prior_receptions: float | None = None,
+    prior_receiving_first_downs: float | None = None,
     # v4 career trajectory (all positions)
     prior_2yr_ppg: float | None = None,
     ppg_trend: float | None = None,
@@ -331,10 +336,20 @@ def predict_end_ktc(
 
     # v4 momentum (QB/WR only)
     if position in _POSITIONS_WITH_V4_FEATURES:
+        _m30 = ktc_30d_trend if ktc_30d_trend is not None else 0.0
+        _m90 = ktc_90d_trend if ktc_90d_trend is not None else 0.0
+        _mrat = momentum_ratio if momentum_ratio is not None else 0.0
+
+        # Dampen momentum for aging WRs: high momentum is less predictive
+        # for WR 28+ (+7.5% actual vs +20.6% for prime WRs at same momentum)
+        if position == "WR" and age is not None and age >= 28:
+            _dampen = 0.5
+            _m30 *= _dampen
+            _m90 *= _dampen
+            _mrat *= _dampen
+
         linear_features.extend([
-            ktc_30d_trend if ktc_30d_trend is not None else 0.0,
-            ktc_90d_trend if ktc_90d_trend is not None else 0.0,
-            momentum_ratio if momentum_ratio is not None else 0.0,
+            _m30, _m90, _mrat,
             max_games_missed_streak if max_games_missed_streak is not None else 0.0,
         ])
 
