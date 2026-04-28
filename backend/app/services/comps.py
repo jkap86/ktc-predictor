@@ -261,7 +261,7 @@ class CompsIndex:
             # years_exp ensures rookies match rookies, not 3rd-year players.
             # start_position_rank differentiates players at similar KTC.
             _EXTRA_COMP_FEATURES = {
-                "years_exp": 0.15,
+                "years_exp": 0.40,
                 "start_position_rank": 0.08,
             }
             for fname, min_weight in _EXTRA_COMP_FEATURES.items():

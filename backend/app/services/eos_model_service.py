@@ -278,6 +278,12 @@ def build_prediction_inputs(
     )
     age = baseline_season.get("age") or latest.get("age")
 
+    # Adjust age for current year if training data is behind
+    from datetime import date
+    year_gap = date.today().year - latest["year"]
+    if year_gap > 0 and age is not None:
+        age = age + year_gap
+
     # Unify PPG source: prefer Sleeper projections
     baseline_gp = baseline_info[1] if baseline_info else 0
     baseline_ppg = baseline_info[2] if baseline_info else 0.0

@@ -177,6 +177,14 @@ async def player_comps(
     latest = max(seasons, key=lambda s: s["year"])
     age = latest.get("age") or 22  # default to 22 for rookies without age data
 
+    # Adjust years_exp and age for the current year if training data is behind.
+    # E.g., if latest season is 2025 but it's now 2026, increment by 1.
+    from datetime import date
+    current_year = date.today().year
+    year_gap = current_year - latest["year"]
+    if year_gap > 0:
+        age = age + year_gap
+
     # Pull all available features from the latest season for matching.
     # The comp finder ignores features not in its spec for the position.
     pos = player["position"]
@@ -218,7 +226,7 @@ async def player_comps(
         weeks_missed=0,
         draft_pick=latest.get("draft_pick"),
         start_position_rank=latest.get("start_position_rank"),
-        years_exp=latest.get("years_exp"),
+        years_exp=(latest.get("years_exp") or 0) + year_gap,
         # KTC trajectory
         ktc_yoy_pct=ktc_yoy_pct,
         ktc_30d_trend=latest.get("ktc_30d_trend"),
