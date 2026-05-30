@@ -297,7 +297,7 @@ function HomeContent() {
       {/* Title */}
       <div className="text-center">
         <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 dark:text-white mb-1 tracking-tight">KTC Value Predictor</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400/80">Select up to two players to compare predictions</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400/80">Grounded in historical comps — pick up to two players to compare</p>
       </div>
 
       {/* Search bar + position filters */}
@@ -493,16 +493,11 @@ function HomeContent() {
             </div>
           )}
 
-          {/* EOS Predictions — use What-If result (tied to current PPG) over base prediction */}
-          {primaryPlayer && (whatIfResult || primaryPrediction || compareWhatIfResult || comparePrediction) && (
-            <div className="glass-card p-4">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">End-of-Season Prediction</h3>
-              <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-                {(whatIfResult || primaryPrediction) && <PredictionStats prediction={whatIfResult ?? primaryPrediction!} label={hasCompare ? primaryPlayer.name : 'Predicted'} color="blue" />}
-                {hasCompare && (compareWhatIfResult || comparePrediction) && (
-                  <PredictionStats prediction={compareWhatIfResult ?? comparePrediction!} label={comparePlayer!.name} color="orange" />
-                )}
-              </div>
+          {/* Comps — the primary, data-grounded signal; lead with this */}
+          {primaryId && (
+            <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 lg:grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+              <PlayerComps playerId={primaryId} modelId={selectedModelId} />
+              {hasCompare && compareId && <PlayerComps playerId={compareId} modelId={selectedModelId} />}
             </div>
           )}
 
@@ -594,11 +589,23 @@ function HomeContent() {
             </div>
           )}
 
-          {/* Comps */}
-          {primaryId && (
-            <div className={`grid gap-6 ${hasCompare ? 'grid-cols-1 lg:grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-              <PlayerComps playerId={primaryId} modelId={selectedModelId} />
-              {hasCompare && compareId && <PlayerComps playerId={compareId} modelId={selectedModelId} />}
+          {/* Model prediction — kept, but secondary to comps. Still maturing as
+              more seasons of training data accrue, so it's framed as a guide. */}
+          {primaryPlayer && (whatIfResult || primaryPrediction || compareWhatIfResult || comparePrediction) && (
+            <div className="rounded-xl border border-gray-200/40 dark:border-white/[0.06] bg-gray-50/50 dark:bg-white/[0.02] p-4">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Model Estimate</h3>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-200/60 dark:bg-white/10 text-gray-500 dark:text-gray-400 font-medium">secondary</span>
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">
+                Gradient-boosted estimate — still maturing as more seasons of data accrue. Weigh it against the comps above.
+              </p>
+              <div className={`grid gap-4 ${hasCompare ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                {(whatIfResult || primaryPrediction) && <PredictionStats prediction={whatIfResult ?? primaryPrediction!} label={hasCompare ? primaryPlayer.name : 'Predicted'} color="blue" />}
+                {hasCompare && (compareWhatIfResult || comparePrediction) && (
+                  <PredictionStats prediction={compareWhatIfResult ?? comparePrediction!} label={comparePlayer!.name} color="orange" />
+                )}
+              </div>
             </div>
           )}
 
