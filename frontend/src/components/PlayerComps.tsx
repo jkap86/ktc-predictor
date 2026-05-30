@@ -12,17 +12,6 @@ interface PlayerCompsProps {
 // Pull a few more comparables now that comps are the headline signal.
 const COMP_COUNT = 15;
 
-// Linear-interpolated percentile over a pre-sorted ascending array.
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  if (sorted.length === 1) return sorted[0];
-  const idx = (sorted.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
-}
-
 export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   const [comps, setComps] = useState<CompPlayer[]>([]);
   const [compAvgPpg, setCompAvgPpg] = useState<number | null>(null);
@@ -59,14 +48,14 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
     const center = implied.reduce((s, v, i) => s + v * weights[i], 0) / wSum;
 
     const sorted = [...implied].sort((a, b) => a - b);
-    const low = percentile(sorted, 0.25);
-    const high = percentile(sorted, 0.75);
+    const low = sorted[0];
+    const high = sorted[sorted.length - 1];
 
     const risers = comps.filter((c) => c.delta_ktc > 0).length;
     const delta = center - start;
     const pct = (delta / start) * 100;
 
-    return { start, center, low, high, lowFull: sorted[0], highFull: sorted[sorted.length - 1], risers, delta, pct };
+    return { start, center, low, high, risers, delta, pct };
   }, [comps, startKtc]);
 
   if (loading) {
@@ -87,8 +76,8 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
   // Range-bar geometry — domain spans the full comp outcome range plus the start anchor.
   const bar = outlook
     ? (() => {
-        const domainMin = Math.min(outlook.lowFull, outlook.start);
-        const domainMax = Math.max(outlook.highFull, outlook.start);
+        const domainMin = Math.min(outlook.low, outlook.start);
+        const domainMax = Math.max(outlook.high, outlook.start);
         const span = Math.max(domainMax - domainMin, 1);
         const pos = (v: number) => ((v - domainMin) / span) * 100;
         return { pos };
@@ -140,7 +129,7 @@ export default function PlayerComps({ playerId, modelId }: PlayerCompsProps) {
             </div>
             <div className="text-right">
               <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">
-                Likely range
+                Full range
               </div>
               <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                 {formatKtc(Math.round(outlook.low))} – {formatKtc(Math.round(outlook.high))}
