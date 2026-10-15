@@ -2,7 +2,10 @@
 
 A what-if model. You give it a player's start-of-season dynasty SF value,
 age, position and the season fantasy points you expect them to score; it
-returns the predicted end-of-season value. There is no points forecaster:
+returns the predicted end-of-season value. The horizon is week 1 to the end
+of the regular season: KTC start values are from early September and end
+values from about the last regular-season week (Dec 30 to early Jan);
+Backchannel values are at week-1 kickoff and the last regular-season Sunday. There is no points forecaster:
 the points are your input.
 
 ```bash
@@ -20,12 +23,13 @@ On small containers, `OMP_NUM_THREADS=1` makes training and tests much faster.
 - **Stats** (position, age, season points) come from `data/training-data.zip`.
   Points are full-PPR season totals (4 pt passing TD).
 - **Labels** (`start_value`, `end_value`) come from a label source. Rows where
-  either value is missing or zero are dropped. KTC gives 1,674 labelled
+  either value is missing or zero are dropped. KTC gives 1,727 labelled
   player-seasons for 2020–2025.
 - **College seasons are dropped.** KTC values devy players, so the zip has
-  0-point seasons before a player's NFL debut (222 labelled rows, such as
-  Caleb Williams 2023). A season is kept only if it is the player's first
-  season with games played or later. Later 0-game seasons (injury) stay.
+  0-point seasons before the draft, such as Caleb Williams 2023. In the zip a
+  rookie NFL season has `years_exp` 1, so a season with `years_exp` 0 and no
+  games is college (169 labelled rows). Inactive rookies and injured or
+  backup seasons, such as Jordan Love 2020, stay.
 
 ## Swapping labels
 
@@ -55,18 +59,18 @@ value points.
 Each season Y is predicted by a model trained only on seasons before Y.
 Skill is `1 - model MAE / no-change MAE`.
 
-| Slice | n | Model MAE | No-change MAE | Skill |
+| Slice | Skill | n | Model MAE | No-change MAE |
 |---|---|---|---|---|
-| All | 1535 | 460 | 636 | 28% |
-| 2021 | 177 | 687 | 773 | 11% |
-| 2022 | 234 | 510 | 685 | 26% |
-| 2023 | 303 | 510 | 690 | 26% |
-| 2024 | 371 | 423 | 606 | 30% |
-| 2025 | 450 | 342 | 546 | 37% |
-| QB | 259 | 543 | 767 | 29% |
-| RB | 397 | 463 | 649 | 29% |
-| TE | 280 | 437 | 594 | 26% |
-| WR | 599 | 433 | 592 | 27% |
+| All | 28% | 1582 | 453 | 624 |
+| 2021 | 10% | 181 | 688 | 766 |
+| 2022 | 24% | 241 | 512 | 668 |
+| 2023 | 26% | 313 | 496 | 672 |
+| 2024 | 31% | 384 | 410 | 596 |
+| 2025 | 37% | 463 | 337 | 538 |
+| QB | 27% | 270 | 542 | 744 |
+| RB | 28% | 413 | 457 | 634 |
+| TE | 26% | 284 | 438 | 587 |
+| WR | 28% | 615 | 419 | 583 |
 
 Full output: `artifacts/ktc_eval.json`. 2021 is weakest because it trains on
 2020 alone.
@@ -80,17 +84,22 @@ python -m predictor_v5 --labels backchannel:backchannel_labels_2019_2025.csv --m
 
 Half of the Backchannel rows have no trades in the season, so their end
 value equals their start value (the prior). `--min-trades 5` keeps rows with
-at least 5 trades in both the start and end windows. That leaves 900 train
-and 354 test rows. Skill is the fair comparison because the two value
-scales differ.
+at least 5 trades in both the start and end windows. That leaves 911 train
+and 361 test rows. `--min-trades` and `--end-column` are rejected with
+`--labels ktc`.
 
-| Labels | Test rows | Model MAE | No-change MAE | Skill |
+Skill is the comparison to read: MAE is on each source's own scale, and
+Backchannel values are much lower than KTC's. Because the filter selects on
+trading activity at season end, the Backchannel skill applies to actively
+traded players only, not to every player.
+
+| Labels | Skill | Test rows | Model MAE | No-change MAE |
 |---|---|---|---|---|
-| KTC | 450 | 362 | 546 | 34% |
-| Backchannel `end_value`, ≥5 trades | 354 | 117 | 212 | 45% |
-| Same 346 players, KTC | 346 | 405 | 628 | 36% |
-| Same 346 players, Backchannel | 346 | 118 | 215 | 45% |
-| Backchannel `end_value_next_board`, ≥5 trades | 332 | 402 | 339 | −19% |
+| KTC | 35% | 463 | 352 | 538 |
+| Backchannel `end_value`, ≥5 trades | 44% | 361 | 118 | 209 |
+| Same 353 players, KTC | 36% | 353 | 399 | 622 |
+| Same 353 players, Backchannel | 44% | 353 | 119 | 212 |
+| Backchannel `end_value_next_board`, ≥5 trades | −16% | 338 | 390 | 335 |
 
 The end label is `end_value`. `end_value_next_board` comes from the next
 season's board, whose overall level shifts by season (median next-board /
@@ -100,6 +109,6 @@ learn the 2025 shift, so it loses to no-change.
 Notes from development:
 
 - Points carry the signal. Without them the same model is worse than
-  no-change (MAE about 660).
-- Adding games played (points per game plus games) cut MAE to about 432. It
+  no-change (MAE about 647).
+- Adding games played (points per game plus games) cut MAE to about 426. It
   isn't an input yet because the ask was season points only.

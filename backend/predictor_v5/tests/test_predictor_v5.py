@@ -98,16 +98,18 @@ def test_csv_label_source_rejects_missing_columns(tmp_path):
         CsvLabels(path).load()
 
 
-def test_drop_pre_nfl_keeps_debut_and_later_including_injured_seasons():
+def test_drop_pre_nfl_drops_only_college_seasons():
     stats = pd.DataFrame(
         {
             "player_id": ["qb", "qb", "qb", "qb", "devy"],
-            "season": [2023, 2024, 2025, 2026, 2025],
-            "games": [0, 17, 0, 12, 0],
+            "season": [2020, 2021, 2022, 2023, 2025],
+            "years_exp": [0, 1, 2, 3, 0],
+            "games": [0, 0, 4, 17, 0],
         }
     )
     kept = drop_pre_nfl(stats)
-    assert list(zip(kept["player_id"], kept["season"])) == [("qb", 2024), ("qb", 2025), ("qb", 2026)]
+    # The year-1 season with no games (an inactive rookie) is a real NFL season.
+    assert list(zip(kept["player_id"], kept["season"])) == [("qb", 2021), ("qb", 2022), ("qb", 2023)]
 
 
 def test_csv_min_trades_and_end_column(tmp_path):

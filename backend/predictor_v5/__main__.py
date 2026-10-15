@@ -24,6 +24,8 @@ ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 
 
 def _dataset(args):
+    if args.labels == "ktc" and (args.min_trades or args.end_column != "end_value"):
+        raise SystemExit("--min-trades and --end-column only apply to CSV labels, not --labels ktc")
     source = get_label_source(args.labels, min_trades=args.min_trades, end_column=args.end_column)
     return source, build_dataset(load_season_stats(), source)
 

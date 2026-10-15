@@ -41,22 +41,24 @@ def load_season_stats(zip_path: Path | str = DEFAULT_ZIP) -> pd.DataFrame:
                     "age": float(s["age"]),
                     "points": float(s.get("fantasy_points") or 0.0),
                     "games": int(s.get("games_played") or 0),
+                    "years_exp": int(s["years_exp"]) if s.get("years_exp") is not None else -1,
                 }
             )
     return drop_pre_nfl(pd.DataFrame(rows))
 
 
 def drop_pre_nfl(stats: pd.DataFrame) -> pd.DataFrame:
-    """Drop seasons before a player's first NFL game.
+    """Drop college (devy) seasons.
 
-    KTC values college (devy) players, so the zip has 0-point seasons such
-    as Caleb Williams 2023. ``rookie_year`` doesn't flag them reliably, so
-    the rule is games: keep a season only if it is the player's first season
-    with games played or later. Players who never played are dropped.
+    KTC values players before they're drafted, so the zip has 0-point
+    seasons such as Caleb Williams 2023. In the zip a player's rookie NFL
+    season has ``years_exp`` 1, so ``years_exp == 0`` with no games is the
+    college season before the draft (169 labelled rows). ``rookie_year``
+    doesn't flag these reliably. Rookies and veterans who didn't play, such
+    as Jordan Love 2020, stay.
     """
-    debut = stats[stats["games"] > 0].groupby("player_id")["season"].min()
-    first = stats["player_id"].map(debut)
-    return stats[first.notna() & (stats["season"] >= first)].reset_index(drop=True)
+    college = (stats["years_exp"] == 0) & (stats["games"] == 0)
+    return stats[~college].reset_index(drop=True)
 
 
 def build_dataset(stats: pd.DataFrame, labels: LabelSource) -> pd.DataFrame:
