@@ -112,3 +112,31 @@ Notes from development:
   no-change (MAE about 647).
 - Adding games played (points per game plus games) cut MAE to about 426. It
   isn't an input yet because the ask was season points only.
+
+## Season tool (2026)
+
+Type a player's projected season points and get their predicted
+end-of-season value, starting from their value on 2026-09-09 (the day before
+kickoff). It's on the app's **2026 Season** page (`/season`, API under
+`/api/v5/season`) and on the command line:
+
+```bash
+python -m predictor_v5 season --player "Ja'Marr Chase" --sweep 150,250,350
+```
+
+Each player gets two predictions, each from its own source's start value:
+
+- **Backchannel** (primary): trained on 2022–2025 Backchannel labels with
+  ≥5 trades. Players with fewer than 5 trades before the cutoff get no
+  Backchannel prediction, because their value is Backchannel's ADP prior.
+- **KTC**: trained on 2020–2025 KTC labels.
+
+Start values are in `data/start_values_2026.csv`, exported from the thelab
+database with `sql/start_values.sql` (Backchannel model `baseline-hl28-v1`;
+522 players with a KTC value plus 6 rostered players with ≥20 trades).
+
+Backchannel's value scale shrinks every season: well-traded stars started
+near 8,000 in 2022, 5,000 in 2025 and 2,900 in 2026. Read its predictions as
+a change from the player's own start value. Re-levelling each season's values
+to a common anchor didn't help on the 2025 holdout (skill 43% vs 45%), so the
+model uses the raw values.

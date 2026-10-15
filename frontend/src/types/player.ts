@@ -145,3 +145,36 @@ export interface HistoricalResponse {
   position: string;
   predictions: HistoricalPrediction[];
 }
+
+// ── v5 season tool ───────────────────────────────────────────────────────
+
+export interface SeasonSourceValue {
+  start_value: number | null;
+  start_date: string | null;
+  trades?: number | null;
+  predictions?: { points: number; value: number; change: number }[] | null;
+  train_seasons?: number[];
+  note?: string | null;
+}
+
+export interface SeasonPlayer {
+  player_id: string;
+  name: string;
+  position: string;
+  team: string | null;
+  age: number | null;
+  backchannel: SeasonSourceValue;
+  ktc: SeasonSourceValue;
+}
+
+export interface SeasonPrediction extends SeasonPlayer {
+  season: number;
+  cutoff: string;
+}
+
+export interface SeasonInfo {
+  season: number;
+  cutoff: string;
+  players: number;
+  sources: Record<string, string>;
+}

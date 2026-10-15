@@ -6,6 +6,8 @@
     python -m predictor_v5 predict --position WR --age 24 --start 5200 --points 260
     python -m predictor_v5 predict ... --sweep 100,150,200,250,300
     python -m predictor_v5 --labels backchannel:labels.csv --min-trades 5 holdout --train 2022-2024 --test 2025
+    python -m predictor_v5 season --player "Ja'Marr Chase" --points 330
+    python -m predictor_v5 season --player "Bijan Robinson" --sweep 200,275,350
 
 ``--labels csv:path/to/backchannel_reference_values.csv`` swaps the label
 source (columns: player_id, season, start_value, end_value).
@@ -68,6 +70,32 @@ def cmd_predict(args) -> None:
         )
 
 
+def cmd_season(args) -> None:
+    from predictor_v5.season import SOURCES, SeasonTool
+
+    tool = SeasonTool(season=args.season, start_values_path=args.start_values)
+    matches = tool.find(args.player)
+    if len(matches) != 1:
+        print(f"{len(matches)} players match {args.player!r}" + (":" if matches else "."))
+        for m in matches:
+            print(f"  {m['player_id']:>6}  {m['name']} ({m['position']}, {m['team'] or 'FA'})")
+        return
+    points = [float(p) for p in args.sweep.split(",")] if args.sweep else [args.points]
+    out = tool.predict(matches[0]["player_id"], points, age=args.age)
+    age = f"age {out['age']:g}" if out["age"] is not None else "age unknown"
+    print(f"{out['name']} ({out['position']}, {out['team'] or 'FA'}, {age}), {out['season']} season")
+    for name, cfg in SOURCES.items():
+        src = out[name]
+        if not src["predictions"]:
+            print(f"  {cfg['label']}: {src['note']}")
+            continue
+        print(f"  {cfg['label']}: start {src['start_value']:.0f} on {src['start_date']}")
+        for p in src["predictions"]:
+            print(f"    {p['points']:g} pts -> {p['value']} ({p['change']:+d})")
+        if src["note"]:
+            print(f"    Note: {src['note']}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="predictor_v5")
     parser.add_argument("--labels", default="ktc", help="'ktc' or 'csv:<path>'")
@@ -97,9 +125,18 @@ def main() -> None:
     pr.add_argument("--sweep", help="comma-separated points values")
     pr.set_defaults(func=cmd_predict)
 
+    se = sub.add_parser("season", help="pre-season value + projected points -> end-of-season value")
+    se.add_argument("--player", required=True, help="name, part of a name, or Sleeper id")
+    se.add_argument("--points", type=float, help="projected season fantasy points (full PPR)")
+    se.add_argument("--sweep", help="comma-separated points values")
+    se.add_argument("--season", type=int, default=2026)
+    se.add_argument("--age", type=float, help="override the age on file")
+    se.add_argument("--start-values", help="start values CSV (default data/start_values_<season>.csv)")
+    se.set_defaults(func=cmd_season)
+
     args = parser.parse_args()
-    if args.cmd == "predict" and args.points is None and not args.sweep:
-        parser.error("predict needs --points or --sweep")
+    if args.cmd in ("predict", "season") and args.points is None and not args.sweep:
+        parser.error(f"{args.cmd} needs --points or --sweep")
     args.func(args)
 
 

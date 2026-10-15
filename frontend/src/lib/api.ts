@@ -6,6 +6,9 @@ import type {
   EOSBatchRequest,
   EOSBatchResponse,
   HistoricalResponse,
+  SeasonInfo,
+  SeasonPlayer,
+  SeasonPrediction,
 } from '../types/player';
 
 const _URL = process.env.NEXT_PUBLIC_API_URL;
@@ -295,4 +298,42 @@ export async function getModelDiagnostics(modelId?: string | null): Promise<Mode
   } catch {
     return null;
   }
+}
+
+// ── v5 season tool ───────────────────────────────────────────────────────
+
+export async function getSeasonInfo(season = 2026): Promise<SeasonInfo> {
+  return fetchApi<SeasonInfo>(`/v5/season?season=${season}`);
+}
+
+export async function searchSeasonPlayers(
+  query = '',
+  position?: string,
+  limit = 50,
+  season = 2026,
+): Promise<SeasonPlayer[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit), season: String(season) });
+  if (position) params.set('position', position);
+  const key = `season-search:${params}`;
+  const cached = getCached<SeasonPlayer[]>(key);
+  if (cached) return cached;
+  const result = (await fetchApi<{ players: SeasonPlayer[] }>(`/v5/season/players?${params}`)).players;
+  setCache(key, result);
+  return result;
+}
+
+export async function predictSeason(
+  playerId: string,
+  points: number[],
+  season = 2026,
+  age?: number | null,
+): Promise<SeasonPrediction> {
+  const params = new URLSearchParams({ player_id: playerId, points: points.join(','), season: String(season) });
+  if (age != null) params.set('age', String(age));
+  const key = `season-predict:${params}`;
+  const cached = getCached<SeasonPrediction>(key);
+  if (cached) return cached;
+  const result = await fetchApi<SeasonPrediction>(`/v5/season/predict?${params}`);
+  setCache(key, result);
+  return result;
 }
