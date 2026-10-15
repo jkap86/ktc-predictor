@@ -104,26 +104,42 @@ export default function SeasonPage() {
   // The full points curve, once per player.
   useEffect(() => {
     if (!selected) return;
+    let stale = false;
     setCurve(null);
-    predictSeason(selected.player_id, SWEEP, SEASON).then(setCurve).catch(() => setCurve(null));
+    predictSeason(selected.player_id, SWEEP, SEASON)
+      .then((r) => !stale && setCurve(r))
+      .catch(() => !stale && setCurve(null));
+    return () => {
+      stale = true;
+    };
   }, [selected]);
 
   // The typed points total.
   useEffect(() => {
     if (!selected) return;
-    const pts = Number(points);
-    if (points === '' || !Number.isFinite(pts) || pts < 0 || pts > 600) return;
     if (debounce.current) clearTimeout(debounce.current);
+    const pts = Number(points);
+    if (points === '' || !Number.isFinite(pts) || pts < 0 || pts > 600) {
+      setResult(null);
+      return;
+    }
+    // Responses from a superseded player or points total are dropped.
+    let stale = false;
     debounce.current = setTimeout(() => {
       setLoading(true);
       predictSeason(selected.player_id, [pts], SEASON)
         .then((r) => {
+          if (stale) return;
           setResult(r);
           setError(null);
         })
-        .catch(() => setError('Prediction failed.'))
-        .finally(() => setLoading(false));
+        .catch(() => !stale && setError('Prediction failed.'))
+        .finally(() => !stale && setLoading(false));
     }, 250);
+    return () => {
+      stale = true;
+      setLoading(false);
+    };
   }, [selected, points]);
 
   const chartData = useMemo(() => {
