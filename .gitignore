@@ -45,3 +45,7 @@ backend/data/pff-grades-*.json
 # Claude
 .claude/
 catboost_info/
+
+# v5 predictor: trained models are rebuilt with `python -m predictor_v5 train`
+backend/predictor_v5/artifacts/*.joblib
+backend/predictor_v5/artifacts/*_predictions.csv
