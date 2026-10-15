@@ -71,6 +71,32 @@ Skill is `1 - model MAE / no-change MAE`.
 Full output: `artifacts/ktc_eval.json`. 2021 is weakest because it trains on
 2020 alone.
 
+## Backchannel holdout (train 2022–24, test 2025)
+
+```bash
+python -m predictor_v5 --labels backchannel:backchannel_labels_2019_2025.csv --min-trades 5 \
+  holdout --train 2022-2024 --test 2025
+```
+
+Half of the Backchannel rows have no trades in the season, so their end
+value equals their start value (the prior). `--min-trades 5` keeps rows with
+at least 5 trades in both the start and end windows. That leaves 900 train
+and 354 test rows. Skill is the fair comparison because the two value
+scales differ.
+
+| Labels | Test rows | Model MAE | No-change MAE | Skill |
+|---|---|---|---|---|
+| KTC | 450 | 362 | 546 | 34% |
+| Backchannel `end_value`, ≥5 trades | 354 | 117 | 212 | 45% |
+| Same 346 players, KTC | 346 | 405 | 628 | 36% |
+| Same 346 players, Backchannel | 346 | 118 | 215 | 45% |
+| Backchannel `end_value_next_board`, ≥5 trades | 332 | 402 | 339 | −19% |
+
+The end label is `end_value`. `end_value_next_board` comes from the next
+season's board, whose overall level shifts by season (median next-board /
+start ranged 0.72–1.02 across 2020–25). A model trained on 2022–24 can't
+learn the 2025 shift, so it loses to no-change.
+
 Notes from development:
 
 - Points carry the signal. Without them the same model is worse than

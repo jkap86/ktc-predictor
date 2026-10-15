@@ -108,3 +108,28 @@ def test_drop_pre_nfl_keeps_debut_and_later_including_injured_seasons():
     )
     kept = drop_pre_nfl(stats)
     assert list(zip(kept["player_id"], kept["season"])) == [("qb", 2024), ("qb", 2025), ("qb", 2026)]
+
+
+def test_csv_min_trades_and_end_column(tmp_path):
+    path = tmp_path / "bc.csv"
+    pd.DataFrame(
+        {
+            "player_id": ["a", "b", "c"],
+            "season": [2025, 2025, 2025],
+            "start_value": [100, 200, 300],
+            "end_value": [110, 200, 290],
+            "end_value_next_board": [120, None, 280],
+            "start_trades_window": [9, 0, 5],
+            "end_trades_window": [7, 0, 5],
+        }
+    ).to_csv(path, index=False)
+    assert list(CsvLabels(path, min_trades=5).load()["player_id"]) == ["a", "c"]
+    nb = CsvLabels(path, end_column="end_value_next_board").load()
+    assert list(nb["end_value"]) == [120, 280]
+
+
+def test_holdout_trains_only_on_listed_seasons():
+    result = ev.holdout(_synthetic(), "test", 9999, [2021, 2022, 2023], 2024)
+    assert result["n_train"] == 3 * 120 and result["overall"]["n"] == 120
+    with pytest.raises(ValueError):
+        ev.holdout(_synthetic(), "test", 9999, [2024], 2024)

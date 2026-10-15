@@ -5,6 +5,7 @@
     python -m predictor_v5 train                    # fit on all seasons, save model
     python -m predictor_v5 predict --position WR --age 24 --start 5200 --points 260
     python -m predictor_v5 predict ... --sweep 100,150,200,250,300
+    python -m predictor_v5 --labels backchannel:labels.csv --min-trades 5 holdout --train 2022-2024 --test 2025
 
 ``--labels csv:path/to/backchannel_reference_values.csv`` swaps the label
 source (columns: player_id, season, start_value, end_value).
@@ -15,20 +16,20 @@ import json
 from pathlib import Path
 
 from predictor_v5.data import build_dataset, load_season_stats
-from predictor_v5.evaluate import evaluate
+from predictor_v5.evaluate import evaluate, holdout
 from predictor_v5.labels import get_label_source
 from predictor_v5.model import WhatIfModel
 
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 
 
-def _dataset(spec: str):
-    source = get_label_source(spec)
+def _dataset(args):
+    source = get_label_source(args.labels, min_trades=args.min_trades, end_column=args.end_column)
     return source, build_dataset(load_season_stats(), source)
 
 
 def cmd_evaluate(args) -> None:
-    source, df = _dataset(args.labels)
+    source, df = _dataset(args)
     result = evaluate(df, source.name, source.scale_max)
     preds = result.pop("predictions")
     ARTIFACTS.mkdir(exist_ok=True)
@@ -38,8 +39,17 @@ def cmd_evaluate(args) -> None:
     print(json.dumps(result, indent=2))
 
 
+def cmd_holdout(args) -> None:
+    source, df = _dataset(args)
+    first, _, last = args.train.partition("-")
+    train_seasons = list(range(int(first), int(last or first) + 1))
+    result = holdout(df, source.name, source.scale_max, train_seasons, args.test)
+    result.pop("predictions")
+    print(json.dumps(result, indent=2))
+
+
 def cmd_train(args) -> None:
-    source, df = _dataset(args.labels)
+    source, df = _dataset(args)
     model = WhatIfModel(label_source=source.name, scale_max=source.scale_max).fit(df)
     path = Path(args.out or ARTIFACTS / f"{source.name}.joblib")
     model.save(path)
@@ -59,11 +69,18 @@ def cmd_predict(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="predictor_v5")
     parser.add_argument("--labels", default="ktc", help="'ktc' or 'csv:<path>'")
+    parser.add_argument("--min-trades", type=int, default=0, help="CSV labels: min trades at start and end")
+    parser.add_argument("--end-column", default="end_value", help="CSV labels: column to use as end value")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     ev = sub.add_parser("evaluate")
     ev.add_argument("--save-predictions", action="store_true")
     ev.set_defaults(func=cmd_evaluate)
+
+    ho = sub.add_parser("holdout")
+    ho.add_argument("--train", required=True, help="season or range, e.g. 2022-2024")
+    ho.add_argument("--test", type=int, required=True)
+    ho.set_defaults(func=cmd_holdout)
 
     tr = sub.add_parser("train")
     tr.add_argument("--out")
