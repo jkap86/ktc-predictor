@@ -63,7 +63,7 @@ def test_predict_uses_each_sources_own_start_value(tool):
 
 def test_predict_flags_thin_backchannel_and_missing_ktc(tool):
     out = tool.predict("2", [200])
-    assert out["backchannel"]["predictions"] and "2 trades" in out["backchannel"]["note"]
+    assert out["backchannel"]["predictions"] is None and "2 trades" in out["backchannel"]["note"]
     assert out["ktc"]["predictions"] is None and "No pre-season KTC value" in out["ktc"]["note"]
 
 

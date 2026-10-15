@@ -4,7 +4,7 @@
 --   psql "$DATABASE_URL" -v season=2026 -v cutoff=2026-09-09 \
 --     -f predictor_v5/sql/start_values.sql --csv -o start_values_2026.csv
 --
--- One row per Sleeper player (QB/RB/WR/TE) with a value on either source.
+-- One row per Sleeper player (QB/RB/WR/TE); see the WHERE clause for who's kept.
 -- Backchannel: the dynasty superflex board of the newest generation dated on
 -- or before :cutoff (stored `value` is the fixed reference scale, the same
 -- scale as the training labels). KTC: each player's latest dynasty SF value
@@ -44,5 +44,8 @@ SELECT p.player_id,
   LEFT JOIN bc ON bc.player_id = p.player_id
   LEFT JOIN ktc ON ktc.player_id = p.player_id
  WHERE p.position IN ('QB', 'RB', 'WR', 'TE')
-   AND (bc.value > 0 OR ktc.value > 0)
+   -- Untraded Backchannel rows sit at the ADP prior (long-retired players
+   -- can rank near the top), so keep players KTC values, plus rostered
+   -- players with real trade volume.
+   AND (ktc.value > 0 OR (bc.trades_window >= 20 AND coalesce(p.team, '') <> ''))
  ORDER BY coalesce(bc.value, 0) DESC, coalesce(ktc.value, 0) DESC;

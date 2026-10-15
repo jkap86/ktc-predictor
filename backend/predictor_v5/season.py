@@ -3,7 +3,10 @@ end-of-season value from their pre-season value.
 
 Start values are each player's value the day before kickoff, exported from
 the thelab database with ``sql/start_values.sql`` into
-``data/start_values_<season>.csv``. Every player gets two predictions, one
+``data/start_values_<season>.csv`` (2026: Backchannel model
+``baseline-hl28-v1``, 528 players). Backchannel's scale shrinks every season
+(stars started near 8,000 in 2022, 5,000 in 2025 and 2,900 in 2026), so read
+its predictions as a change from the player's own start value. Every player gets two predictions, one
 per label source, each starting from that source's own pre-season value:
 
 - ``backchannel``: model trained on Backchannel trade-derived values
@@ -113,6 +116,9 @@ class SeasonTool:
             )
         df = pd.read_csv(path, dtype={"player_id": str})
         df = df[df["position"].isin(POSITIONS)].copy()
+        # KTC first: Backchannel's untraded players carry prior values that
+        # don't rank them meaningfully.
+        df = df.sort_values(["ktc_value", "bc_value"], ascending=False, na_position="last")
         df["age"] = [age_on(b, self.cutoff) for b in df["birth_date"]]
         return df.reset_index(drop=True)
 
@@ -169,6 +175,16 @@ class SeasonTool:
                 src["predictions"] = None
                 src["note"] = "No age on file" if age is None else f"No pre-season {SOURCES[name]['label']} value"
                 continue
+            trades = int(src.get("trades") or 0)
+            if name == "backchannel" and trades < MIN_TRADES:
+                # Untraded players sit at Backchannel's ADP prior, which puts
+                # some long-gone players near the top of the board.
+                src["predictions"] = None
+                src["note"] = (
+                    f"Only {trades} trades before the cutoff, so there's no trade-based start value. "
+                    f"The model needs at least {MIN_TRADES}."
+                )
+                continue
             rows = pd.DataFrame({"start_value": start, "age": age, "position": info["position"], "points": points})
             values = self.models[name].predict(rows)
             src["predictions"] = [
@@ -177,11 +193,6 @@ class SeasonTool:
             ]
             src["train_seasons"] = self.models[name].train_seasons
             src["note"] = None
-            if name == "backchannel" and (src.get("trades") or 0) < MIN_TRADES:
-                src["note"] = (
-                    f"Only {int(src.get('trades') or 0)} trades before the cutoff, so the start value is mostly "
-                    "Backchannel's ADP prior. The model trained on players with 5 or more."
-                )
         info["age"] = age
         info["season"] = self.season
         info["cutoff"] = self.cutoff.isoformat()
