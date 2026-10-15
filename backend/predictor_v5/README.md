@@ -20,8 +20,12 @@ On small containers, `OMP_NUM_THREADS=1` makes training and tests much faster.
 - **Stats** (position, age, season points) come from `data/training-data.zip`.
   Points are full-PPR season totals (4 pt passing TD).
 - **Labels** (`start_value`, `end_value`) come from a label source. Rows where
-  either value is missing or zero are dropped. KTC gives 1,896 labelled
+  either value is missing or zero are dropped. KTC gives 1,674 labelled
   player-seasons for 2020–2025.
+- **College seasons are dropped.** KTC values devy players, so the zip has
+  0-point seasons before a player's NFL debut (222 labelled rows, such as
+  Caleb Williams 2023). A season is kept only if it is the player's first
+  season with games played or later. Later 0-game seasons (injury) stay.
 
 ## Swapping labels
 
@@ -53,16 +57,16 @@ Skill is `1 - model MAE / no-change MAE`.
 
 | Slice | n | Model MAE | No-change MAE | Skill |
 |---|---|---|---|---|
-| All | 1751 | 437 | 593 | 26% |
-| 2021 | 232 | 576 | 611 | 6% |
-| 2022 | 242 | 506 | 666 | 24% |
-| 2023 | 366 | 476 | 632 | 25% |
-| 2024 | 448 | 393 | 567 | 31% |
-| 2025 | 463 | 344 | 538 | 36% |
-| QB | 294 | 526 | 718 | 27% |
-| RB | 472 | 432 | 587 | 26% |
-| TE | 309 | 433 | 566 | 24% |
-| WR | 676 | 404 | 554 | 27% |
+| All | 1535 | 460 | 636 | 28% |
+| 2021 | 177 | 687 | 773 | 11% |
+| 2022 | 234 | 510 | 685 | 26% |
+| 2023 | 303 | 510 | 690 | 26% |
+| 2024 | 371 | 423 | 606 | 30% |
+| 2025 | 450 | 342 | 546 | 37% |
+| QB | 259 | 543 | 767 | 29% |
+| RB | 397 | 463 | 649 | 29% |
+| TE | 280 | 437 | 594 | 26% |
+| WR | 599 | 433 | 592 | 27% |
 
 Full output: `artifacts/ktc_eval.json`. 2021 is weakest because it trains on
 2020 alone.
@@ -70,6 +74,6 @@ Full output: `artifacts/ktc_eval.json`. 2021 is weakest because it trains on
 Notes from development:
 
 - Points carry the signal. Without them the same model is worse than
-  no-change (MAE about 617).
-- Adding games played (points per game plus games) cut MAE to about 409. It
+  no-change (MAE about 660).
+- Adding games played (points per game plus games) cut MAE to about 432. It
   isn't an input yet because the ask was season points only.

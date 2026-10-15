@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from predictor_v5 import evaluate as ev
-from predictor_v5.data import build_dataset
+from predictor_v5.data import build_dataset, drop_pre_nfl
 from predictor_v5.labels import CsvLabels, get_label_source
 from predictor_v5.model import WhatIfModel
 
@@ -96,3 +96,15 @@ def test_csv_label_source_rejects_missing_columns(tmp_path):
     pd.DataFrame({"player_id": ["1"], "season": [2024], "value": [100]}).to_csv(path, index=False)
     with pytest.raises(ValueError, match="missing columns"):
         CsvLabels(path).load()
+
+
+def test_drop_pre_nfl_keeps_debut_and_later_including_injured_seasons():
+    stats = pd.DataFrame(
+        {
+            "player_id": ["qb", "qb", "qb", "qb", "devy"],
+            "season": [2023, 2024, 2025, 2026, 2025],
+            "games": [0, 17, 0, 12, 0],
+        }
+    )
+    kept = drop_pre_nfl(stats)
+    assert list(zip(kept["player_id"], kept["season"])) == [("qb", 2024), ("qb", 2025), ("qb", 2026)]

@@ -43,7 +43,20 @@ def load_season_stats(zip_path: Path | str = DEFAULT_ZIP) -> pd.DataFrame:
                     "games": int(s.get("games_played") or 0),
                 }
             )
-    return pd.DataFrame(rows)
+    return drop_pre_nfl(pd.DataFrame(rows))
+
+
+def drop_pre_nfl(stats: pd.DataFrame) -> pd.DataFrame:
+    """Drop seasons before a player's first NFL game.
+
+    KTC values college (devy) players, so the zip has 0-point seasons such
+    as Caleb Williams 2023. ``rookie_year`` doesn't flag them reliably, so
+    the rule is games: keep a season only if it is the player's first season
+    with games played or later. Players who never played are dropped.
+    """
+    debut = stats[stats["games"] > 0].groupby("player_id")["season"].min()
+    first = stats["player_id"].map(debut)
+    return stats[first.notna() & (stats["season"] >= first)].reset_index(drop=True)
 
 
 def build_dataset(stats: pd.DataFrame, labels: LabelSource) -> pd.DataFrame:

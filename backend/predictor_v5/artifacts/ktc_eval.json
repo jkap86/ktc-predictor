@@ -2,67 +2,67 @@
   "label_source": "ktc",
   "folds": "train on seasons < Y, test on Y",
   "overall": {
-    "n": 1751,
-    "model_mae": 437.2,
-    "no_change_mae": 592.6,
-    "skill": 0.262
+    "n": 1535,
+    "model_mae": 460.2,
+    "no_change_mae": 636.5,
+    "skill": 0.277
   },
   "by_season": {
     "2021": {
-      "n": 232,
-      "model_mae": 576.1,
-      "no_change_mae": 610.9,
-      "skill": 0.057
+      "n": 177,
+      "model_mae": 686.7,
+      "no_change_mae": 772.9,
+      "skill": 0.112
     },
     "2022": {
-      "n": 242,
-      "model_mae": 506.4,
-      "no_change_mae": 665.7,
-      "skill": 0.239
+      "n": 234,
+      "model_mae": 510.5,
+      "no_change_mae": 685.0,
+      "skill": 0.255
     },
     "2023": {
-      "n": 366,
-      "model_mae": 475.8,
-      "no_change_mae": 632.4,
-      "skill": 0.248
+      "n": 303,
+      "model_mae": 509.7,
+      "no_change_mae": 690.5,
+      "skill": 0.262
     },
     "2024": {
-      "n": 448,
-      "model_mae": 392.9,
-      "no_change_mae": 567.3,
-      "skill": 0.307
+      "n": 371,
+      "model_mae": 423.1,
+      "no_change_mae": 606.1,
+      "skill": 0.302
     },
     "2025": {
-      "n": 463,
-      "model_mae": 344.0,
-      "no_change_mae": 538.1,
-      "skill": 0.361
+      "n": 450,
+      "model_mae": 342.1,
+      "no_change_mae": 546.4,
+      "skill": 0.374
     }
   },
   "by_position": {
     "QB": {
-      "n": 294,
-      "model_mae": 526.5,
-      "no_change_mae": 718.4,
-      "skill": 0.267
+      "n": 259,
+      "model_mae": 543.3,
+      "no_change_mae": 767.4,
+      "skill": 0.292
     },
     "RB": {
-      "n": 472,
-      "model_mae": 431.7,
-      "no_change_mae": 586.8,
-      "skill": 0.264
+      "n": 397,
+      "model_mae": 462.9,
+      "no_change_mae": 649.0,
+      "skill": 0.287
     },
     "TE": {
-      "n": 309,
-      "model_mae": 433.2,
-      "no_change_mae": 566.2,
-      "skill": 0.235
+      "n": 280,
+      "model_mae": 437.1,
+      "no_change_mae": 594.0,
+      "skill": 0.264
     },
     "WR": {
-      "n": 676,
-      "model_mae": 404.1,
-      "no_change_mae": 553.9,
-      "skill": 0.27
+      "n": 599,
+      "model_mae": 433.2,
+      "no_change_mae": 591.6,
+      "skill": 0.268
     }
   },
   "beats_no_change": true
