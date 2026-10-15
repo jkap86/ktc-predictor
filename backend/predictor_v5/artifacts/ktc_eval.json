@@ -1,0 +1,69 @@
+{
+  "label_source": "ktc",
+  "folds": "train on seasons < Y, test on Y",
+  "overall": {
+    "n": 1582,
+    "model_mae": 454.2,
+    "no_change_mae": 624.4,
+    "skill": 0.273
+  },
+  "by_season": {
+    "2021": {
+      "n": 181,
+      "model_mae": 687.8,
+      "no_change_mae": 765.5,
+      "skill": 0.102
+    },
+    "2022": {
+      "n": 241,
+      "model_mae": 500.6,
+      "no_change_mae": 668.5,
+      "skill": 0.251
+    },
+    "2023": {
+      "n": 313,
+      "model_mae": 501.3,
+      "no_change_mae": 672.0,
+      "skill": 0.254
+    },
+    "2024": {
+      "n": 384,
+      "model_mae": 406.2,
+      "no_change_mae": 595.7,
+      "skill": 0.318
+    },
+    "2025": {
+      "n": 463,
+      "model_mae": 346.7,
+      "no_change_mae": 538.1,
+      "skill": 0.356
+    }
+  },
+  "by_position": {
+    "QB": {
+      "n": 270,
+      "model_mae": 544.5,
+      "no_change_mae": 744.0,
+      "skill": 0.268
+    },
+    "RB": {
+      "n": 413,
+      "model_mae": 457.9,
+      "no_change_mae": 633.9,
+      "skill": 0.278
+    },
+    "TE": {
+      "n": 284,
+      "model_mae": 443.3,
+      "no_change_mae": 587.2,
+      "skill": 0.245
+    },
+    "WR": {
+      "n": 615,
+      "model_mae": 417.0,
+      "no_change_mae": 582.8,
+      "skill": 0.284
+    }
+  },
+  "beats_no_change": true
+}
