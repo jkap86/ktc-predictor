@@ -73,6 +73,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               <ModelSelector />
               <NavLink href="/">Search</NavLink>
+              <NavLink href="/season">2026 Season</NavLink>
               <ThemeToggle />
             </div>
           </div>

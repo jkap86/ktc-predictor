@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.config import CORS_ORIGINS, DEFAULT_MODEL_ID
-from app.routers import players_router, predictions_router, models_router
+from app.routers import players_router, predictions_router, models_router, season_router
 from app.services.model_registry import get_registry
 from app.services.ktc_db import get_pool, close_pool
 
@@ -75,6 +75,7 @@ app.add_middleware(
 app.include_router(players_router)
 app.include_router(predictions_router)
 app.include_router(models_router)
+app.include_router(season_router)
 
 
 @app.get("/health")
