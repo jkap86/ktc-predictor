@@ -6,6 +6,8 @@
     python -m predictor_v5 predict --position WR --age 24 --start 5200 --points 260
     python -m predictor_v5 predict ... --sweep 100,150,200,250,300
     python -m predictor_v5 --labels backchannel:labels.csv --min-trades 5 holdout --train 2022-2024 --test 2025
+    python -m predictor_v5 build-labels --values raw.csv --out labels.csv
+    python -m predictor_v5 compare-labels
     python -m predictor_v5 season --player "Ja'Marr Chase" --points 330
     python -m predictor_v5 season --player "Bijan Robinson" --sweep 200,275,350
 
@@ -17,12 +19,13 @@ import argparse
 import json
 from pathlib import Path
 
-from predictor_v5.data import build_dataset, load_season_stats
+from predictor_v5.data import DEFAULT_ZIP, build_dataset, load_season_stats
 from predictor_v5.evaluate import evaluate, holdout
 from predictor_v5.labels import get_label_source
 from predictor_v5.model import WhatIfModel
 
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
+DATA = Path(__file__).resolve().parent / "data"
 
 
 def _dataset(args):
@@ -96,6 +99,31 @@ def cmd_season(args) -> None:
             print(f"    Note: {src['note']}")
 
 
+def cmd_build_labels(args) -> None:
+    from predictor_v5.label_export import build_labels_file
+
+    labels = build_labels_file(args.values, args.out, args.training_data)
+    print(f"Wrote {len(labels)} player-seasons to {args.out}")
+
+
+def cmd_compare_labels(args) -> None:
+    from predictor_v5.compare_labels import compare_label_files, write_report
+
+    train_starts = tuple(int(value) for value in args.train_starts.split(","))
+    result = compare_label_files(
+        args.baseline_values,
+        args.candidate_values,
+        training_data_path=args.training_data,
+        min_trades=args.min_trades,
+        train_starts=train_starts,
+        train_end=args.train_end,
+        test_season=args.test,
+    )
+    write_report(result, args.out)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    print(f"Wrote deterministic report to {args.out}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="predictor_v5")
     parser.add_argument("--labels", default="ktc", help="'ktc' or 'csv:<path>'")
@@ -133,6 +161,23 @@ def main() -> None:
     se.add_argument("--age", type=float, help="override the age on file")
     se.add_argument("--start-values", help="start values CSV (default data/start_values_<season>.csv)")
     se.set_defaults(func=cmd_season)
+
+    bl = sub.add_parser("build-labels", help="join a raw market-history export to training stats")
+    bl.add_argument("--values", required=True, help="raw CSV produced by sql/backchannel_labels.sql")
+    bl.add_argument("--out", required=True, help="destination for the 14-column label CSV")
+    bl.add_argument("--training-data", default=str(DEFAULT_ZIP))
+    bl.set_defaults(func=cmd_build_labels)
+
+    cl = sub.add_parser("compare-labels", help="compare old and MFL-inclusive labels on the 2025 holdout")
+    cl.add_argument("--baseline-values", default=str(DATA / "backchannel_labels_2019_2025.csv"))
+    cl.add_argument("--candidate-values", default=str(DATA / "backchannel_labels_2019_2025_mfl.csv"))
+    cl.add_argument("--out", default=str(ARTIFACTS / "backchannel_mfl_comparison.json"))
+    cl.add_argument("--training-data", default=str(DEFAULT_ZIP))
+    cl.add_argument("--min-trades", type=int, default=5)
+    cl.add_argument("--train-starts", default="2022,2021,2020")
+    cl.add_argument("--train-end", type=int, default=2024)
+    cl.add_argument("--test", type=int, default=2025)
+    cl.set_defaults(func=cmd_compare_labels)
 
     args = parser.parse_args()
     if args.cmd in ("predict", "season") and args.points is None and not args.sweep:
