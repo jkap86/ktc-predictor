@@ -148,7 +148,7 @@ POSITIONS = {"QB": (40, 0.30), "RB": (40, 0.30), "WR": (40, 0.30), "TE": (40, 0.
 
 
 def test_select_candidate_applies_gain_position_and_sample_gates():
-    """A high overall score must not mask a position regression or tiny cohort."""
+    """Rank first, then reject the selected window when one of its guards fails."""
     baseline = _summary(0.40, POSITIONS)
     candidates = [
         {"train_start": 2022, "matched": _summary(0.43, {**POSITIONS, "TE": (40, 0.24)})},
@@ -158,7 +158,7 @@ def test_select_candidate_applies_gain_position_and_sample_gates():
 
     decision, evaluated = select_candidate(baseline, candidates)
 
-    assert decision == {"action": "update", "selected_train_start": 2020}
+    assert decision == {"action": "retain", "selected_train_start": 2021}
     assert [row["gate"]["qualified"] for row in evaluated] == [False, False, True]
     assert evaluated[0]["gate"]["position_guard"] is False
     assert evaluated[1]["gate"]["sample_guard"] is False

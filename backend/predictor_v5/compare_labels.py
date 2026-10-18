@@ -140,7 +140,6 @@ def select_candidate(
     """Apply the overall, position, and sample gates and choose a window."""
     baseline_skill = baseline_matched["overall"]["skill"]
     evaluated = deepcopy(candidates)
-    qualified = []
 
     for candidate in evaluated:
         matched = candidate["matched"]
@@ -162,17 +161,16 @@ def select_candidate(
             "position_guard": position_guard,
             "qualified": overall_guard and sample_guard and position_guard,
         }
-        if candidate["gate"]["qualified"]:
-            qualified.append(candidate)
-
-    if not qualified:
+    ranked = [candidate for candidate in evaluated if candidate["matched"]["overall"]["skill"] is not None]
+    if not ranked:
         return {"action": "retain", "selected_train_start": None}, evaluated
 
-    best_skill = max(candidate["matched"]["overall"]["skill"] for candidate in qualified)
+    best_skill = max(candidate["matched"]["overall"]["skill"] for candidate in ranked)
     near_best = [
         candidate
-        for candidate in qualified
+        for candidate in ranked
         if best_skill - candidate["matched"]["overall"]["skill"] <= tie_margin + 1e-12
     ]
     selected = max(near_best, key=lambda candidate: candidate["train_start"])
-    return {"action": "update", "selected_train_start": selected["train_start"]}, evaluated
+    action = "update" if selected["gate"]["qualified"] else "retain"
+    return {"action": action, "selected_train_start": selected["train_start"]}, evaluated
