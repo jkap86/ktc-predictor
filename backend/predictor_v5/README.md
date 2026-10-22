@@ -79,15 +79,31 @@ evidence; `--min-trades 5` applies the evaluation filter later. Before
 joining it fails on integrity errors: duplicate player-seasons, missing or
 negative required values, an expected season (default 2019–2025) with no
 rows, mixed or unexpected model versions, or more than one start or end
-generation in a season. Ordinary exclusions are counted, not hidden, in
+generation in a season. An export carrying any provenance column must carry
+all of them, filled in. Ordinary exclusions are counted, not hidden, in
 `<label file>.provenance.json`: per season, the market rows, labelled rows,
 pre-NFL seasons, players without QB/RB/WR/TE stats (all of 2019, which the
 archive lacks), rows below 5 trades, missing next-board values and labelled
 rows by position, plus warnings when a season with stats joins nothing or a
 position is empty. The same file records the model version, generation ids
 and revisions per season, export time, and SHA-256 of the raw export, label
-file and training data. The committed label CSVs predate these columns, so
-their generation ids are not recorded.
+file and training data. Both files are built and checked in a staging
+directory, then moved into place together; if either move fails the previous
+CSV and provenance are put back, so a failed build never leaves a mismatched
+pair.
+
+**Which model version a label file is.** `compare-labels` never takes a
+version on trust. It accepts a file's version from its `.provenance.json`
+when the SHA-256 recorded there matches the file and the version came from
+the export's own `model_version` column, or from `data/label_manifest.json`,
+which lists the committed CSVs that predate sidecars by SHA-256 (file names
+are ignored; editing a file drops it from the list). Sources that disagree,
+stale or incomplete sidecars, and files in neither place are unverified.
+`--baseline-model-version` and friends are assertions: a mismatch with a
+verified version is an error, and on an unverified file they only label an
+informational comparison. An unverified or unknown version can never make a
+candidate eligible for promotion. The committed CSVs predate the export's
+provenance columns, so their generation ids are not recorded.
 
 ### How `compare-labels` chooses and judges a candidate (schema 2)
 
@@ -112,12 +128,34 @@ target label set's start value and scored against that set's end value, on
 the (player, season) keys both predictors have. Both predictors then share
 the same no-change MAE, so MAE and skill compare directly. The gate (+2
 points overall, ≥30 rows per position, no position more than 5 points down)
-must pass on the control's target *and* the candidate's, and only when both
-use the same market model version; otherwise the decision is `retain`.
+must pass on the control's target *and* the candidate's. Every threshold
+(the gain, the position drop, and selection's 1-point tie margin) compares
+full-precision skill; the report rounds skill to 0.001 for display and keeps
+`skill_exact` beside it.
 
-2025 is not an untouched holdout: PR #3 already picked a window from its
-scores. The report says so, and an `update` decision would still need an
-unseen season (or separately held-out data) before promotion.
+The `decision` block separates what passed from what may happen:
+
+- `gate_passed`: every guard passed on every target.
+- `promotion_eligible` (and `action: update`): the gate passed on two label
+  files whose shared model version is verified. This is a recommendation.
+- `evidence_sufficient_for_promotion`: also needs an untouched test season.
+- `promotion_authorized` is always false: the tool never deploys; promotion
+  is a manual change to `season.py`.
+
+Test-season history comes from `KNOWN_HOLDOUTS` in `compare_labels.py`
+(2025: reused, because PR #3 picked a window from its scores) or from
+`--holdout-status` (`untouched` needs `--holdout-evidence`, and a season on
+record can't be redeclared). Any other season is `unknown`, which, like
+`reused`, keeps `requires_unseen_season_confirmation` true. Every training
+window, control included, must have rows in each of its seasons, or the run
+stops with the label file and missing seasons named; `fits` records the rows
+each model trained on.
+
+Experiment A (`label_effect`) trains both label sets on the same
+(player, season) keys, those both keep after the 5-trade filter, so only
+the label values differ; `training_population` gives the shared and
+one-sided row counts. `label_and_population_effect` is the operational view
+in which each set trains on all its rows. Neither is used for selection.
 
 The schema-1 reports (`artifacts/backchannel_mfl_comparison.json`,
 `artifacts/backchannel_mfl_v3_comparison.json`) are kept as committed for
@@ -203,8 +241,11 @@ the two effects.
 with its defaults (two runs are byte-identical). Same label files as above;
 nothing was re-exported.
 
-**Selection (2024 validation, MFL v1 labels):** 2020–23 scores 48.5%, 2021–23
-46.3%; 5 seasons is ineligible (no 2019 stats). The 4-season window is
+All three label files verify through `data/label_manifest.json` (old and MFL
+v1: `baseline-hl28-v1`; MFL v3: `baseline-hl28-v3`).
+
+**Selection (2024 validation, MFL v1 labels):** 2020–23 scores 48.51%, 2021–23
+46.30%; 5 seasons is ineligible (no 2019 stats). The 4-season window is
 frozen, so the final candidate trains on 2021–24, the same window PR #3
 picked from 2025.
 
@@ -212,19 +253,24 @@ picked from 2025.
 
 | Target | Control (old, 2022–24) | MFL v1 (2021–24) | Gain | No-change MAE |
 |---|---|---|---|---|
-| Old v1 labels | 43.6% (MAE 117.6) | 44.9% (MAE 114.9) | +1.3 | 208.5 |
-| MFL v1 labels | 43.2% (MAE 117.7) | 44.5% (MAE 115.0) | +1.3 | 207.2 |
+| Old v1 labels | 43.6% (MAE 117.6) | 44.9% (MAE 114.9) | +1.26 | 208.5 |
+| MFL v1 labels | 43.2% (MAE 117.7) | 44.5% (MAE 115.0) | +1.32 | 207.2 |
 
-Short of the 2-point bar on both targets; every position has ≥30 rows and
-none drops more than 5 points (TE −2.1 / −1.6). **Decision: retain.**
+Gains are full precision. Short of the 2-point bar on both targets; every position has ≥30 rows and
+none drops more than 5 points (TE −2.1 / −1.6). **Decision: retain**
+(`gate_passed` false; 2025 is a reused holdout regardless).
 
-**MFL effect at equal windows** (Experiment A, same players, same target):
-the MFL labels add nothing. Old-label target skill, old vs MFL labels: 2022–24
-43.6% vs 43.7%, 2021–24 45.5% vs 44.9%, 2020–24 46.6% vs 45.3%. The
-gain the PR #3 report credited to MFL comes from the longer training window,
-and old labels gain more from it. Selected on 2024, though, the old labels
-would keep 3 seasons (41.6% vs 39.9% for 4), so the longer old-label
-windows are not a validated choice either (Experiment B).
+**MFL label effect, same training rows** (Experiment A, same players, same
+target): small and inconsistent. Old-label target skill, old vs MFL labels,
+both trained on the rows both keep: 2022–24 43.6% vs 44.7%, 2021–24 45.5% vs
+44.2%, 2020–24 46.6% vs 45.8% (MFL target: 43.2/44.4, 45.2/43.9, 46.3/45.3).
+Old labels are a subset of the MFL rows; MFL adds 16 rows over 2022–24, 93
+in 2021 and 128 in 2020. Letting each set train on all its rows
+(`label_and_population_effect`) gives 43.6/43.7, 45.5/44.9, 46.6/45.3. Either
+way, the gain the PR #3 report credited to MFL comes from the longer window,
+and old labels gain at least as much from it. Selected on 2024, though, the
+old labels would keep 3 seasons (41.6% vs 39.9% for 4), so the longer
+old-label windows are not a validated choice either (Experiment B).
 
 **v1 vs v3 (Experiment C, informational):** MFL v1 and MFL v3 trained on
 2021–24 each win on their own target (v1 target: 44.9% vs 39.4%; v3 target:

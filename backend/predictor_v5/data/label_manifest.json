@@ -1,0 +1,20 @@
+{
+  "description": "Market model versions of committed label CSVs built before build-labels wrote .provenance.json sidecars. Keyed by the CSV's SHA-256; any edit to a file drops it from this list. Add a file here only with a record of the export it came from.",
+  "files": {
+    "eb8eab7365746b408d188a1fa2a78a20c6085a7650782a83abf512b7160491f5": {
+      "file": "backchannel_labels_2019_2025.csv",
+      "model_version": "baseline-hl28-v1",
+      "evidence": "Added in commit f8da060 (PR #2) as the pre-MFL baseline-hl28-v1 export the season tool trains on; season.py and the README document v1."
+    },
+    "efd42bc836b0706657cf7cc140c256d48fdc8eacbb08aface3069a74cf7f678a": {
+      "file": "backchannel_labels_2019_2025_mfl.csv",
+      "model_version": "baseline-hl28-v1",
+      "evidence": "Commit a6726d6 (PR #3): exported with backchannel_labels.sql filtering model_version = 'baseline-hl28-v1' after the MFL revise."
+    },
+    "d8a42e58bea6a0bac62860bcfffcfce26ffb77204f6ccf9608f36ad98562c8dd": {
+      "file": "backchannel_labels_2019_2025_mfl_v3.csv",
+      "model_version": "baseline-hl28-v3",
+      "evidence": "Commit 608db7e (PR #3): exported with the SQL's model_version edited to 'baseline-hl28-v3'."
+    }
+  }
+}

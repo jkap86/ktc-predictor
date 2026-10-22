@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -21,7 +22,9 @@ from predictor_v5.compare_labels import (
     compare_datasets,
     coverage_by_position,
     coverage_counts,
+    holdout_record,
     matched_keys,
+    resolve_label_set,
     score_on_target,
     select_training_window,
 )
@@ -29,7 +32,9 @@ from predictor_v5.label_export import (
     LABEL_EXPORT_COLUMNS,
     build_label_frame,
     build_labels_file,
+    file_sha256,
     label_coverage,
+    label_identity,
     provenance_path,
     validate_market_export,
 )
@@ -155,7 +160,7 @@ def test_validate_market_export_rejects_mixed_or_wrong_model_versions():
 def test_validate_market_export_requires_one_start_and_end_generation_per_season():
     with pytest.raises(ValueError, match="start generation is not unique"):
         validate_market_export(_with_provenance(_market_values(), start_generation_id=[10, 12, 10]))
-    with pytest.raises(ValueError, match="end generation is missing"):
+    with pytest.raises(ValueError, match=r"empty provenance values in \['end_generation_id'\]"):
         validate_market_export(_with_provenance(_market_values(), end_generation_id=[11, None, 11]))
 
 
@@ -276,14 +281,14 @@ def test_score_on_target_refuses_keys_missing_from_either_side():
         score_on_target(target.assign(pred_value=1.0), target, [("a", 2025), ("b", 2025)])
 
 
-def _fake_holdout(skills: dict, calls: list | None = None):
+def _fake_holdout(skills: dict, calls: list | None = None, final_season: int = 2025):
     """holdout() stand-in: skill by (label set, window length); predictions echo the test rows."""
 
     def fake(df, label_source, scale_max, train_seasons, test_season):
         if calls is not None:
             calls.append({"max_season_seen": int(df["season"].max()), "train": list(train_seasons), "test": test_season})
         test = df[df["season"] == test_season].copy()
-        skill = skills[(label_source, len(train_seasons), test_season == 2025)]
+        skill = skills[(label_source, len(train_seasons), test_season == final_season)]
         # Leave (1 - skill) of the no-change error so summarize() returns `skill`.
         test["pred_value"] = test["start_value"] + skill * (test["end_value"] - test["start_value"])
         return {"predictions": test}
@@ -328,7 +333,7 @@ def test_selection_only_trains_and_validates_before_the_test_season(monkeypatch)
     calls = []
     monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS, calls))
 
-    result = select_training_window(_frame(), train_years=(3, 4, 5), validation_seasons=(2024,), test_season=2025)
+    result = select_training_window(_ls(_frame()), train_years=(3, 4, 5), validation_seasons=(2024,), test_season=2025)
 
     assert calls and all(call["max_season_seen"] < 2025 for call in calls)
     assert all(max(call["train"]) < call["test"] < 2025 for call in calls)
@@ -343,7 +348,7 @@ def test_selection_only_trains_and_validates_before_the_test_season(monkeypatch)
 
 def test_selection_rejects_validation_on_or_after_the_test_season():
     with pytest.raises(ValueError, match="must precede"):
-        select_training_window(_frame(), train_years=(3,), validation_seasons=(2025,), test_season=2025)
+        select_training_window(_ls(_frame()), train_years=(3,), validation_seasons=(2025,), test_season=2025)
 
 
 def test_selection_is_unchanged_when_holdout_outcomes_change():
@@ -353,8 +358,8 @@ def test_selection_is_unchanged_when_holdout_outcomes_change():
     altered.loc[altered["season"] == 2025, "end_value"] *= 7.0
 
     kwargs = {"train_years": (2, 3, 4), "validation_seasons": (2023, 2024), "test_season": 2025}
-    first = select_training_window(frame, **kwargs)
-    second = select_training_window(altered, **kwargs)
+    first = select_training_window(_ls(frame), **kwargs)
+    second = select_training_window(_ls(altered), **kwargs)
 
     assert first == second
     assert first["selected_train_years"] in (2, 3)  # 4 needs 2019 for the 2023 fold
@@ -364,7 +369,7 @@ def test_selection_prefers_shorter_window_within_one_point(monkeypatch):
     skills = {("candidate", 3, False): 0.441, ("candidate", 4, False): 0.45}
     monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(skills))
 
-    result = select_training_window(_frame(), train_years=(4, 3), validation_seasons=(2024,), test_season=2025)
+    result = select_training_window(_ls(_frame()), train_years=(4, 3), validation_seasons=(2024,), test_season=2025)
 
     assert result["selected_train_years"] == 3
 
@@ -400,10 +405,14 @@ def test_gate_passes_at_exactly_two_points():
     assert gate["qualified"] is True
 
 
-def _sets(candidate_version="baseline-hl28-v1"):
+def _ls(frame: pd.DataFrame, name: str = "candidate", version: str | None = "baseline-hl28-v1", verified=True):
+    return LabelSet(name, frame, version, verified, f"{name}.csv")
+
+
+def _sets(candidate_version="baseline-hl28-v1", verified=True, seasons=range(2020, 2026)):
     return (
-        LabelSet("baseline", _frame(), "baseline-hl28-v1"),
-        LabelSet("candidate", _frame(), candidate_version),
+        _ls(_frame(seasons), "baseline", "baseline-hl28-v1", verified),
+        _ls(_frame(seasons), "candidate", candidate_version, verified),
     )
 
 
@@ -411,7 +420,7 @@ def test_compare_datasets_freezes_selection_before_final_evaluation(monkeypatch)
     calls = []
     monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS, calls))
     baseline, candidate = _sets()
-    model_effect = LabelSet("model_effect", _frame(scale=0.75), "baseline-hl28-v3")
+    model_effect = _ls(_frame(scale=0.75), "model_effect", "baseline-hl28-v3")
 
     report = compare_datasets(baseline, candidate, model_effect=model_effect)
 
@@ -425,8 +434,13 @@ def test_compare_datasets_freezes_selection_before_final_evaluation(monkeypatch)
         assert scores["control"]["overall"]["no_change_mae"] == scores["candidate"]["overall"]["no_change_mae"]
     assert report["gate"]["evaluated"] is True
     assert report["decision"]["action"] == "update"
+    assert report["decision"]["gate_passed"] is True
+    assert report["decision"]["promotion_eligible"] is True
+    # 2025 is a reused holdout, so even a pass is not enough evidence, and nothing is ever deployed.
+    assert report["decision"]["evidence_sufficient_for_promotion"] is False
+    assert report["decision"]["promotion_authorized"] is False
     assert report["decision"]["requires_unseen_season_confirmation"] is True
-    assert "not an untouched holdout" in report["final_evaluation"]["holdout_status"]
+    assert report["final_evaluation"]["holdout"]["status"] == "reused"
     assert all(max(fit["train_seasons"]) < fit["test_season"] for fit in report["fits"])
     assert report["experiments"]["model_version"]["gate_eligible"] is False
     assert report["experiments"]["model_version"]["missing_cells"]
@@ -450,7 +464,7 @@ def test_cross_version_comparison_can_never_approve(monkeypatch):
 
     assert report["gate"]["evaluated"] is False
     assert report["decision"]["action"] == "retain"
-    assert "different market model versions" in report["decision"]["reason"]
+    assert "not on one known market model version" in report["decision"]["reason"]
     assert report["experiments"]["label_effect"]["status"] == "not_comparable"
 
 
@@ -489,7 +503,356 @@ def test_report_is_deterministic(monkeypatch):
 
 def test_fit_predict_refuses_future_training_seasons():
     with pytest.raises(ValueError, match="must all precede"):
-        compare_labels._fit_predict(_frame(), [2024, 2025], 2025, "candidate", [])
+        compare_labels._fit_predict(_ls(_frame()), [2024, 2025], 2025, [])
+
+
+# --- review fixes: provenance, populations, coverage, precision, publishing, holdout status ---
+
+LEGACY = Path(__file__).parents[1] / "data"
+
+
+def _label_csv(path: Path, scale: float = 1.0) -> Path:
+    frame = _frame(range(2023, 2026), n=8, scale=scale).assign(start_trades_window=9, end_trades_window=9)
+    frame.to_csv(path, index=False)
+    return path
+
+
+def _manifest(path: Path, entries: dict) -> Path:
+    path.write_text(json.dumps({"files": entries}))
+    return path
+
+
+def test_committed_label_files_are_verified_by_hash_not_name(tmp_path):
+    expected = {
+        "backchannel_labels_2019_2025.csv": "baseline-hl28-v1",
+        "backchannel_labels_2019_2025_mfl.csv": "baseline-hl28-v1",
+        "backchannel_labels_2019_2025_mfl_v3.csv": "baseline-hl28-v3",
+    }
+    for name, version in expected.items():
+        identity = label_identity(LEGACY / name)
+        assert (identity["verified"], identity["model_version"], identity["source"]) == (True, version, "manifest")
+
+    # A copy under another name is still the same file; a different file under the old name is not.
+    renamed = tmp_path / "anything.csv"
+    shutil.copy(LEGACY / "backchannel_labels_2019_2025_mfl_v3.csv", renamed)
+    assert label_identity(renamed)["model_version"] == "baseline-hl28-v3"
+    impostor = _label_csv(tmp_path / "backchannel_labels_2019_2025.csv")
+    assert label_identity(impostor)["verified"] is False
+
+
+def test_v3_file_declared_v1_is_rejected():
+    frame = _frame()
+    with pytest.raises(ValueError, match="is baseline-hl28-v3 by its manifest provenance, not baseline-hl28-v1"):
+        resolve_label_set(
+            "candidate", LEGACY / "backchannel_labels_2019_2025_mfl_v3.csv", frame, "baseline-hl28-v1"
+        )
+
+
+def test_unknown_label_file_keeps_assertion_but_stays_unverified(tmp_path):
+    path = _label_csv(tmp_path / "labels.csv")
+    manifest = _manifest(tmp_path / "manifest.json", {})
+
+    label_set, info = resolve_label_set("candidate", path, _frame(), "baseline-hl28-v1", manifest)
+    bare, _ = resolve_label_set("candidate", path, _frame(), None, manifest)
+
+    assert (label_set.model_version, label_set.verified) == ("baseline-hl28-v1", False)
+    assert info["provenance_problems"] == ["no provenance sidecar and not in the label manifest"]
+    assert (bare.model_version, bare.verified) == (None, False)
+
+
+def _sidecar(csv_path: Path, **overrides) -> Path:
+    report = {
+        "label_file": {"sha256": file_sha256(csv_path)},
+        "model_version": "baseline-hl28-v1",
+        "model_version_source": "export",
+    }
+    report.update(overrides)
+    path = provenance_path(csv_path)
+    path.write_text(json.dumps(report))
+    return path
+
+
+def test_sidecar_verifies_only_the_file_it_describes(tmp_path):
+    path = _label_csv(tmp_path / "labels.csv")
+    manifest = _manifest(tmp_path / "manifest.json", {})
+    _sidecar(path)
+    assert label_identity(path, manifest)["model_version"] == "baseline-hl28-v1"
+
+    with path.open("a") as handle:
+        handle.write("extra,2025,1,1,QB,25,1,1,1,1,9,9,,\n")
+    stale = label_identity(path, manifest)
+    assert stale["verified"] is False
+    assert "stale provenance" in stale["problems"][0]
+
+
+@pytest.mark.parametrize(
+    ("sidecar", "manifest_version", "problem"),
+    [
+        ({"model_version_source": "argument"}, None, "came from 'argument'"),
+        ({"model_version": None}, None, "came from 'export', not the export"),
+        ({"label_file": {}}, None, "unreadable or incomplete"),
+        ({}, "baseline-hl28-v3", "provenance sources disagree"),
+        (None, "", "without a model version"),
+    ],
+)
+def test_incomplete_or_conflicting_provenance_is_unverified(tmp_path, sidecar, manifest_version, problem):
+    path = _label_csv(tmp_path / "labels.csv")
+    if sidecar is not None:
+        _sidecar(path, **sidecar)
+    entries = {} if manifest_version is None else {file_sha256(path): {"model_version": manifest_version}}
+    identity = label_identity(path, _manifest(tmp_path / "manifest.json", entries))
+
+    assert identity["verified"] is False
+    assert identity["model_version"] is None
+    assert any(problem in p for p in identity["problems"])
+
+
+def test_unverified_labels_cannot_become_promotion_eligible(monkeypatch):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+
+    report = compare_datasets(*_sets(verified=False))
+
+    assert report["decision"]["gate_passed"] is True
+    assert report["decision"]["promotion_eligible"] is False
+    assert report["decision"]["action"] == "retain"
+    assert "unverified" in report["decision"]["reason"]
+
+
+def test_label_effect_ignores_candidate_only_training_rows():
+    """Real model: rows only the candidate has change the operational view, never the isolated one."""
+    rng = np.random.default_rng(3)
+    base = _synthetic(n_per_season=80, seasons=range(2021, 2026))
+    candidate = base.assign(end_value=base["end_value"] * rng.uniform(0.9, 1.1, len(base)))
+    extra = _synthetic(n_per_season=40, seasons=range(2021, 2025), seed=9)
+    extra = extra.assign(player_id="extra-" + extra["player_id"], end_value=extra["start_value"] * 5)
+    sets = [_ls(base, "baseline"), _ls(candidate), _ls(pd.concat([candidate, extra], ignore_index=True))]
+
+    def run(candidate_set, effect=compare_labels.label_effect):
+        return effect(sets[0], candidate_set, (3,), 2024, 2025, True, log := [])["windows"][0], log
+
+    plain, _ = run(sets[1])
+    padded, padded_log = run(sets[2])
+
+    assert padded["scores"] == plain["scores"]
+    assert padded["training_population"]["candidate_only_by_season"] == {"2022": 40, "2023": 40, "2024": 40}
+    assert padded["training_population"]["shared_by_season"] == {"2022": 80, "2023": 80, "2024": 80}
+    # Both models in the isolated run trained on the same rows per season.
+    assert padded_log[0]["train_rows_by_season"] == padded_log[1]["train_rows_by_season"]
+    assert {fit["training_population"] for fit in padded_log} == {"shared"}
+
+    operational = run(sets[2], compare_labels._label_and_population_effect)[0]
+    assert operational["scores"] != plain["scores"]
+
+
+def test_missing_control_training_season_fails_instead_of_shortening(monkeypatch):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+    baseline, candidate = _sets()
+    baseline = _ls(baseline.frame[baseline.frame["season"] != 2023], "baseline")
+
+    with pytest.raises(ValueError, match=r"baseline \(baseline.csv\): no training rows for seasons \[2023\]"):
+        compare_datasets(baseline, candidate, control_train_seasons=[2022, 2023, 2024])
+
+
+def test_missing_final_candidate_season_fails(monkeypatch):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout({**SKILLS, ("candidate", 2, False): 0.5}))
+    baseline, candidate = _sets()
+    # Selection validates on 2023 (training 2021-22), then the frozen window 2023-24 lacks 2024.
+    thin = candidate.frame[candidate.frame["season"] != 2024]
+    with pytest.raises(ValueError, match=r"candidate \(candidate.csv\): no training rows for seasons \[2024\]"):
+        compare_datasets(baseline, _ls(thin), train_years=(2,), validation_seasons=(2023,))
+
+
+def test_fits_record_the_rows_each_model_trained_on(monkeypatch):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+
+    report = compare_datasets(*_sets())
+
+    control_fit = next(f for f in report["fits"] if f["label_set"] == "baseline" and f["test_season"] == 2025)
+    assert control_fit["train_rows_by_season"] == {"2022": 120, "2023": 120, "2024": 120}
+    assert control_fit["test_rows"] == 120
+
+
+def test_gate_uses_full_precision_gain():
+    """0.41951 - 0.40049 = 0.01902: rounds to 0.420 - 0.400 but must fail the 2-point bar."""
+    gate = apply_gate(_gate_summary(0.40049, EVEN), _gate_summary(0.41951, EVEN))
+
+    assert gate["overall_guard"] is False
+    assert gate["gain"] == pytest.approx(0.01902)
+
+
+def test_position_guard_uses_full_precision_drop():
+    control = _gate_summary(0.40, {**EVEN, "TE": (40, 0.30049)})
+    at_limit = apply_gate(_gate_summary(0.40, EVEN), _gate_summary(0.43, {**EVEN, "TE": (40, 0.25)}))
+    just_over = apply_gate(control, _gate_summary(0.43, {**EVEN, "TE": (40, 0.25)}))
+
+    assert at_limit["position_guard"] is True
+    assert just_over["position_guard"] is False  # 0.05049 drop; rounded it would be 0.050
+
+
+def test_gate_fails_safely_without_a_no_change_error():
+    gate = apply_gate(_gate_summary(0.40, EVEN), _gate_summary(None, EVEN))
+
+    assert gate["qualified"] is False
+    assert gate["gain"] is None
+
+
+@pytest.mark.parametrize(("shorter", "selected"), [(0.4404, 4), (0.4405, 3)])
+def test_selection_tie_margin_uses_full_precision(monkeypatch, shorter, selected):
+    """0.45049 - 0.4404 = 0.01009 > 1 point, though both round to 0.450 and 0.440."""
+    skills = {("candidate", 3, False): shorter, ("candidate", 4, False): 0.45049}
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(skills))
+
+    result = select_training_window(_ls(_frame()), train_years=(3, 4), validation_seasons=(2024,), test_season=2025)
+
+    assert result["selected_train_years"] == selected
+
+
+def test_report_rounds_for_display_and_keeps_exact_skill(monkeypatch):
+    skills = {**SKILLS, ("candidate", 4, True): 0.4412345}
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(skills))
+
+    report = compare_datasets(*_sets())
+
+    overall = report["final_evaluation"]["matched"]["candidate"]["candidate"]["overall"]
+    assert overall["skill"] == 0.441
+    assert overall["skill_exact"] == pytest.approx(0.4412345)
+
+
+def test_holdout_records():
+    assert holdout_record(2025)["status"] == "reused"
+    assert holdout_record(2026) == {"season": 2026, "status": "unknown", "evidence": None, "source": "none"}
+    declared = holdout_record(2026, {"status": "untouched", "evidence": "sealed before PR #4"})
+    assert (declared["status"], declared["source"]) == ("untouched", "declared")
+    with pytest.raises(ValueError, match="on record as 'reused'"):
+        holdout_record(2025, {"status": "untouched", "evidence": "x"})
+    with pytest.raises(ValueError, match="needs evidence"):
+        holdout_record(2026, {"status": "untouched"})
+
+
+FUTURE_SKILLS = {
+    ("baseline", 4, True): 0.40,
+    ("candidate", 3, False): 0.45,
+    ("candidate", 4, False): 0.50,
+    ("candidate", 5, False): 0.40,
+    ("candidate", 4, True): 0.45,
+    ("candidate", 3, True): 0.40,
+    ("candidate", 5, True): 0.40,
+    ("baseline", 3, True): 0.40,
+    ("baseline", 5, True): 0.40,
+    ("baseline", 3, False): 0.40,
+    ("baseline", 4, False): 0.40,
+    ("baseline", 5, False): 0.40,
+}
+
+
+@pytest.mark.parametrize(
+    ("declared", "status", "sufficient"),
+    [(None, "unknown", False), ({"status": "untouched", "evidence": "sealed"}, "untouched", True)],
+)
+def test_future_season_status_controls_promotion_evidence(monkeypatch, declared, status, sufficient):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(FUTURE_SKILLS, final_season=2026))
+
+    report = compare_datasets(
+        *_sets(seasons=range(2020, 2027)),
+        train_end=2025,
+        test_season=2026,
+        validation_seasons=(2025,),
+        control_train_seasons=[2022, 2023, 2024, 2025],
+        holdout_declaration=declared,
+    )
+
+    assert report["final_evaluation"]["holdout"]["status"] == status
+    assert report["decision"]["gate_passed"] is True
+    assert report["decision"]["evidence_sufficient_for_promotion"] is sufficient
+    assert report["decision"]["requires_unseen_season_confirmation"] is not sufficient
+    assert report["decision"]["promotion_authorized"] is False
+
+
+def _old_pair(tmp_path) -> tuple[Path, Path]:
+    out = tmp_path / "labels.csv"
+    out.write_text("old csv\n")
+    provenance_path(out).write_text("old provenance\n")
+    return out, provenance_path(out)
+
+
+def _build(tmp_path, monkeypatch, values=None):
+    from predictor_v5 import label_export
+
+    raw = tmp_path / "raw.csv"
+    (values if values is not None else _with_provenance(_market_values())).to_csv(raw, index=False)
+    zip_path = tmp_path / "training-data.zip"
+    zip_path.write_bytes(b"stub")
+    monkeypatch.setattr(label_export, "read_season_stats", lambda path: _stats())
+    return build_labels_file(raw, tmp_path / "labels.csv", zip_path, expected_seasons=(2025,))
+
+
+def _assert_untouched(tmp_path, out, sidecar):
+    assert out.read_text() == "old csv\n"
+    assert sidecar.read_text() == "old provenance\n"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["labels.csv", "labels.provenance.json", "raw.csv", "training-data.zip"]
+
+
+def test_failed_coverage_report_leaves_previous_pair(tmp_path, monkeypatch):
+    from predictor_v5 import label_export
+
+    out, sidecar = _old_pair(tmp_path)
+    monkeypatch.setattr(label_export, "label_coverage", lambda *a, **k: 1 / 0)
+
+    with pytest.raises(ZeroDivisionError):
+        _build(tmp_path, monkeypatch)
+    _assert_untouched(tmp_path, out, sidecar)
+
+
+def test_failed_serialization_leaves_previous_pair(tmp_path, monkeypatch):
+    from predictor_v5 import label_export
+
+    out, sidecar = _old_pair(tmp_path)
+    monkeypatch.setattr(label_export.json, "dumps", lambda *a, **k: (_ for _ in ()).throw(TypeError("boom")))
+
+    with pytest.raises(TypeError, match="boom"):
+        _build(tmp_path, monkeypatch)
+    _assert_untouched(tmp_path, out, sidecar)
+
+
+def test_failed_publication_restores_previous_pair(tmp_path, monkeypatch):
+    from predictor_v5 import label_export
+
+    out, sidecar = _old_pair(tmp_path)
+    real_replace = os.replace
+    calls = []
+
+    def flaky_replace(src, dst):
+        calls.append(Path(dst).name)
+        # Backups (2 calls) and the CSV move succeed; moving the provenance in fails.
+        if len(calls) == 4:
+            raise OSError("disk full")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(label_export.os, "replace", flaky_replace)
+    with pytest.raises(OSError, match="disk full"):
+        _build(tmp_path, monkeypatch)
+    _assert_untouched(tmp_path, out, sidecar)
+
+
+def test_successful_publication_writes_a_matching_pair(tmp_path, monkeypatch):
+    out, sidecar = _old_pair(tmp_path)
+
+    _build(tmp_path, monkeypatch)
+
+    assert list(pd.read_csv(out).columns) == LABEL_EXPORT_COLUMNS
+    assert json.loads(sidecar.read_text())["label_file"]["sha256"] == file_sha256(out)
+    assert label_identity(out)["model_version"] == "baseline-hl28-v1"
+    assert not any(p.name.startswith(".") for p in tmp_path.iterdir())
+
+
+def test_new_format_export_needs_complete_provenance(tmp_path, monkeypatch):
+    partial = _with_provenance(_market_values()).drop(columns=["exported_at"])
+    with pytest.raises(ValueError, match=r"not \['exported_at'\]"):
+        validate_market_export(partial)
+    with pytest.raises(ValueError, match="empty provenance values"):
+        validate_market_export(_with_provenance(_market_values(), start_revision=[2, None, 2]))
+    with pytest.raises(ValueError, match="next-board generation id without its revision"):
+        validate_market_export(_with_provenance(_market_values(), next_generation_id=[5, 5, 5]))
 
 
 # --- SQL (local disposable Postgres only) -----------------------------------

@@ -20,15 +20,30 @@ def season_folds(df: pd.DataFrame, min_train_seasons: int = 1) -> list[int]:
     return [int(s) for s in seasons[min_train_seasons:]]
 
 
-def summarize(g: pd.DataFrame) -> dict:
+def summarize_exact(g: pd.DataFrame) -> dict:
+    """Full-precision MAEs and skill; ``skill`` is None when no-change MAE is 0."""
     model_mae = _mae(g["end_value"], g["pred_value"])
     base_mae = _mae(g["end_value"], g["start_value"])
     return {
         "n": len(g),
-        "model_mae": round(model_mae, 1),
-        "no_change_mae": round(base_mae, 1),
-        "skill": round(1 - model_mae / base_mae, 3) if base_mae else None,
+        "model_mae": model_mae,
+        "no_change_mae": base_mae,
+        "skill": 1 - model_mae / base_mae if base_mae else None,
     }
+
+
+def round_summary(summary: dict) -> dict:
+    """The display rounding used in every report: MAE to 0.1, skill to 0.001."""
+    return {
+        "n": summary["n"],
+        "model_mae": round(summary["model_mae"], 1),
+        "no_change_mae": round(summary["no_change_mae"], 1),
+        "skill": None if summary["skill"] is None else round(summary["skill"], 3),
+    }
+
+
+def summarize(g: pd.DataFrame) -> dict:
+    return round_summary(summarize_exact(g))
 
 
 def holdout(df: pd.DataFrame, label_source: str, scale_max: float, train_seasons: list[int], test_season: int) -> dict:

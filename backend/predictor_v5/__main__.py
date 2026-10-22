@@ -139,6 +139,7 @@ def cmd_compare_labels(args) -> None:
         baseline_model_version=args.baseline_model_version,
         candidate_model_version=args.candidate_model_version,
         model_effect_model_version=args.model_effect_model_version,
+        holdout_declaration={"status": args.holdout_status, "evidence": args.holdout_evidence} if args.holdout_status else None,
     )
     write_report(result, args.out)
     print(json.dumps(gate_summary(result), indent=2, sort_keys=True))
@@ -204,9 +205,17 @@ def main() -> None:
         default=str(DATA / "backchannel_labels_2019_2025_mfl_v3.csv"),
         help="candidate's trade corpus under another market model version (informational); '' to skip",
     )
-    cl.add_argument("--baseline-model-version", default="baseline-hl28-v1")
-    cl.add_argument("--candidate-model-version", default="baseline-hl28-v1")
-    cl.add_argument("--model-effect-model-version", default="baseline-hl28-v3")
+    # Assertions only: each file's version comes from its .provenance.json or data/label_manifest.json,
+    # and a mismatch is an error.
+    cl.add_argument("--baseline-model-version")
+    cl.add_argument("--candidate-model-version")
+    cl.add_argument("--model-effect-model-version")
+    cl.add_argument(
+        "--holdout-status",
+        choices=["reused", "untouched", "unknown"],
+        help="test-season history when it isn't on record (2025 is on record as reused)",
+    )
+    cl.add_argument("--holdout-evidence", help="how the test season was held out; required with --holdout-status untouched")
     # Schema-2 reports go to a new file so the schema-1 artifacts stay as committed.
     cl.add_argument("--out", default=str(ARTIFACTS / "backchannel_label_experiments_v2.json"))
     cl.add_argument("--training-data", default=str(DEFAULT_ZIP))

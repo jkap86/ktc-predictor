@@ -166,15 +166,21 @@
   },
   "decision": {
     "action": "retain",
+    "evidence_sufficient_for_promotion": false,
+    "gate_passed": false,
+    "promotion_authorized": false,
+    "promotion_eligible": false,
+    "promotion_note": "compare-labels never deploys a model; promotion is a manual change to season.py after review, and needs a passing gate on verified, same-version labels and an untouched test season",
     "reason": "a guard failed on at least one target",
     "requires_unseen_season_confirmation": true,
     "selected_train_start": 2021,
     "selected_train_years": 4
   },
   "experiments": {
-    "label_effect": {
+    "label_and_population_effect": {
       "status": "informational",
       "test_season": 2025,
+      "training_population": "all rows of each label set",
       "used_for_selection": false,
       "windows": [
         {
@@ -187,32 +193,37 @@
                     "model_mae": 166.4,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.436
+                    "skill": 0.436,
+                    "skill_exact": 0.4361745593284829
                   },
                   "RB": {
                     "model_mae": 112.3,
                     "n": 101,
                     "no_change_mae": 184.5,
-                    "skill": 0.391
+                    "skill": 0.391,
+                    "skill_exact": 0.3914042670893174
                   },
                   "TE": {
                     "model_mae": 102.0,
                     "n": 56,
                     "no_change_mae": 156.5,
-                    "skill": 0.348
+                    "skill": 0.348,
+                    "skill_exact": 0.3480477594542546
                   },
                   "WR": {
                     "model_mae": 103.9,
                     "n": 137,
                     "no_change_mae": 205.0,
-                    "skill": 0.493
+                    "skill": 0.493,
+                    "skill_exact": 0.4930768560202594
                   }
                 },
                 "overall": {
                   "model_mae": 117.6,
                   "n": 361,
                   "no_change_mae": 208.5,
-                  "skill": 0.436
+                  "skill": 0.436,
+                  "skill_exact": 0.4360595775385252
                 }
               },
               "candidate": {
@@ -221,32 +232,37 @@
                     "model_mae": 160.4,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.457
+                    "skill": 0.457,
+                    "skill_exact": 0.4565830763151175
                   },
                   "RB": {
                     "model_mae": 116.6,
                     "n": 101,
                     "no_change_mae": 184.5,
-                    "skill": 0.368
+                    "skill": 0.368,
+                    "skill_exact": 0.368020518899833
                   },
                   "TE": {
                     "model_mae": 102.0,
                     "n": 56,
                     "no_change_mae": 156.5,
-                    "skill": 0.348
+                    "skill": 0.348,
+                    "skill_exact": 0.348127970744995
                   },
                   "WR": {
                     "model_mae": 103.3,
                     "n": 137,
                     "no_change_mae": 205.0,
-                    "skill": 0.496
+                    "skill": 0.496,
+                    "skill_exact": 0.49614277271192253
                   }
                 },
                 "overall": {
                   "model_mae": 117.4,
                   "n": 361,
                   "no_change_mae": 208.5,
-                  "skill": 0.437
+                  "skill": 0.437,
+                  "skill_exact": 0.4367839029547116
                 }
               }
             },
@@ -257,32 +273,37 @@
                     "model_mae": 169.3,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.426
+                    "skill": 0.426,
+                    "skill_exact": 0.4262590896078383
                   },
                   "RB": {
                     "model_mae": 111.3,
                     "n": 101,
                     "no_change_mae": 181.6,
-                    "skill": 0.387
+                    "skill": 0.387,
+                    "skill_exact": 0.387214054818126
                   },
                   "TE": {
                     "model_mae": 101.6,
                     "n": 56,
                     "no_change_mae": 155.5,
-                    "skill": 0.347
+                    "skill": 0.347,
+                    "skill_exact": 0.346904012244842
                   },
                   "WR": {
                     "model_mae": 103.8,
                     "n": 137,
                     "no_change_mae": 204.2,
-                    "skill": 0.492
+                    "skill": 0.492,
+                    "skill_exact": 0.4917204071477206
                   }
                 },
                 "overall": {
                   "model_mae": 117.7,
                   "n": 361,
                   "no_change_mae": 207.2,
-                  "skill": 0.432
+                  "skill": 0.432,
+                  "skill_exact": 0.43193189321142667
                 }
               },
               "candidate": {
@@ -291,39 +312,44 @@
                     "model_mae": 164.0,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.444
+                    "skill": 0.444,
+                    "skill_exact": 0.44428991161542275
                   },
                   "RB": {
                     "model_mae": 116.5,
                     "n": 101,
                     "no_change_mae": 181.6,
-                    "skill": 0.358
+                    "skill": 0.358,
+                    "skill_exact": 0.3584648855056114
                   },
                   "TE": {
                     "model_mae": 100.6,
                     "n": 56,
                     "no_change_mae": 155.5,
-                    "skill": 0.353
+                    "skill": 0.353,
+                    "skill_exact": 0.3530139478665968
                   },
                   "WR": {
                     "model_mae": 102.7,
                     "n": 137,
                     "no_change_mae": 204.2,
-                    "skill": 0.497
+                    "skill": 0.497,
+                    "skill_exact": 0.49740153434072576
                   }
                 },
                 "overall": {
                   "model_mae": 117.6,
                   "n": 361,
                   "no_change_mae": 207.2,
-                  "skill": 0.432
+                  "skill": 0.432,
+                  "skill_exact": 0.43248601448473156
                 }
               }
             }
           },
           "skill_gain": {
-            "baseline": 0.001,
-            "candidate": 0.0
+            "baseline": 0.0007243254161863888,
+            "candidate": 0.0005541212733048972
           },
           "train_seasons": [
             2022,
@@ -342,32 +368,37 @@
                     "model_mae": 155.0,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.475
+                    "skill": 0.475,
+                    "skill_exact": 0.47488375222552603
                   },
                   "RB": {
                     "model_mae": 115.6,
                     "n": 101,
                     "no_change_mae": 184.5,
-                    "skill": 0.374
+                    "skill": 0.374,
+                    "skill_exact": 0.3735566039042951
                   },
                   "TE": {
                     "model_mae": 103.6,
                     "n": 56,
                     "no_change_mae": 156.5,
-                    "skill": 0.338
+                    "skill": 0.338,
+                    "skill_exact": 0.3380584489580789
                   },
                   "WR": {
                     "model_mae": 96.3,
                     "n": 137,
                     "no_change_mae": 205.0,
-                    "skill": 0.53
+                    "skill": 0.53,
+                    "skill_exact": 0.5302705893924772
                   }
                 },
                 "overall": {
                   "model_mae": 113.7,
                   "n": 361,
                   "no_change_mae": 208.5,
-                  "skill": 0.455
+                  "skill": 0.455,
+                  "skill_exact": 0.45452616264529133
                 }
               },
               "candidate": {
@@ -376,32 +407,37 @@
                     "model_mae": 152.4,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.484
+                    "skill": 0.484,
+                    "skill_exact": 0.4835944763231991
                   },
                   "RB": {
                     "model_mae": 110.1,
                     "n": 101,
                     "no_change_mae": 184.5,
-                    "skill": 0.403
+                    "skill": 0.403,
+                    "skill_exact": 0.40326601588738775
                   },
                   "TE": {
                     "model_mae": 105.3,
                     "n": 56,
                     "no_change_mae": 156.5,
-                    "skill": 0.327
+                    "skill": 0.327,
+                    "skill_exact": 0.32681213385266483
                   },
                   "WR": {
                     "model_mae": 104.1,
                     "n": 137,
                     "no_change_mae": 205.0,
-                    "skill": 0.492
+                    "skill": 0.492,
+                    "skill_exact": 0.4922157545188065
                   }
                 },
                 "overall": {
                   "model_mae": 114.9,
                   "n": 361,
                   "no_change_mae": 208.5,
-                  "skill": 0.449
+                  "skill": 0.449,
+                  "skill_exact": 0.4486632038575121
                 }
               }
             },
@@ -412,32 +448,37 @@
                     "model_mae": 157.1,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.468
+                    "skill": 0.468,
+                    "skill_exact": 0.4677950709391422
                   },
                   "RB": {
                     "model_mae": 114.9,
                     "n": 101,
                     "no_change_mae": 181.6,
-                    "skill": 0.367
+                    "skill": 0.367,
+                    "skill_exact": 0.3673545503552693
                   },
                   "TE": {
                     "model_mae": 102.6,
                     "n": 56,
                     "no_change_mae": 155.5,
-                    "skill": 0.34
+                    "skill": 0.34,
+                    "skill_exact": 0.3403602765589886
                   },
                   "WR": {
                     "model_mae": 96.0,
                     "n": 137,
                     "no_change_mae": 204.2,
-                    "skill": 0.53
+                    "skill": 0.53,
+                    "skill_exact": 0.5299358303615267
                   }
                 },
                 "overall": {
                   "model_mae": 113.6,
                   "n": 361,
                   "no_change_mae": 207.2,
-                  "skill": 0.452
+                  "skill": 0.452,
+                  "skill_exact": 0.4515749838125068
                 }
               },
               "candidate": {
@@ -446,39 +487,44 @@
                     "model_mae": 155.8,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.472
+                    "skill": 0.472,
+                    "skill_exact": 0.4720868214746482
                   },
                   "RB": {
                     "model_mae": 109.2,
                     "n": 101,
                     "no_change_mae": 181.6,
-                    "skill": 0.399
+                    "skill": 0.399,
+                    "skill_exact": 0.398833111152887
                   },
                   "TE": {
                     "model_mae": 104.0,
                     "n": 56,
                     "no_change_mae": 155.5,
-                    "skill": 0.331
+                    "skill": 0.331,
+                    "skill_exact": 0.33123023255702877
                   },
                   "WR": {
                     "model_mae": 103.8,
                     "n": 137,
                     "no_change_mae": 204.2,
-                    "skill": 0.492
+                    "skill": 0.492,
+                    "skill_exact": 0.4917629910854566
                   }
                 },
                 "overall": {
                   "model_mae": 115.0,
                   "n": 361,
                   "no_change_mae": 207.2,
-                  "skill": 0.445
+                  "skill": 0.445,
+                  "skill_exact": 0.4450860289204238
                 }
               }
             }
           },
           "skill_gain": {
-            "baseline": -0.006,
-            "candidate": -0.007
+            "baseline": -0.005862958787779204,
+            "candidate": -0.00648895489208301
           },
           "train_seasons": [
             2021,
@@ -498,32 +544,37 @@
                     "model_mae": 155.9,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.472
+                    "skill": 0.472,
+                    "skill_exact": 0.4717817642196356
                   },
                   "RB": {
                     "model_mae": 109.4,
                     "n": 101,
                     "no_change_mae": 184.5,
-                    "skill": 0.407
+                    "skill": 0.407,
+                    "skill_exact": 0.4074150791764751
                   },
                   "TE": {
                     "model_mae": 98.2,
                     "n": 56,
                     "no_change_mae": 156.5,
-                    "skill": 0.372
+                    "skill": 0.372,
+                    "skill_exact": 0.37211564652914886
                   },
                   "WR": {
                     "model_mae": 96.3,
                     "n": 137,
                     "no_change_mae": 205.0,
-                    "skill": 0.53
+                    "skill": 0.53,
+                    "skill_exact": 0.5301926166867417
                   }
                 },
                 "overall": {
                   "model_mae": 111.3,
                   "n": 361,
                   "no_change_mae": 208.5,
-                  "skill": 0.466
+                  "skill": 0.466,
+                  "skill_exact": 0.46603283127045037
                 }
               },
               "candidate": {
@@ -532,32 +583,37 @@
                     "model_mae": 141.4,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.521
+                    "skill": 0.521,
+                    "skill_exact": 0.5209450869750398
                   },
                   "RB": {
                     "model_mae": 109.9,
                     "n": 101,
                     "no_change_mae": 184.5,
-                    "skill": 0.404
+                    "skill": 0.404,
+                    "skill_exact": 0.40433811292925836
                   },
                   "TE": {
                     "model_mae": 107.7,
                     "n": 56,
                     "no_change_mae": 156.5,
-                    "skill": 0.311
+                    "skill": 0.311,
+                    "skill_exact": 0.31140860405240767
                   },
                   "WR": {
                     "model_mae": 106.0,
                     "n": 137,
                     "no_change_mae": 205.0,
-                    "skill": 0.483
+                    "skill": 0.483,
+                    "skill_exact": 0.48281896352681264
                   }
                 },
                 "overall": {
                   "model_mae": 113.9,
                   "n": 361,
                   "no_change_mae": 208.5,
-                  "skill": 0.453
+                  "skill": 0.453,
+                  "skill_exact": 0.45344273536585555
                 }
               }
             },
@@ -568,32 +624,37 @@
                     "model_mae": 158.4,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.463
+                    "skill": 0.463,
+                    "skill_exact": 0.4634827087963401
                   },
                   "RB": {
                     "model_mae": 108.7,
                     "n": 101,
                     "no_change_mae": 181.6,
-                    "skill": 0.402
+                    "skill": 0.402,
+                    "skill_exact": 0.4015697058658517
                   },
                   "TE": {
                     "model_mae": 98.1,
                     "n": 56,
                     "no_change_mae": 155.5,
-                    "skill": 0.369
+                    "skill": 0.369,
+                    "skill_exact": 0.36945715637260323
                   },
                   "WR": {
                     "model_mae": 95.7,
                     "n": 137,
                     "no_change_mae": 204.2,
-                    "skill": 0.531
+                    "skill": 0.531,
+                    "skill_exact": 0.5314597367527127
                   }
                 },
                 "overall": {
                   "model_mae": 111.3,
                   "n": 361,
                   "no_change_mae": 207.2,
-                  "skill": 0.463
+                  "skill": 0.463,
+                  "skill_exact": 0.4627816550298266
                 }
               },
               "candidate": {
@@ -602,39 +663,44 @@
                     "model_mae": 144.8,
                     "n": 67,
                     "no_change_mae": 295.1,
-                    "skill": 0.51
+                    "skill": 0.51,
+                    "skill_exact": 0.5095362234018195
                   },
                   "RB": {
                     "model_mae": 108.8,
                     "n": 101,
                     "no_change_mae": 181.6,
-                    "skill": 0.401
+                    "skill": 0.401,
+                    "skill_exact": 0.40086735889661296
                   },
                   "TE": {
                     "model_mae": 106.6,
                     "n": 56,
                     "no_change_mae": 155.5,
-                    "skill": 0.315
+                    "skill": 0.315,
+                    "skill_exact": 0.31481291611286444
                   },
                   "WR": {
                     "model_mae": 106.4,
                     "n": 137,
                     "no_change_mae": 204.2,
-                    "skill": 0.479
+                    "skill": 0.479,
+                    "skill_exact": 0.4792758102292545
                   }
                 },
                 "overall": {
                   "model_mae": 114.2,
                   "n": 361,
                   "no_change_mae": 207.2,
-                  "skill": 0.449
+                  "skill": 0.449,
+                  "skill_exact": 0.4489021614643225
                 }
               }
             }
           },
           "skill_gain": {
-            "baseline": -0.013,
-            "candidate": -0.014
+            "baseline": -0.012590095904594811,
+            "candidate": -0.013879493565504109
           },
           "train_seasons": [
             2020,
@@ -644,6 +710,683 @@
             2024
           ],
           "train_years": 5
+        }
+      ]
+    },
+    "label_effect": {
+      "status": "informational",
+      "test_season": 2025,
+      "training_population": "shared keys only",
+      "used_for_selection": false,
+      "windows": [
+        {
+          "matched_test_rows": 361,
+          "scores": {
+            "baseline": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 166.4,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.436,
+                    "skill_exact": 0.4361745593284829
+                  },
+                  "RB": {
+                    "model_mae": 112.3,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.391,
+                    "skill_exact": 0.3914042670893174
+                  },
+                  "TE": {
+                    "model_mae": 102.0,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.348,
+                    "skill_exact": 0.3480477594542546
+                  },
+                  "WR": {
+                    "model_mae": 103.9,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.493,
+                    "skill_exact": 0.4930768560202594
+                  }
+                },
+                "overall": {
+                  "model_mae": 117.6,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.436,
+                  "skill_exact": 0.4360595775385252
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 159.0,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.461,
+                    "skill_exact": 0.46124170040089707
+                  },
+                  "RB": {
+                    "model_mae": 109.8,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.405,
+                    "skill_exact": 0.4047951330676389
+                  },
+                  "TE": {
+                    "model_mae": 100.8,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.356,
+                    "skill_exact": 0.35552619269694585
+                  },
+                  "WR": {
+                    "model_mae": 103.8,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.494,
+                    "skill_exact": 0.49361130912648543
+                  }
+                },
+                "overall": {
+                  "model_mae": 115.3,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.447,
+                  "skill_exact": 0.4470325648247999
+                }
+              }
+            },
+            "candidate": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 169.3,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.426,
+                    "skill_exact": 0.4262590896078383
+                  },
+                  "RB": {
+                    "model_mae": 111.3,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.387,
+                    "skill_exact": 0.387214054818126
+                  },
+                  "TE": {
+                    "model_mae": 101.6,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.347,
+                    "skill_exact": 0.346904012244842
+                  },
+                  "WR": {
+                    "model_mae": 103.8,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.492,
+                    "skill_exact": 0.4917204071477206
+                  }
+                },
+                "overall": {
+                  "model_mae": 117.7,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.432,
+                  "skill_exact": 0.43193189321142667
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 162.0,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.451,
+                    "skill_exact": 0.450975980239534
+                  },
+                  "RB": {
+                    "model_mae": 109.2,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.399,
+                    "skill_exact": 0.3985274539285403
+                  },
+                  "TE": {
+                    "model_mae": 98.1,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.369,
+                    "skill_exact": 0.3690185979283195
+                  },
+                  "WR": {
+                    "model_mae": 103.7,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.492,
+                    "skill_exact": 0.4922934370898442
+                  }
+                },
+                "overall": {
+                  "model_mae": 115.2,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.444,
+                  "skill_exact": 0.44402872315300357
+                }
+              }
+            }
+          },
+          "skill_gain": {
+            "baseline": 0.010972987286274716,
+            "candidate": 0.012096829941576903
+          },
+          "train_seasons": [
+            2022,
+            2023,
+            2024
+          ],
+          "train_years": 3,
+          "training_population": {
+            "baseline_only_by_season": {
+              "2022": 0,
+              "2023": 0,
+              "2024": 0
+            },
+            "candidate_only_by_season": {
+              "2022": 7,
+              "2023": 7,
+              "2024": 2
+            },
+            "shared_by_season": {
+              "2022": 273,
+              "2023": 297,
+              "2024": 341
+            },
+            "shared_by_season_position": {
+              "2022": {
+                "QB": 47,
+                "RB": 79,
+                "TE": 44,
+                "WR": 103
+              },
+              "2023": {
+                "QB": 55,
+                "RB": 87,
+                "TE": 42,
+                "WR": 113
+              },
+              "2024": {
+                "QB": 63,
+                "RB": 96,
+                "TE": 52,
+                "WR": 130
+              }
+            },
+            "shared_rows": 911
+          }
+        },
+        {
+          "matched_test_rows": 361,
+          "scores": {
+            "baseline": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 155.0,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.475,
+                    "skill_exact": 0.47488375222552603
+                  },
+                  "RB": {
+                    "model_mae": 115.6,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.374,
+                    "skill_exact": 0.3735566039042951
+                  },
+                  "TE": {
+                    "model_mae": 103.6,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.338,
+                    "skill_exact": 0.3380584489580789
+                  },
+                  "WR": {
+                    "model_mae": 96.3,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.53,
+                    "skill_exact": 0.5302705893924772
+                  }
+                },
+                "overall": {
+                  "model_mae": 113.7,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.455,
+                  "skill_exact": 0.45452616264529133
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 159.2,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.461,
+                    "skill_exact": 0.4607201834573791
+                  },
+                  "RB": {
+                    "model_mae": 113.2,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.387,
+                    "skill_exact": 0.3867983832744639
+                  },
+                  "TE": {
+                    "model_mae": 102.1,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.348,
+                    "skill_exact": 0.3477543265830393
+                  },
+                  "WR": {
+                    "model_mae": 103.3,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.496,
+                    "skill_exact": 0.49594253268005495
+                  }
+                },
+                "overall": {
+                  "model_mae": 116.2,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.442,
+                  "skill_exact": 0.442403379418979
+                }
+              }
+            },
+            "candidate": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 157.1,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.468,
+                    "skill_exact": 0.4677950709391422
+                  },
+                  "RB": {
+                    "model_mae": 114.9,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.367,
+                    "skill_exact": 0.3673545503552693
+                  },
+                  "TE": {
+                    "model_mae": 102.6,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.34,
+                    "skill_exact": 0.3403602765589886
+                  },
+                  "WR": {
+                    "model_mae": 96.0,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.53,
+                    "skill_exact": 0.5299358303615267
+                  }
+                },
+                "overall": {
+                  "model_mae": 113.6,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.452,
+                  "skill_exact": 0.4515749838125068
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 161.9,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.452,
+                    "skill_exact": 0.4516050291957643
+                  },
+                  "RB": {
+                    "model_mae": 112.4,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.381,
+                    "skill_exact": 0.3809363531039578
+                  },
+                  "TE": {
+                    "model_mae": 100.4,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.354,
+                    "skill_exact": 0.3544828183378167
+                  },
+                  "WR": {
+                    "model_mae": 103.5,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.493,
+                    "skill_exact": 0.4934167060793545
+                  }
+                },
+                "overall": {
+                  "model_mae": 116.3,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.439,
+                  "skill_exact": 0.4386097732184786
+                }
+              }
+            }
+          },
+          "skill_gain": {
+            "baseline": -0.012122783226312328,
+            "candidate": -0.01296521059402822
+          },
+          "train_seasons": [
+            2021,
+            2022,
+            2023,
+            2024
+          ],
+          "train_years": 4,
+          "training_population": {
+            "baseline_only_by_season": {
+              "2021": 0,
+              "2022": 0,
+              "2023": 0,
+              "2024": 0
+            },
+            "candidate_only_by_season": {
+              "2021": 93,
+              "2022": 7,
+              "2023": 7,
+              "2024": 2
+            },
+            "shared_by_season": {
+              "2021": 229,
+              "2022": 273,
+              "2023": 297,
+              "2024": 341
+            },
+            "shared_by_season_position": {
+              "2021": {
+                "QB": 41,
+                "RB": 65,
+                "TE": 34,
+                "WR": 89
+              },
+              "2022": {
+                "QB": 47,
+                "RB": 79,
+                "TE": 44,
+                "WR": 103
+              },
+              "2023": {
+                "QB": 55,
+                "RB": 87,
+                "TE": 42,
+                "WR": 113
+              },
+              "2024": {
+                "QB": 63,
+                "RB": 96,
+                "TE": 52,
+                "WR": 130
+              }
+            },
+            "shared_rows": 1140
+          }
+        },
+        {
+          "matched_test_rows": 361,
+          "scores": {
+            "baseline": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 155.9,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.472,
+                    "skill_exact": 0.4717817642196356
+                  },
+                  "RB": {
+                    "model_mae": 109.4,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.407,
+                    "skill_exact": 0.4074150791764751
+                  },
+                  "TE": {
+                    "model_mae": 98.2,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.372,
+                    "skill_exact": 0.37211564652914886
+                  },
+                  "WR": {
+                    "model_mae": 96.3,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.53,
+                    "skill_exact": 0.5301926166867417
+                  }
+                },
+                "overall": {
+                  "model_mae": 111.3,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.466,
+                  "skill_exact": 0.46603283127045037
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 143.1,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.515,
+                    "skill_exact": 0.5151841266676916
+                  },
+                  "RB": {
+                    "model_mae": 109.2,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.408,
+                    "skill_exact": 0.4081422260824098
+                  },
+                  "TE": {
+                    "model_mae": 101.3,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.353,
+                    "skill_exact": 0.352819691308767
+                  },
+                  "WR": {
+                    "model_mae": 105.9,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.483,
+                    "skill_exact": 0.4833653243600027
+                  }
+                },
+                "overall": {
+                  "model_mae": 113.0,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.458,
+                  "skill_exact": 0.4578964151575424
+                }
+              }
+            },
+            "candidate": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 158.4,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.463,
+                    "skill_exact": 0.4634827087963401
+                  },
+                  "RB": {
+                    "model_mae": 108.7,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.402,
+                    "skill_exact": 0.4015697058658517
+                  },
+                  "TE": {
+                    "model_mae": 98.1,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.369,
+                    "skill_exact": 0.36945715637260323
+                  },
+                  "WR": {
+                    "model_mae": 95.7,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.531,
+                    "skill_exact": 0.5314597367527127
+                  }
+                },
+                "overall": {
+                  "model_mae": 111.3,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.463,
+                  "skill_exact": 0.4627816550298266
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 145.6,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.507,
+                    "skill_exact": 0.5066469620407269
+                  },
+                  "RB": {
+                    "model_mae": 108.9,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.4,
+                    "skill_exact": 0.4001005552050676
+                  },
+                  "TE": {
+                    "model_mae": 100.4,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.355,
+                    "skill_exact": 0.35450404860358997
+                  },
+                  "WR": {
+                    "model_mae": 106.3,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.479,
+                    "skill_exact": 0.4792917577258372
+                  }
+                },
+                "overall": {
+                  "model_mae": 113.4,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.453,
+                  "skill_exact": 0.45257771189374574
+                }
+              }
+            }
+          },
+          "skill_gain": {
+            "baseline": -0.00813641611290794,
+            "candidate": -0.010203943136080862
+          },
+          "train_seasons": [
+            2020,
+            2021,
+            2022,
+            2023,
+            2024
+          ],
+          "train_years": 5,
+          "training_population": {
+            "baseline_only_by_season": {
+              "2020": 0,
+              "2021": 0,
+              "2022": 0,
+              "2023": 0,
+              "2024": 0
+            },
+            "candidate_only_by_season": {
+              "2020": 128,
+              "2021": 93,
+              "2022": 7,
+              "2023": 7,
+              "2024": 2
+            },
+            "shared_by_season": {
+              "2020": 160,
+              "2021": 229,
+              "2022": 273,
+              "2023": 297,
+              "2024": 341
+            },
+            "shared_by_season_position": {
+              "2020": {
+                "QB": 32,
+                "RB": 40,
+                "TE": 20,
+                "WR": 68
+              },
+              "2021": {
+                "QB": 41,
+                "RB": 65,
+                "TE": 34,
+                "WR": 89
+              },
+              "2022": {
+                "QB": 47,
+                "RB": 79,
+                "TE": 44,
+                "WR": 103
+              },
+              "2023": {
+                "QB": 55,
+                "RB": 87,
+                "TE": 42,
+                "WR": 113
+              },
+              "2024": {
+                "QB": 63,
+                "RB": 96,
+                "TE": 52,
+                "WR": 130
+              }
+            },
+            "shared_rows": 1300
+          }
         }
       ]
     },
@@ -662,32 +1405,37 @@
                 "model_mae": 155.8,
                 "n": 67,
                 "no_change_mae": 295.1,
-                "skill": 0.472
+                "skill": 0.472,
+                "skill_exact": 0.4720868214746482
               },
               "RB": {
                 "model_mae": 109.2,
                 "n": 101,
                 "no_change_mae": 181.6,
-                "skill": 0.399
+                "skill": 0.399,
+                "skill_exact": 0.398833111152887
               },
               "TE": {
                 "model_mae": 104.0,
                 "n": 56,
                 "no_change_mae": 155.5,
-                "skill": 0.331
+                "skill": 0.331,
+                "skill_exact": 0.33123023255702877
               },
               "WR": {
                 "model_mae": 103.3,
                 "n": 139,
                 "no_change_mae": 206.5,
-                "skill": 0.5
+                "skill": 0.5,
+                "skill_exact": 0.49987905827426593
               }
             },
             "overall": {
               "model_mae": 114.7,
               "n": 363,
               "no_change_mae": 208.1,
-              "skill": 0.449
+              "skill": 0.449,
+              "skill_exact": 0.44861314980989986
             }
           },
           "model_effect": {
@@ -696,32 +1444,37 @@
                 "model_mae": 155.4,
                 "n": 67,
                 "no_change_mae": 295.1,
-                "skill": 0.474
+                "skill": 0.474,
+                "skill_exact": 0.47361146739506643
               },
               "RB": {
                 "model_mae": 128.7,
                 "n": 101,
                 "no_change_mae": 181.6,
-                "skill": 0.291
+                "skill": 0.291,
+                "skill_exact": 0.2911308357039032
               },
               "TE": {
                 "model_mae": 114.9,
                 "n": 56,
                 "no_change_mae": 155.5,
-                "skill": 0.261
+                "skill": 0.261,
+                "skill_exact": 0.2612220715491197
               },
               "WR": {
                 "model_mae": 114.5,
                 "n": 139,
                 "no_change_mae": 206.5,
-                "skill": 0.445
+                "skill": 0.445,
+                "skill_exact": 0.4452274237789171
               }
             },
             "overall": {
               "model_mae": 126.1,
               "n": 363,
               "no_change_mae": 208.1,
-              "skill": 0.394
+              "skill": 0.394,
+              "skill_exact": 0.3940161839439503
             }
           }
         },
@@ -732,32 +1485,37 @@
                 "model_mae": 144.5,
                 "n": 67,
                 "no_change_mae": 230.4,
-                "skill": 0.373
+                "skill": 0.373,
+                "skill_exact": 0.3727908450054763
               },
               "RB": {
                 "model_mae": 97.2,
                 "n": 101,
                 "no_change_mae": 143.1,
-                "skill": 0.32
+                "skill": 0.32,
+                "skill_exact": 0.3204209579337346
               },
               "TE": {
                 "model_mae": 85.8,
                 "n": 56,
                 "no_change_mae": 127.1,
-                "skill": 0.325
+                "skill": 0.325,
+                "skill_exact": 0.32463407049332704
               },
               "WR": {
                 "model_mae": 96.4,
                 "n": 139,
                 "no_change_mae": 162.4,
-                "skill": 0.406
+                "skill": 0.406,
+                "skill_exact": 0.40627357500556116
               }
             },
             "overall": {
               "model_mae": 103.9,
               "n": 363,
               "no_change_mae": 164.1,
-              "skill": 0.367
+              "skill": 0.367,
+              "skill_exact": 0.3670243560300669
             }
           },
           "model_effect": {
@@ -766,39 +1524,44 @@
                 "model_mae": 115.1,
                 "n": 67,
                 "no_change_mae": 230.4,
-                "skill": 0.501
+                "skill": 0.501,
+                "skill_exact": 0.5005267963675416
               },
               "RB": {
                 "model_mae": 92.9,
                 "n": 101,
                 "no_change_mae": 143.1,
-                "skill": 0.351
+                "skill": 0.351,
+                "skill_exact": 0.35100198757523304
               },
               "TE": {
                 "model_mae": 89.1,
                 "n": 56,
                 "no_change_mae": 127.1,
-                "skill": 0.299
+                "skill": 0.299,
+                "skill_exact": 0.29870602465384155
               },
               "WR": {
                 "model_mae": 85.2,
                 "n": 139,
                 "no_change_mae": 162.4,
-                "skill": 0.475
+                "skill": 0.475,
+                "skill_exact": 0.4751594173674085
               }
             },
             "overall": {
               "model_mae": 93.5,
               "n": 363,
               "no_change_mae": 164.1,
-              "skill": 0.431
+              "skill": 0.431,
+              "skill_exact": 0.4305462439235749
             }
           }
         }
       },
       "skill_gain": {
-        "candidate": -0.055,
-        "model_effect": 0.064
+        "candidate": -0.05459696586594953,
+        "model_effect": 0.06352188789350799
       },
       "status": "informational",
       "train_seasons": [
@@ -808,8 +1571,14 @@
         2024
       ],
       "versions": {
-        "candidate": "baseline-hl28-v1",
-        "model_effect": "baseline-hl28-v3"
+        "candidate": {
+          "model_version": "baseline-hl28-v1",
+          "verified": true
+        },
+        "model_effect": {
+          "model_version": "baseline-hl28-v3",
+          "verified": true
+        }
       }
     },
     "training_history": {
@@ -823,32 +1592,37 @@
                   "model_mae": 166.4,
                   "n": 67,
                   "no_change_mae": 295.1,
-                  "skill": 0.436
+                  "skill": 0.436,
+                  "skill_exact": 0.4361745593284829
                 },
                 "RB": {
                   "model_mae": 112.3,
                   "n": 101,
                   "no_change_mae": 184.5,
-                  "skill": 0.391
+                  "skill": 0.391,
+                  "skill_exact": 0.3914042670893174
                 },
                 "TE": {
                   "model_mae": 102.0,
                   "n": 56,
                   "no_change_mae": 156.5,
-                  "skill": 0.348
+                  "skill": 0.348,
+                  "skill_exact": 0.3480477594542546
                 },
                 "WR": {
                   "model_mae": 103.9,
                   "n": 137,
                   "no_change_mae": 205.0,
-                  "skill": 0.493
+                  "skill": 0.493,
+                  "skill_exact": 0.4930768560202594
                 }
               },
               "overall": {
                 "model_mae": 117.6,
                 "n": 361,
                 "no_change_mae": 208.5,
-                "skill": 0.436
+                "skill": 0.436,
+                "skill_exact": 0.4360595775385252
               },
               "train_seasons": [
                 2022,
@@ -863,32 +1637,37 @@
                   "model_mae": 155.0,
                   "n": 67,
                   "no_change_mae": 295.1,
-                  "skill": 0.475
+                  "skill": 0.475,
+                  "skill_exact": 0.47488375222552603
                 },
                 "RB": {
                   "model_mae": 115.6,
                   "n": 101,
                   "no_change_mae": 184.5,
-                  "skill": 0.374
+                  "skill": 0.374,
+                  "skill_exact": 0.3735566039042951
                 },
                 "TE": {
                   "model_mae": 103.6,
                   "n": 56,
                   "no_change_mae": 156.5,
-                  "skill": 0.338
+                  "skill": 0.338,
+                  "skill_exact": 0.338058448958079
                 },
                 "WR": {
                   "model_mae": 96.3,
                   "n": 137,
                   "no_change_mae": 205.0,
-                  "skill": 0.53
+                  "skill": 0.53,
+                  "skill_exact": 0.5302705893924772
                 }
               },
               "overall": {
                 "model_mae": 113.7,
                 "n": 361,
                 "no_change_mae": 208.5,
-                "skill": 0.455
+                "skill": 0.455,
+                "skill_exact": 0.45452616264529133
               },
               "train_seasons": [
                 2021,
@@ -904,32 +1683,37 @@
                   "model_mae": 155.9,
                   "n": 67,
                   "no_change_mae": 295.1,
-                  "skill": 0.472
+                  "skill": 0.472,
+                  "skill_exact": 0.4717817642196356
                 },
                 "RB": {
                   "model_mae": 109.4,
                   "n": 101,
                   "no_change_mae": 184.5,
-                  "skill": 0.407
+                  "skill": 0.407,
+                  "skill_exact": 0.4074150791764751
                 },
                 "TE": {
                   "model_mae": 98.2,
                   "n": 56,
                   "no_change_mae": 156.5,
-                  "skill": 0.372
+                  "skill": 0.372,
+                  "skill_exact": 0.37211564652914886
                 },
                 "WR": {
                   "model_mae": 96.3,
                   "n": 137,
                   "no_change_mae": 205.0,
-                  "skill": 0.53
+                  "skill": 0.53,
+                  "skill_exact": 0.5301926166867417
                 }
               },
               "overall": {
                 "model_mae": 111.3,
                 "n": 361,
                 "no_change_mae": 208.5,
-                "skill": 0.466
+                "skill": 0.466,
+                "skill_exact": 0.46603283127045037
               },
               "train_seasons": [
                 2020,
@@ -950,7 +1734,8 @@
                   "model_mae": 160.5,
                   "n": 341,
                   "no_change_mae": 274.9,
-                  "skill": 0.416
+                  "skill": 0.416,
+                  "skill_exact": 0.41610845509955663
                 }
               },
               "eligible": true,
@@ -960,32 +1745,37 @@
                     "model_mae": 239.6,
                     "n": 63,
                     "no_change_mae": 429.4,
-                    "skill": 0.442
+                    "skill": 0.442,
+                    "skill_exact": 0.4420936676341779
                   },
                   "RB": {
                     "model_mae": 141.4,
                     "n": 96,
                     "no_change_mae": 217.4,
-                    "skill": 0.349
+                    "skill": 0.349,
+                    "skill_exact": 0.3494938570332321
                   },
                   "TE": {
                     "model_mae": 115.5,
                     "n": 52,
                     "no_change_mae": 208.4,
-                    "skill": 0.446
+                    "skill": 0.446,
+                    "skill_exact": 0.4458214589535684
                   },
                   "WR": {
                     "model_mae": 154.3,
                     "n": 130,
                     "no_change_mae": 269.1,
-                    "skill": 0.427
+                    "skill": 0.427,
+                    "skill_exact": 0.42655469032559656
                   }
                 },
                 "overall": {
                   "model_mae": 160.5,
                   "n": 341,
                   "no_change_mae": 274.9,
-                  "skill": 0.416
+                  "skill": 0.416,
+                  "skill_exact": 0.41610845509955663
                 }
               },
               "train_years": 3,
@@ -1003,7 +1793,8 @@
                   "model_mae": 165.2,
                   "n": 341,
                   "no_change_mae": 274.9,
-                  "skill": 0.399
+                  "skill": 0.399,
+                  "skill_exact": 0.39921256765028723
                 }
               },
               "eligible": true,
@@ -1013,32 +1804,37 @@
                     "model_mae": 241.0,
                     "n": 63,
                     "no_change_mae": 429.4,
-                    "skill": 0.439
+                    "skill": 0.439,
+                    "skill_exact": 0.43886943081037
                   },
                   "RB": {
                     "model_mae": 147.6,
                     "n": 96,
                     "no_change_mae": 217.4,
-                    "skill": 0.321
+                    "skill": 0.321,
+                    "skill_exact": 0.32107370510705013
                   },
                   "TE": {
                     "model_mae": 109.8,
                     "n": 52,
                     "no_change_mae": 208.4,
-                    "skill": 0.473
+                    "skill": 0.473,
+                    "skill_exact": 0.47283839324891663
                   },
                   "WR": {
                     "model_mae": 163.5,
                     "n": 130,
                     "no_change_mae": 269.1,
-                    "skill": 0.392
+                    "skill": 0.392,
+                    "skill_exact": 0.3923622432132877
                   }
                 },
                 "overall": {
                   "model_mae": 165.2,
                   "n": 341,
                   "no_change_mae": 274.9,
-                  "skill": 0.399
+                  "skill": 0.399,
+                  "skill_exact": 0.39921256765028723
                 }
               },
               "train_years": 4,
@@ -1066,7 +1862,7 @@
               }
             }
           ],
-          "rationale": "best pooled validation skill 0.416; 3-season window scores 0.416 and is the shortest within 0.010 of the best",
+          "rationale": "best pooled validation skill 0.4161; 3-season window scores 0.4161 and is the shortest within 0.01 of the best (compared at full precision)",
           "selected_train_years": 3,
           "validation_seasons": [
             2024
@@ -1083,32 +1879,37 @@
                   "model_mae": 164.0,
                   "n": 67,
                   "no_change_mae": 295.1,
-                  "skill": 0.444
+                  "skill": 0.444,
+                  "skill_exact": 0.44428991161542275
                 },
                 "RB": {
                   "model_mae": 116.5,
                   "n": 101,
                   "no_change_mae": 181.6,
-                  "skill": 0.358
+                  "skill": 0.358,
+                  "skill_exact": 0.3584648855056114
                 },
                 "TE": {
                   "model_mae": 100.6,
                   "n": 56,
                   "no_change_mae": 155.5,
-                  "skill": 0.353
+                  "skill": 0.353,
+                  "skill_exact": 0.3530139478665969
                 },
                 "WR": {
                   "model_mae": 102.2,
                   "n": 139,
                   "no_change_mae": 206.5,
-                  "skill": 0.505
+                  "skill": 0.505,
+                  "skill_exact": 0.504927544902787
                 }
               },
               "overall": {
                 "model_mae": 117.4,
                 "n": 363,
                 "no_change_mae": 208.1,
-                "skill": 0.436
+                "skill": 0.436,
+                "skill_exact": 0.43596207347057414
               },
               "train_seasons": [
                 2022,
@@ -1123,32 +1924,37 @@
                   "model_mae": 155.8,
                   "n": 67,
                   "no_change_mae": 295.1,
-                  "skill": 0.472
+                  "skill": 0.472,
+                  "skill_exact": 0.4720868214746482
                 },
                 "RB": {
                   "model_mae": 109.2,
                   "n": 101,
                   "no_change_mae": 181.6,
-                  "skill": 0.399
+                  "skill": 0.399,
+                  "skill_exact": 0.398833111152887
                 },
                 "TE": {
                   "model_mae": 104.0,
                   "n": 56,
                   "no_change_mae": 155.5,
-                  "skill": 0.331
+                  "skill": 0.331,
+                  "skill_exact": 0.33123023255702877
                 },
                 "WR": {
                   "model_mae": 103.3,
                   "n": 139,
                   "no_change_mae": 206.5,
-                  "skill": 0.5
+                  "skill": 0.5,
+                  "skill_exact": 0.49987905827426593
                 }
               },
               "overall": {
                 "model_mae": 114.7,
                 "n": 363,
                 "no_change_mae": 208.1,
-                "skill": 0.449
+                "skill": 0.449,
+                "skill_exact": 0.44861314980989986
               },
               "train_seasons": [
                 2021,
@@ -1164,32 +1970,37 @@
                   "model_mae": 144.8,
                   "n": 67,
                   "no_change_mae": 295.1,
-                  "skill": 0.51
+                  "skill": 0.51,
+                  "skill_exact": 0.5095362234018195
                 },
                 "RB": {
                   "model_mae": 108.8,
                   "n": 101,
                   "no_change_mae": 181.6,
-                  "skill": 0.401
+                  "skill": 0.401,
+                  "skill_exact": 0.40086735889661296
                 },
                 "TE": {
                   "model_mae": 106.6,
                   "n": 56,
                   "no_change_mae": 155.5,
-                  "skill": 0.315
+                  "skill": 0.315,
+                  "skill_exact": 0.31481291611286444
                 },
                 "WR": {
                   "model_mae": 105.7,
                   "n": 139,
                   "no_change_mae": 206.5,
-                  "skill": 0.488
+                  "skill": 0.488,
+                  "skill_exact": 0.48808614999814837
                 }
               },
               "overall": {
                 "model_mae": 113.9,
                 "n": 363,
                 "no_change_mae": 208.1,
-                "skill": 0.453
+                "skill": 0.453,
+                "skill_exact": 0.45253831734658734
               },
               "train_seasons": [
                 2020,
@@ -1210,7 +2021,8 @@
                   "model_mae": 145.7,
                   "n": 343,
                   "no_change_mae": 271.3,
-                  "skill": 0.463
+                  "skill": 0.463,
+                  "skill_exact": 0.4630498261423538
                 }
               },
               "eligible": true,
@@ -1220,32 +2032,37 @@
                     "model_mae": 227.1,
                     "n": 63,
                     "no_change_mae": 428.8,
-                    "skill": 0.47
+                    "skill": 0.47,
+                    "skill_exact": 0.47035534716496086
                   },
                   "RB": {
                     "model_mae": 128.4,
                     "n": 96,
                     "no_change_mae": 215.0,
-                    "skill": 0.403
+                    "skill": 0.403,
+                    "skill_exact": 0.4028960791235726
                   },
                   "TE": {
                     "model_mae": 102.8,
                     "n": 52,
                     "no_change_mae": 207.6,
-                    "skill": 0.505
+                    "skill": 0.505,
+                    "skill_exact": 0.5048530641428399
                   },
                   "WR": {
                     "model_mae": 136.3,
                     "n": 132,
                     "no_change_mae": 262.1,
-                    "skill": 0.48
+                    "skill": 0.48,
+                    "skill_exact": 0.4801831356863584
                   }
                 },
                 "overall": {
                   "model_mae": 145.7,
                   "n": 343,
                   "no_change_mae": 271.3,
-                  "skill": 0.463
+                  "skill": 0.463,
+                  "skill_exact": 0.4630498261423538
                 }
               },
               "train_years": 3,
@@ -1263,7 +2080,8 @@
                   "model_mae": 139.7,
                   "n": 343,
                   "no_change_mae": 271.3,
-                  "skill": 0.485
+                  "skill": 0.485,
+                  "skill_exact": 0.4851221904881168
                 }
               },
               "eligible": true,
@@ -1273,32 +2091,37 @@
                     "model_mae": 213.2,
                     "n": 63,
                     "no_change_mae": 428.8,
-                    "skill": 0.503
+                    "skill": 0.503,
+                    "skill_exact": 0.5027681838303554
                   },
                   "RB": {
                     "model_mae": 124.9,
                     "n": 96,
                     "no_change_mae": 215.0,
-                    "skill": 0.419
+                    "skill": 0.419,
+                    "skill_exact": 0.4188996056451967
                   },
                   "TE": {
                     "model_mae": 96.2,
                     "n": 52,
                     "no_change_mae": 207.6,
-                    "skill": 0.537
+                    "skill": 0.537,
+                    "skill_exact": 0.5367678061730841
                   },
                   "WR": {
                     "model_mae": 132.4,
                     "n": 132,
                     "no_change_mae": 262.1,
-                    "skill": 0.495
+                    "skill": 0.495,
+                    "skill_exact": 0.4947313272864968
                   }
                 },
                 "overall": {
                   "model_mae": 139.7,
                   "n": 343,
                   "no_change_mae": 271.3,
-                  "skill": 0.485
+                  "skill": 0.485,
+                  "skill_exact": 0.4851221904881168
                 }
               },
               "train_years": 4,
@@ -1326,7 +2149,7 @@
               }
             }
           ],
-          "rationale": "best pooled validation skill 0.485; 4-season window scores 0.485 and is the shortest within 0.010 of the best",
+          "rationale": "best pooled validation skill 0.4851; 4-season window scores 0.4851 and is the shortest within 0.01 of the best (compared at full precision)",
           "selected_train_years": 4,
           "validation_seasons": [
             2024
@@ -1343,32 +2166,37 @@
             "model_mae": 155.8,
             "n": 67,
             "no_change_mae": 295.1,
-            "skill": 0.472
+            "skill": 0.472,
+            "skill_exact": 0.4720868214746482
           },
           "RB": {
             "model_mae": 109.2,
             "n": 101,
             "no_change_mae": 181.6,
-            "skill": 0.399
+            "skill": 0.399,
+            "skill_exact": 0.398833111152887
           },
           "TE": {
             "model_mae": 104.0,
             "n": 56,
             "no_change_mae": 155.5,
-            "skill": 0.331
+            "skill": 0.331,
+            "skill_exact": 0.33123023255702877
           },
           "WR": {
             "model_mae": 103.3,
             "n": 139,
             "no_change_mae": 206.5,
-            "skill": 0.5
+            "skill": 0.5,
+            "skill_exact": 0.49987905827426593
           }
         },
         "overall": {
           "model_mae": 114.7,
           "n": 363,
           "no_change_mae": 208.1,
-          "skill": 0.449
+          "skill": 0.449,
+          "skill_exact": 0.44861314980989986
         }
       },
       "label_set": "candidate",
@@ -1386,32 +2214,37 @@
             "model_mae": 166.4,
             "n": 67,
             "no_change_mae": 295.1,
-            "skill": 0.436
+            "skill": 0.436,
+            "skill_exact": 0.4361745593284829
           },
           "RB": {
             "model_mae": 112.3,
             "n": 101,
             "no_change_mae": 184.5,
-            "skill": 0.391
+            "skill": 0.391,
+            "skill_exact": 0.3914042670893174
           },
           "TE": {
             "model_mae": 102.0,
             "n": 56,
             "no_change_mae": 156.5,
-            "skill": 0.348
+            "skill": 0.348,
+            "skill_exact": 0.3480477594542546
           },
           "WR": {
             "model_mae": 103.9,
             "n": 137,
             "no_change_mae": 205.0,
-            "skill": 0.493
+            "skill": 0.493,
+            "skill_exact": 0.4930768560202594
           }
         },
         "overall": {
           "model_mae": 117.6,
           "n": 361,
           "no_change_mae": 208.5,
-          "skill": 0.436
+          "skill": 0.436,
+          "skill_exact": 0.4360595775385252
         }
       },
       "label_set": "baseline",
@@ -1421,7 +2254,12 @@
         2024
       ]
     },
-    "holdout_status": "reused: PR #3 already chose a training window on this season's scores, so this is not an untouched holdout; an unseen season or separately held-out data is needed before any promotion",
+    "holdout": {
+      "evidence": "PR #3 (merged 2026-10-22) chose its training window from 2025 scores",
+      "season": 2025,
+      "source": "registry",
+      "status": "reused"
+    },
     "matched": {
       "baseline": {
         "candidate": {
@@ -1430,32 +2268,37 @@
               "model_mae": 152.4,
               "n": 67,
               "no_change_mae": 295.1,
-              "skill": 0.484
+              "skill": 0.484,
+              "skill_exact": 0.4835944763231991
             },
             "RB": {
               "model_mae": 110.1,
               "n": 101,
               "no_change_mae": 184.5,
-              "skill": 0.403
+              "skill": 0.403,
+              "skill_exact": 0.40326601588738775
             },
             "TE": {
               "model_mae": 105.3,
               "n": 56,
               "no_change_mae": 156.5,
-              "skill": 0.327
+              "skill": 0.327,
+              "skill_exact": 0.32681213385266483
             },
             "WR": {
               "model_mae": 104.1,
               "n": 137,
               "no_change_mae": 205.0,
-              "skill": 0.492
+              "skill": 0.492,
+              "skill_exact": 0.4922157545188065
             }
           },
           "overall": {
             "model_mae": 114.9,
             "n": 361,
             "no_change_mae": 208.5,
-            "skill": 0.449
+            "skill": 0.449,
+            "skill_exact": 0.4486632038575121
           }
         },
         "control": {
@@ -1464,32 +2307,37 @@
               "model_mae": 166.4,
               "n": 67,
               "no_change_mae": 295.1,
-              "skill": 0.436
+              "skill": 0.436,
+              "skill_exact": 0.4361745593284829
             },
             "RB": {
               "model_mae": 112.3,
               "n": 101,
               "no_change_mae": 184.5,
-              "skill": 0.391
+              "skill": 0.391,
+              "skill_exact": 0.3914042670893174
             },
             "TE": {
               "model_mae": 102.0,
               "n": 56,
               "no_change_mae": 156.5,
-              "skill": 0.348
+              "skill": 0.348,
+              "skill_exact": 0.3480477594542546
             },
             "WR": {
               "model_mae": 103.9,
               "n": 137,
               "no_change_mae": 205.0,
-              "skill": 0.493
+              "skill": 0.493,
+              "skill_exact": 0.4930768560202594
             }
           },
           "overall": {
             "model_mae": 117.6,
             "n": 361,
             "no_change_mae": 208.5,
-            "skill": 0.436
+            "skill": 0.436,
+            "skill_exact": 0.4360595775385252
           }
         }
       },
@@ -1500,32 +2348,37 @@
               "model_mae": 155.8,
               "n": 67,
               "no_change_mae": 295.1,
-              "skill": 0.472
+              "skill": 0.472,
+              "skill_exact": 0.4720868214746482
             },
             "RB": {
               "model_mae": 109.2,
               "n": 101,
               "no_change_mae": 181.6,
-              "skill": 0.399
+              "skill": 0.399,
+              "skill_exact": 0.398833111152887
             },
             "TE": {
               "model_mae": 104.0,
               "n": 56,
               "no_change_mae": 155.5,
-              "skill": 0.331
+              "skill": 0.331,
+              "skill_exact": 0.33123023255702877
             },
             "WR": {
               "model_mae": 103.8,
               "n": 137,
               "no_change_mae": 204.2,
-              "skill": 0.492
+              "skill": 0.492,
+              "skill_exact": 0.4917629910854566
             }
           },
           "overall": {
             "model_mae": 115.0,
             "n": 361,
             "no_change_mae": 207.2,
-            "skill": 0.445
+            "skill": 0.445,
+            "skill_exact": 0.4450860289204238
           }
         },
         "control": {
@@ -1534,32 +2387,37 @@
               "model_mae": 169.3,
               "n": 67,
               "no_change_mae": 295.1,
-              "skill": 0.426
+              "skill": 0.426,
+              "skill_exact": 0.4262590896078383
             },
             "RB": {
               "model_mae": 111.3,
               "n": 101,
               "no_change_mae": 181.6,
-              "skill": 0.387
+              "skill": 0.387,
+              "skill_exact": 0.387214054818126
             },
             "TE": {
               "model_mae": 101.6,
               "n": 56,
               "no_change_mae": 155.5,
-              "skill": 0.347
+              "skill": 0.347,
+              "skill_exact": 0.346904012244842
             },
             "WR": {
               "model_mae": 103.8,
               "n": 137,
               "no_change_mae": 204.2,
-              "skill": 0.492
+              "skill": 0.492,
+              "skill_exact": 0.4917204071477206
             }
           },
           "overall": {
             "model_mae": 117.7,
             "n": 361,
             "no_change_mae": 207.2,
-            "skill": 0.432
+            "skill": 0.432,
+            "skill_exact": 0.43193189321142667
           }
         }
       }
@@ -1570,219 +2428,499 @@
   "fits": [
     {
       "label_set": "candidate",
+      "test_rows": 343,
       "test_season": 2024,
+      "train_rows_by_season": {
+        "2021": 322,
+        "2022": 280,
+        "2023": 304
+      },
       "train_seasons": [
         2021,
         2022,
         2023
-      ]
+      ],
+      "training_population": "all"
     },
     {
       "label_set": "candidate",
+      "test_rows": 343,
       "test_season": 2024,
-      "train_seasons": [
-        2020,
-        2021,
-        2022,
-        2023
-      ]
-    },
-    {
-      "label_set": "baseline",
-      "test_season": 2025,
-      "train_seasons": [
-        2022,
-        2023,
-        2024
-      ]
-    },
-    {
-      "label_set": "candidate",
-      "test_season": 2025,
-      "train_seasons": [
-        2021,
-        2022,
-        2023,
-        2024
-      ]
-    },
-    {
-      "label_set": "baseline",
-      "test_season": 2025,
-      "train_seasons": [
-        2022,
-        2023,
-        2024
-      ]
-    },
-    {
-      "label_set": "candidate",
-      "test_season": 2025,
-      "train_seasons": [
-        2022,
-        2023,
-        2024
-      ]
-    },
-    {
-      "label_set": "baseline",
-      "test_season": 2025,
-      "train_seasons": [
-        2021,
-        2022,
-        2023,
-        2024
-      ]
-    },
-    {
-      "label_set": "candidate",
-      "test_season": 2025,
-      "train_seasons": [
-        2021,
-        2022,
-        2023,
-        2024
-      ]
-    },
-    {
-      "label_set": "baseline",
-      "test_season": 2025,
-      "train_seasons": [
-        2020,
-        2021,
-        2022,
-        2023,
-        2024
-      ]
-    },
-    {
-      "label_set": "candidate",
-      "test_season": 2025,
-      "train_seasons": [
-        2020,
-        2021,
-        2022,
-        2023,
-        2024
-      ]
-    },
-    {
-      "label_set": "baseline",
-      "test_season": 2024,
-      "train_seasons": [
-        2021,
-        2022,
-        2023
-      ]
-    },
-    {
-      "label_set": "baseline",
-      "test_season": 2024,
+      "train_rows_by_season": {
+        "2020": 288,
+        "2021": 322,
+        "2022": 280,
+        "2023": 304
+      },
       "train_seasons": [
         2020,
         2021,
         2022,
         2023
-      ]
+      ],
+      "training_population": "all"
     },
     {
       "label_set": "baseline",
+      "test_rows": 361,
       "test_season": 2025,
+      "train_rows_by_season": {
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
       "train_seasons": [
         2022,
         2023,
         2024
-      ]
+      ],
+      "training_population": "all"
     },
     {
-      "label_set": "baseline",
+      "label_set": "candidate",
+      "test_rows": 363,
       "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
       "train_seasons": [
         2021,
         2022,
         2023,
         2024
-      ]
+      ],
+      "training_population": "all"
     },
     {
       "label_set": "baseline",
+      "test_rows": 361,
       "test_season": 2025,
+      "train_rows_by_season": {
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "shared"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "shared"
+    },
+    {
+      "label_set": "baseline",
+      "test_rows": 361,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "shared"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "shared"
+    },
+    {
+      "label_set": "baseline",
+      "test_rows": 361,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2020": 160,
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
       "train_seasons": [
         2020,
         2021,
         2022,
         2023,
         2024
-      ]
+      ],
+      "training_population": "shared"
     },
     {
       "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2020": 160,
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "shared"
+    },
+    {
+      "label_set": "baseline",
+      "test_rows": 361,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "baseline",
+      "test_rows": 361,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "baseline",
+      "test_rows": 361,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2020": 160,
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2020": 288,
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "baseline",
+      "test_rows": 341,
       "test_season": 2024,
+      "train_rows_by_season": {
+        "2021": 229,
+        "2022": 273,
+        "2023": 297
+      },
       "train_seasons": [
         2021,
         2022,
         2023
-      ]
+      ],
+      "training_population": "all"
     },
     {
-      "label_set": "candidate",
+      "label_set": "baseline",
+      "test_rows": 341,
       "test_season": 2024,
+      "train_rows_by_season": {
+        "2020": 160,
+        "2021": 229,
+        "2022": 273,
+        "2023": 297
+      },
       "train_seasons": [
         2020,
         2021,
         2022,
         2023
-      ]
+      ],
+      "training_population": "all"
     },
     {
-      "label_set": "candidate",
+      "label_set": "baseline",
+      "test_rows": 361,
       "test_season": 2025,
+      "train_rows_by_season": {
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
       "train_seasons": [
         2022,
         2023,
         2024
-      ]
+      ],
+      "training_population": "all"
     },
     {
-      "label_set": "candidate",
+      "label_set": "baseline",
+      "test_rows": 361,
       "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
       "train_seasons": [
         2021,
         2022,
         2023,
         2024
-      ]
+      ],
+      "training_population": "all"
     },
     {
-      "label_set": "candidate",
+      "label_set": "baseline",
+      "test_rows": 361,
       "test_season": 2025,
+      "train_rows_by_season": {
+        "2020": 160,
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341
+      },
       "train_seasons": [
         2020,
         2021,
         2022,
         2023,
         2024
-      ]
+      ],
+      "training_population": "all"
     },
     {
       "label_set": "candidate",
+      "test_rows": 343,
+      "test_season": 2024,
+      "train_rows_by_season": {
+        "2021": 322,
+        "2022": 280,
+        "2023": 304
+      },
+      "train_seasons": [
+        2021,
+        2022,
+        2023
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 343,
+      "test_season": 2024,
+      "train_rows_by_season": {
+        "2020": 288,
+        "2021": 322,
+        "2022": 280,
+        "2023": 304
+      },
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
       "test_season": 2025,
+      "train_rows_by_season": {
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
       "train_seasons": [
         2021,
         2022,
         2023,
         2024
-      ]
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2020": 288,
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
+    },
+    {
+      "label_set": "candidate",
+      "test_rows": 363,
+      "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "training_population": "all"
     },
     {
       "label_set": "model_effect",
+      "test_rows": 363,
       "test_season": 2025,
+      "train_rows_by_season": {
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343
+      },
       "train_seasons": [
         2021,
         2022,
         2023,
         2024
-      ]
+      ],
+      "training_population": "all"
     }
   ],
   "frozen_candidate": {
@@ -1808,6 +2946,7 @@
       "random_state": 0
     },
     "model_version": "baseline-hl28-v1",
+    "model_version_verified": true,
     "monotonic": [
       0,
       0,
@@ -1825,14 +2964,14 @@
   "gate": {
     "by_target": {
       "baseline": {
-        "gain": 0.013,
+        "gain": 0.012603626318986927,
         "overall_guard": false,
         "position_guard": true,
         "qualified": false,
         "sample_guard": true
       },
       "candidate": {
-        "gain": 0.013,
+        "gain": 0.01315413570899715,
         "overall_guard": false,
         "position_guard": true,
         "qualified": false,
@@ -1840,17 +2979,23 @@
       }
     },
     "evaluated": true,
+    "full_precision": true,
     "max_position_drop": 0.05,
     "min_gain": 0.02,
     "min_position_rows": 30,
     "qualified": false,
     "requires_every_target": true,
-    "requires_same_model_version": true
+    "requires_same_model_version": true,
+    "requires_verified_model_versions": true
   },
   "inputs": {
     "baseline": {
+      "asserted_model_version": null,
       "file": "backchannel_labels_2019_2025.csv",
       "model_version": "baseline-hl28-v1",
+      "model_version_verified": true,
+      "provenance_problems": [],
+      "provenance_source": "manifest",
       "rows": 5330,
       "rows_by_season": {
         "2019": 409,
@@ -1864,8 +3009,12 @@
       "sha256": "eb8eab7365746b408d188a1fa2a78a20c6085a7650782a83abf512b7160491f5"
     },
     "candidate": {
+      "asserted_model_version": null,
       "file": "backchannel_labels_2019_2025_mfl.csv",
       "model_version": "baseline-hl28-v1",
+      "model_version_verified": true,
+      "provenance_problems": [],
+      "provenance_source": "manifest",
       "rows": 3560,
       "rows_by_season": {
         "2020": 457,
@@ -1878,8 +3027,12 @@
       "sha256": "efd42bc836b0706657cf7cc140c256d48fdc8eacbb08aface3069a74cf7f678a"
     },
     "model_effect": {
+      "asserted_model_version": null,
       "file": "backchannel_labels_2019_2025_mfl_v3.csv",
       "model_version": "baseline-hl28-v3",
+      "model_version_verified": true,
+      "provenance_problems": [],
+      "provenance_source": "manifest",
       "rows": 3560,
       "rows_by_season": {
         "2020": 457,
@@ -1898,22 +3051,31 @@
   },
   "label_sets": {
     "baseline": {
-      "model_version": "baseline-hl28-v1"
+      "model_version": "baseline-hl28-v1",
+      "model_version_verified": true
     },
     "candidate": {
-      "model_version": "baseline-hl28-v1"
+      "model_version": "baseline-hl28-v1",
+      "model_version_verified": true
     },
     "model_effect": {
-      "model_version": "baseline-hl28-v3"
+      "model_version": "baseline-hl28-v3",
+      "model_version_verified": true
     }
   },
   "limitations": [
-    "reused: PR #3 already chose a training window on this season's scores, so this is not an untouched holdout; an unseen season or separately held-out data is needed before any promotion",
+    "test season 2025 holdout status: reused (PR #3 (merged 2026-10-22) chose its training window from 2025 scores)",
     "baseline-hl28-v3 labels without the candidate's added trades were not supplied, so the model-version effect without them is unresolved"
   ],
   "methodology": {
     "final_evaluation": "frozen candidate and deployed control trained through 2024, tested on 2025",
-    "holdout_status": "reused: PR #3 already chose a training window on this season's scores, so this is not an untouched holdout; an unseen season or separately held-out data is needed before any promotion",
+    "holdout": {
+      "evidence": "PR #3 (merged 2026-10-22) chose its training window from 2025 scores",
+      "season": 2025,
+      "source": "registry",
+      "status": "reused"
+    },
+    "precision": "thresholds use full-precision skill; skill is rounded to 0.001 for display, skill_exact is not",
     "selection": "window length chosen on validation seasons [2024] (each trained on the preceding seasons only) using candidate labels; 2025 rows are removed before selection runs",
     "target": "end_value of the named label set at the season's end cutoff, on (player_id, season) keys present in every compared predictor's test rows after the min_trades filter; each prediction's relative change (pred_value / own start_value) is applied to the target's start_value, and no-change predicts the target's start_value"
   },
@@ -1926,7 +3088,8 @@
             "model_mae": 145.7,
             "n": 343,
             "no_change_mae": 271.3,
-            "skill": 0.463
+            "skill": 0.463,
+            "skill_exact": 0.4630498261423538
           }
         },
         "eligible": true,
@@ -1936,32 +3099,37 @@
               "model_mae": 227.1,
               "n": 63,
               "no_change_mae": 428.8,
-              "skill": 0.47
+              "skill": 0.47,
+              "skill_exact": 0.47035534716496086
             },
             "RB": {
               "model_mae": 128.4,
               "n": 96,
               "no_change_mae": 215.0,
-              "skill": 0.403
+              "skill": 0.403,
+              "skill_exact": 0.4028960791235726
             },
             "TE": {
               "model_mae": 102.8,
               "n": 52,
               "no_change_mae": 207.6,
-              "skill": 0.505
+              "skill": 0.505,
+              "skill_exact": 0.5048530641428399
             },
             "WR": {
               "model_mae": 136.3,
               "n": 132,
               "no_change_mae": 262.1,
-              "skill": 0.48
+              "skill": 0.48,
+              "skill_exact": 0.4801831356863584
             }
           },
           "overall": {
             "model_mae": 145.7,
             "n": 343,
             "no_change_mae": 271.3,
-            "skill": 0.463
+            "skill": 0.463,
+            "skill_exact": 0.4630498261423538
           }
         },
         "train_years": 3,
@@ -1979,7 +3147,8 @@
             "model_mae": 139.7,
             "n": 343,
             "no_change_mae": 271.3,
-            "skill": 0.485
+            "skill": 0.485,
+            "skill_exact": 0.4851221904881168
           }
         },
         "eligible": true,
@@ -1989,32 +3158,37 @@
               "model_mae": 213.2,
               "n": 63,
               "no_change_mae": 428.8,
-              "skill": 0.503
+              "skill": 0.503,
+              "skill_exact": 0.5027681838303554
             },
             "RB": {
               "model_mae": 124.9,
               "n": 96,
               "no_change_mae": 215.0,
-              "skill": 0.419
+              "skill": 0.419,
+              "skill_exact": 0.4188996056451967
             },
             "TE": {
               "model_mae": 96.2,
               "n": 52,
               "no_change_mae": 207.6,
-              "skill": 0.537
+              "skill": 0.537,
+              "skill_exact": 0.5367678061730841
             },
             "WR": {
               "model_mae": 132.4,
               "n": 132,
               "no_change_mae": 262.1,
-              "skill": 0.495
+              "skill": 0.495,
+              "skill_exact": 0.4947313272864968
             }
           },
           "overall": {
             "model_mae": 139.7,
             "n": 343,
             "no_change_mae": 271.3,
-            "skill": 0.485
+            "skill": 0.485,
+            "skill_exact": 0.4851221904881168
           }
         },
         "train_years": 4,
@@ -2042,7 +3216,7 @@
         }
       }
     ],
-    "rationale": "best pooled validation skill 0.485; 4-season window scores 0.485 and is the shortest within 0.010 of the best",
+    "rationale": "best pooled validation skill 0.4851; 4-season window scores 0.4851 and is the shortest within 0.01 of the best (compared at full precision)",
     "selected_train_years": 4,
     "validation_seasons": [
       2024

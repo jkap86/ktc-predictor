@@ -12,6 +12,8 @@ in a coverage report written beside the CSV as ``<name>.provenance.json``.
 
 import hashlib
 import json
+import os
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -145,6 +147,18 @@ def validate_market_export(
                 f"market export has no rows for seasons {missing}: a required start or end generation is "
                 "missing or empty; rerun sql/backchannel_labels.sql and check market_history_generations"
             )
+
+    present = [c for c in PROVENANCE_COLUMNS if c in values.columns]
+    if present and len(present) != len(PROVENANCE_COLUMNS):
+        missing = [c for c in PROVENANCE_COLUMNS if c not in values.columns]
+        raise ValueError(f"market export has some provenance columns but not {missing}")
+    if present:
+        required = [c for c in PROVENANCE_COLUMNS if not c.startswith("next_")]
+        empty = [c for c in required if values[c].isna().any()]
+        if empty:
+            raise ValueError(f"market export has empty provenance values in {empty}")
+        if (values["next_generation_id"].isna() != values["next_revision"].isna()).any():
+            raise ValueError("market export has a next-board generation id without its revision, or the reverse")
 
     if "model_version" in values.columns:
         versions = sorted(values["model_version"].dropna().astype(str).unique())
@@ -285,25 +299,127 @@ def build_labels_file(
     expected_seasons: tuple[int, ...] | None = DEFAULT_EXPECTED_SEASONS,
     model_version: str | None = None,
 ) -> pd.DataFrame:
-    """Read the SQL export and training zip, then write the 14-column CSV and its provenance."""
+    """Read the SQL export and training zip, then publish the 14-column CSV and its provenance.
+
+    Both files are built and checked in a staging directory first. Publishing
+    moves the old pair aside, moves the new pair in, and puts the old pair
+    back if either move fails, so a failure leaves the previous pair intact.
+    The provenance also carries the CSV's SHA-256, so a reader can tell a
+    mismatched pair from a matching one.
+    """
     values = pd.read_csv(values_path, dtype={"player_id": str})
     validate_market_export(values, expected_seasons=expected_seasons, model_version=model_version)
     stats = read_season_stats(training_data_path)
     labels = build_label_frame(values, stats)
     destination = Path(out_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    labels.to_csv(destination, index=False)
-    report = {
-        "schema_version": 1,
-        "label_file": {"file": destination.name, "sha256": file_sha256(destination), "rows": len(labels)},
-        "market_export": {"file": Path(values_path).name, "sha256": file_sha256(values_path), "rows": len(values)},
-        "training_data": {"file": Path(training_data_path).name, "sha256": file_sha256(training_data_path)},
-        "expected_seasons": sorted(expected_seasons) if expected_seasons else None,
-        "trade_threshold": "none applied; thin rows are kept and filtered at training time (--min-trades)",
-        **_provenance(values, model_version),
-        "coverage": label_coverage(values, stats, labels, expected_seasons=expected_seasons),
-    }
-    provenance_path(destination).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    sidecar = provenance_path(destination)
+
+    with tempfile.TemporaryDirectory(dir=destination.parent, prefix=".labels-staging-") as staging:
+        staged_csv = Path(staging) / destination.name
+        staged_sidecar = Path(staging) / sidecar.name
+        labels.to_csv(staged_csv, index=False)
+        report = {
+            "schema_version": 1,
+            "label_file": {"file": destination.name, "sha256": file_sha256(staged_csv), "rows": len(labels)},
+            "market_export": {"file": Path(values_path).name, "sha256": file_sha256(values_path), "rows": len(values)},
+            "training_data": {"file": Path(training_data_path).name, "sha256": file_sha256(training_data_path)},
+            "expected_seasons": sorted(expected_seasons) if expected_seasons else None,
+            "trade_threshold": "none applied; thin rows are kept and filtered at training time (--min-trades)",
+            **_provenance(values, model_version),
+            "coverage": label_coverage(values, stats, labels, expected_seasons=expected_seasons),
+        }
+        staged_sidecar.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        _check_staged_pair(staged_csv, staged_sidecar, len(labels))
+        _publish_pair([(staged_csv, destination), (staged_sidecar, sidecar)])
     labels.attrs["provenance"] = report
     return labels
 
+
+def _check_staged_pair(csv_path: Path, sidecar_path: Path, rows: int) -> None:
+    written = pd.read_csv(csv_path, dtype={"player_id": str})
+    if list(written.columns) != LABEL_EXPORT_COLUMNS or len(written) != rows:
+        raise ValueError("staged label CSV does not match the 14-column contract")
+    report = json.loads(sidecar_path.read_text())
+    if report["label_file"]["sha256"] != file_sha256(csv_path):
+        raise ValueError("staged provenance does not describe the staged label CSV")
+
+
+def _publish_pair(moves: list[tuple[Path, Path]]) -> None:
+    """Move staged files into place; on failure restore every original file."""
+    backups: list[tuple[Path, Path]] = []
+    published: list[Path] = []
+    try:
+        for _, final in moves:
+            if final.exists():
+                backup = final.with_name(f".{final.name}.previous")
+                os.replace(final, backup)
+                backups.append((backup, final))
+        for staged, final in moves:
+            os.replace(staged, final)
+            published.append(final)
+    except BaseException:
+        for final in published:
+            final.unlink(missing_ok=True)
+        for backup, final in backups:
+            os.replace(backup, final)
+        raise
+    for backup, _ in backups:
+        backup.unlink(missing_ok=True)
+
+
+LABEL_MANIFEST = Path(__file__).resolve().parent / "data" / "label_manifest.json"
+
+
+def label_identity(path: Path | str, manifest_path: Path | str = LABEL_MANIFEST) -> dict:
+    """The model version a label file was verifiably built from, keyed by its SHA-256.
+
+    A ``.provenance.json`` sidecar written by ``build-labels`` from an export
+    that carried its own model version counts if its recorded SHA-256 matches
+    the file. Committed files that predate sidecars are listed by SHA-256 in
+    ``data/label_manifest.json``. File names are never used. Anything else is
+    unverified, with the reasons in ``problems``.
+    """
+    sha = file_sha256(path)
+    problems: list[str] = []
+    found: dict[str, str] = {}
+
+    sidecar = provenance_path(path)
+    if sidecar.exists():
+        try:
+            report = json.loads(sidecar.read_text())
+            recorded = report["label_file"]["sha256"]
+            version = report["model_version"]
+            source = report["model_version_source"]
+        except (ValueError, KeyError, TypeError) as error:
+            problems.append(f"{sidecar.name} is unreadable or incomplete ({error!r})")
+        else:
+            if recorded != sha:
+                problems.append(f"{sidecar.name} describes a different file (stale provenance)")
+            elif source != "export" or not version:
+                problems.append(f"{sidecar.name} model version came from {source!r}, not the export")
+            else:
+                found["sidecar"] = version
+
+    manifest = Path(manifest_path)
+    if manifest.exists():
+        entry = json.loads(manifest.read_text()).get("files", {}).get(sha)
+        if entry is not None:
+            if entry.get("model_version"):
+                found["manifest"] = entry["model_version"]
+            else:
+                problems.append(f"{manifest.name} lists this file without a model version")
+
+    versions = set(found.values())
+    if len(versions) > 1:
+        problems.append(f"provenance sources disagree: {found}")
+    if not found and not problems:
+        problems.append("no provenance sidecar and not in the label manifest")
+    verified = len(versions) == 1 and not problems
+    return {
+        "sha256": sha,
+        "model_version": versions.pop() if verified else None,
+        "verified": verified,
+        "source": ",".join(sorted(found)) if verified else None,
+        "problems": problems,
+    }
