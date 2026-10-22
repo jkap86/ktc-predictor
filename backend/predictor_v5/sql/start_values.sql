@@ -2,17 +2,25 @@
 -- thelab database (Backchannel market history + the KTC scrape).
 --
 --   psql "$DATABASE_URL" -v season=2026 -v cutoff=2026-09-09 \
+--     [-v model_version=baseline-hl28-v1] \
 --     -f predictor_v5/sql/start_values.sql --csv -o start_values_2026.csv
 --
 -- One row per Sleeper player (QB/RB/WR/TE); see the WHERE clause for who's kept.
--- Backchannel: the dynasty superflex board of the newest generation dated on
--- or before :cutoff (stored `value` is the fixed reference scale, the same
--- scale as the training labels). KTC: each player's latest dynasty SF value
+-- Backchannel: the dynasty superflex board of the newest :model_version
+-- generation (default baseline-hl28-v1, the model the labels were trained on;
+-- thelab's own default moved to v3) dated on or before :cutoff (stored
+-- `value` is the fixed reference scale, the same scale as the training
+-- labels). KTC: each player's latest dynasty SF value
 -- on or before :cutoff, within 14 days of it.
+\if :{?model_version}
+\else
+  \set model_version baseline-hl28-v1
+\endif
 WITH gen AS (
     SELECT id, valuation_date, model_version, revision
       FROM market_history_generations
      WHERE season = :'season' AND valuation_date <= :'cutoff'::date
+       AND model_version = :'model_version'
      ORDER BY valuation_date DESC, generated_at DESC, revision DESC
      LIMIT 1
 ), bc AS (
