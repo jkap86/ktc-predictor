@@ -186,6 +186,29 @@ tool still trains on `backchannel_labels_2019_2025.csv`, and
 2026 generation is now `baseline-hl28-v3` (thelab's new default), not
 because of MFL.
 
+### The same refresh on `baseline-hl28-v3`
+
+thelab's default model is now `baseline-hl28-v3`, so the refresh was repeated
+on it: v3 history generated for the same 2019–2025 windows (same MFL corpus,
+so the trades per fit match v1's exactly), labels exported with
+`backchannel_labels.sql`'s `model_version` changed to `baseline-hl28-v3`, into
+`data/backchannel_labels_2019_2025_mfl_v3.csv`, and compared against the same
+old v1 control (`artifacts/backchannel_mfl_v3_comparison.json`). v3 has no
+2026 board on 2026-01-04, so its 2025 rows have no `end_value_next_board`.
+
+| Labels | Train | All rows | Matched | QB | RB | TE | WR |
+|---|---|---|---|---|---|---|---|
+| Old v1 (control) | 2022–24 | 43.6% | 43.6% | 43.6% | 39.1% | 34.8% | 49.3% |
+| MFL v3 | 2022–24 | 35.6% | 35.2% | 46.5% | 24.0% | 23.1% | 38.6% |
+| MFL v3 | 2021–24 | 43.1% | 42.7% | 50.1% | 35.1% | 29.9% | 46.8% |
+| MFL v3 | 2020–24 | 41.1% | 40.8% | 46.1% | 32.2% | 26.3% | 47.3% |
+
+2021–24 is selected and is 0.9 points *below* the control; RB (−4.0) and TE
+(−4.9) come close to the per-position limit. **Decision: retain.** v3's
+values sit on a different scale, so its lower MAEs are not comparable; read
+skill. This compares MFL + v3 against neither change, so it cannot separate
+the two effects.
+
 ## Season tool (2026)
 
 Type a player's projected season points and get their predicted
