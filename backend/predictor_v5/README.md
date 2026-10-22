@@ -39,11 +39,37 @@ On small containers, `OMP_NUM_THREADS=1` makes training and tests much faster.
 - `--labels ktc` (default): KTC start/end values from the training zip.
 - `--labels backchannel:path.csv` (or `csv:path.csv`): any CSV with
   `player_id, season, start_value, end_value`. For Backchannel, export
-  `reference_value` at each season's start and end cutoffs. Use
-  `reference_value`, not the published value, because the published value is
-  renormalized to that day's top asset.
+  `market_history_values.value` at each season's start and end cutoffs. This
+  is the stored reference-scale value; the published value is renormalized to
+  that day's top asset.
 
 Outputs are clipped to the source's scale (9,999 for KTC, 10,000 for CSV).
+
+The MFL-inclusive label refresh is reproducible from the local thelab database:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -f predictor_v5/sql/backchannel_labels.sql \
+  --csv -o /tmp/backchannel_labels_raw.csv
+python -m predictor_v5 build-labels \
+  --values /tmp/backchannel_labels_raw.csv \
+  --out predictor_v5/data/backchannel_labels_2019_2025_mfl.csv
+python -m predictor_v5 compare-labels \
+  --baseline-values predictor_v5/data/backchannel_labels_2019_2025.csv \
+  --candidate-values predictor_v5/data/backchannel_labels_2019_2025_mfl.csv \
+  --out predictor_v5/artifacts/backchannel_mfl_comparison.json
+```
+
+`build-labels` joins the exported values to `training-data.zip`, applies the
+same pre-NFL exclusion as model training, rejects duplicate player-seasons,
+and writes the established 14-column label contract. It deliberately keeps
+players with thin trade evidence; `compare-labels --min-trades 5` applies the
+evaluation filter later. The comparison evaluates the old 2022–2024 control
+and new 2022–2024, 2021–2024, and 2020–2024 candidates on 2025, including
+all-row, matched-player, position, and coverage metrics. Candidate selection
+ranks matched-cohort skill first and prefers the shorter, more recent window
+when skills are within one percentage point; the deployment gate is applied
+only after that selection.
 
 ## Model
 
@@ -112,6 +138,53 @@ Notes from development:
   no-change (MAE about 647).
 - Adding games played (points per game plus games) cut MAE to about 426. It
   isn't an input yet because the ask was season points only.
+
+## MFL-inclusive labels (2026-10-21): gate failed, model unchanged
+
+`data/backchannel_labels_2019_2025_mfl.csv` was built as above after
+thelab's market history (`baseline-hl28-v1`) was revised with MFL dynasty
+trades: 2019–2021 loaded in full (two 1,500-league slices each), 2022–2025 as
+120-league samples. The old CSV is unchanged and stays the control.
+`artifacts/backchannel_mfl_comparison.json` is the full, deterministic report
+(`compare-labels --min-trades 5`; two runs are byte-identical).
+
+Average dynasty superflex trades per fit, latest revision, before → after MFL:
+
+| Season | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
+|---|---|---|---|---|---|---|---|
+| Before | 171 | 868 | 1,904 | 3,623 | 6,274 | 12,720 | 23,046 |
+| After | 4,394 | 5,184 | 6,984 | 3,913 | 6,573 | 12,929 | 22,597 |
+
+2025 went down because the local Sleeper data was re-fetched live after an
+accidental truncation, and the re-fetch has fewer 2025 leagues: 44 of its
+pre-MFL dates were revised, against none in 2019–2024. The before figures are
+from that pre-truncation database; the 2025 figure the original plan quoted
+(19,936) does not match them.
+
+Test 2025, ≥5 trades. Skill on all rows / on the 361 players present under both
+label sets:
+
+| Labels | Train | Train rows | All rows | Matched | QB | RB | TE | WR |
+|---|---|---|---|---|---|---|---|---|
+| Old (control) | 2022–24 | 911 | 43.6% (361) | 43.6% | 43.6% | 39.1% | 34.8% | 49.3% |
+| MFL | 2022–24 | 927 | 43.6% (363) | 43.2% | 44.4% | 35.8% | 35.3% | 49.7% |
+| MFL | 2021–24 | 1,249 | 44.9% (363) | 44.5% | 47.2% | 39.9% | 33.1% | 49.2% |
+| MFL | 2020–24 | 1,537 | 45.3% (363) | 44.9% | 51.0% | 40.1% | 31.5% | 47.9% |
+
+Position columns are matched-cohort skill (QB 67, RB 101, TE 56, WR 137
+rows). Rows surviving the filter per season, old / MFL: 2020 160 / 288, 2021
+229 / 322, 2022 273 / 280, 2023 297 / 304, 2024 341 / 343, 2025 361 / 363.
+There is no 2019 row in either training set: `training-data.zip` has no 2019
+stats.
+
+2021–24 is selected (within a point of 2020–24, and shorter). It beats the
+control by 0.9 points, short of the 2-point bar; every position has ≥30 rows
+and none loses more than 5 points (TE −1.7). **Decision: retain.** The season
+tool still trains on `backchannel_labels_2019_2025.csv`, and
+`data/start_values_2026.csv` was not re-exported. Re-running
+`sql/start_values.sql` today does change it, but only because the newest
+2026 generation is now `baseline-hl28-v3` (thelab's new default), not
+because of MFL.
 
 ## Season tool (2026)
 
