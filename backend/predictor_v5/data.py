@@ -27,6 +27,11 @@ def read_training_players(zip_path: Path | str = DEFAULT_ZIP) -> list[dict]:
 
 def load_season_stats(zip_path: Path | str = DEFAULT_ZIP) -> pd.DataFrame:
     """One row per (player_id, season) with position, age and points."""
+    return drop_pre_nfl(read_season_stats(zip_path))
+
+
+def read_season_stats(zip_path: Path | str = DEFAULT_ZIP) -> pd.DataFrame:
+    """Like ``load_season_stats`` but keeping pre-NFL seasons, for coverage counts."""
     rows = []
     for p in read_training_players(zip_path):
         if p["position"] not in POSITIONS:
@@ -44,7 +49,7 @@ def load_season_stats(zip_path: Path | str = DEFAULT_ZIP) -> pd.DataFrame:
                     "years_exp": int(s["years_exp"]) if s.get("years_exp") is not None else -1,
                 }
             )
-    return drop_pre_nfl(pd.DataFrame(rows))
+    return pd.DataFrame(rows)
 
 
 def drop_pre_nfl(stats: pd.DataFrame) -> pd.DataFrame:

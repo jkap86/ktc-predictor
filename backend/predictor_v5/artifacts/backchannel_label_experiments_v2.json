@@ -1,0 +1,2051 @@
+{
+  "config": {
+    "candidate_train_years": [
+      3,
+      4,
+      5
+    ],
+    "control_train_seasons": [
+      2022,
+      2023,
+      2024
+    ],
+    "min_trades": 5,
+    "test_season": 2025,
+    "tie_margin": 0.01,
+    "train_end": 2024,
+    "validation_seasons": [
+      2024
+    ]
+  },
+  "coverage": {
+    "baseline": {
+      "by_season": {
+        "2020": 160,
+        "2021": 229,
+        "2022": 273,
+        "2023": 297,
+        "2024": 341,
+        "2025": 361
+      },
+      "by_season_position": {
+        "2020": {
+          "QB": 32,
+          "RB": 40,
+          "TE": 20,
+          "WR": 68
+        },
+        "2021": {
+          "QB": 41,
+          "RB": 65,
+          "TE": 34,
+          "WR": 89
+        },
+        "2022": {
+          "QB": 47,
+          "RB": 79,
+          "TE": 44,
+          "WR": 103
+        },
+        "2023": {
+          "QB": 55,
+          "RB": 87,
+          "TE": 42,
+          "WR": 113
+        },
+        "2024": {
+          "QB": 63,
+          "RB": 96,
+          "TE": 52,
+          "WR": 130
+        },
+        "2025": {
+          "QB": 67,
+          "RB": 101,
+          "TE": 56,
+          "WR": 137
+        }
+      }
+    },
+    "candidate": {
+      "by_season": {
+        "2020": 288,
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343,
+        "2025": 363
+      },
+      "by_season_position": {
+        "2020": {
+          "QB": 50,
+          "RB": 80,
+          "TE": 49,
+          "WR": 109
+        },
+        "2021": {
+          "QB": 49,
+          "RB": 98,
+          "TE": 57,
+          "WR": 118
+        },
+        "2022": {
+          "QB": 47,
+          "RB": 81,
+          "TE": 45,
+          "WR": 107
+        },
+        "2023": {
+          "QB": 56,
+          "RB": 89,
+          "TE": 45,
+          "WR": 114
+        },
+        "2024": {
+          "QB": 63,
+          "RB": 96,
+          "TE": 52,
+          "WR": 132
+        },
+        "2025": {
+          "QB": 67,
+          "RB": 101,
+          "TE": 56,
+          "WR": 139
+        }
+      }
+    },
+    "model_effect": {
+      "by_season": {
+        "2020": 288,
+        "2021": 322,
+        "2022": 280,
+        "2023": 304,
+        "2024": 343,
+        "2025": 363
+      },
+      "by_season_position": {
+        "2020": {
+          "QB": 50,
+          "RB": 80,
+          "TE": 49,
+          "WR": 109
+        },
+        "2021": {
+          "QB": 49,
+          "RB": 98,
+          "TE": 57,
+          "WR": 118
+        },
+        "2022": {
+          "QB": 47,
+          "RB": 81,
+          "TE": 45,
+          "WR": 107
+        },
+        "2023": {
+          "QB": 56,
+          "RB": 89,
+          "TE": 45,
+          "WR": 114
+        },
+        "2024": {
+          "QB": 63,
+          "RB": 96,
+          "TE": 52,
+          "WR": 132
+        },
+        "2025": {
+          "QB": 67,
+          "RB": 101,
+          "TE": 56,
+          "WR": 139
+        }
+      }
+    }
+  },
+  "decision": {
+    "action": "retain",
+    "reason": "a guard failed on at least one target",
+    "requires_unseen_season_confirmation": true,
+    "selected_train_start": 2021,
+    "selected_train_years": 4
+  },
+  "experiments": {
+    "label_effect": {
+      "status": "informational",
+      "test_season": 2025,
+      "used_for_selection": false,
+      "windows": [
+        {
+          "matched_test_rows": 361,
+          "scores": {
+            "baseline": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 166.4,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.436
+                  },
+                  "RB": {
+                    "model_mae": 112.3,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.391
+                  },
+                  "TE": {
+                    "model_mae": 102.0,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.348
+                  },
+                  "WR": {
+                    "model_mae": 103.9,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.493
+                  }
+                },
+                "overall": {
+                  "model_mae": 117.6,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.436
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 160.4,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.457
+                  },
+                  "RB": {
+                    "model_mae": 116.6,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.368
+                  },
+                  "TE": {
+                    "model_mae": 102.0,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.348
+                  },
+                  "WR": {
+                    "model_mae": 103.3,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.496
+                  }
+                },
+                "overall": {
+                  "model_mae": 117.4,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.437
+                }
+              }
+            },
+            "candidate": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 169.3,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.426
+                  },
+                  "RB": {
+                    "model_mae": 111.3,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.387
+                  },
+                  "TE": {
+                    "model_mae": 101.6,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.347
+                  },
+                  "WR": {
+                    "model_mae": 103.8,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.492
+                  }
+                },
+                "overall": {
+                  "model_mae": 117.7,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.432
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 164.0,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.444
+                  },
+                  "RB": {
+                    "model_mae": 116.5,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.358
+                  },
+                  "TE": {
+                    "model_mae": 100.6,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.353
+                  },
+                  "WR": {
+                    "model_mae": 102.7,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.497
+                  }
+                },
+                "overall": {
+                  "model_mae": 117.6,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.432
+                }
+              }
+            }
+          },
+          "skill_gain": {
+            "baseline": 0.001,
+            "candidate": 0.0
+          },
+          "train_seasons": [
+            2022,
+            2023,
+            2024
+          ],
+          "train_years": 3
+        },
+        {
+          "matched_test_rows": 361,
+          "scores": {
+            "baseline": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 155.0,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.475
+                  },
+                  "RB": {
+                    "model_mae": 115.6,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.374
+                  },
+                  "TE": {
+                    "model_mae": 103.6,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.338
+                  },
+                  "WR": {
+                    "model_mae": 96.3,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.53
+                  }
+                },
+                "overall": {
+                  "model_mae": 113.7,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.455
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 152.4,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.484
+                  },
+                  "RB": {
+                    "model_mae": 110.1,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.403
+                  },
+                  "TE": {
+                    "model_mae": 105.3,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.327
+                  },
+                  "WR": {
+                    "model_mae": 104.1,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.492
+                  }
+                },
+                "overall": {
+                  "model_mae": 114.9,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.449
+                }
+              }
+            },
+            "candidate": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 157.1,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.468
+                  },
+                  "RB": {
+                    "model_mae": 114.9,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.367
+                  },
+                  "TE": {
+                    "model_mae": 102.6,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.34
+                  },
+                  "WR": {
+                    "model_mae": 96.0,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.53
+                  }
+                },
+                "overall": {
+                  "model_mae": 113.6,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.452
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 155.8,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.472
+                  },
+                  "RB": {
+                    "model_mae": 109.2,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.399
+                  },
+                  "TE": {
+                    "model_mae": 104.0,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.331
+                  },
+                  "WR": {
+                    "model_mae": 103.8,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.492
+                  }
+                },
+                "overall": {
+                  "model_mae": 115.0,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.445
+                }
+              }
+            }
+          },
+          "skill_gain": {
+            "baseline": -0.006,
+            "candidate": -0.007
+          },
+          "train_seasons": [
+            2021,
+            2022,
+            2023,
+            2024
+          ],
+          "train_years": 4
+        },
+        {
+          "matched_test_rows": 361,
+          "scores": {
+            "baseline": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 155.9,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.472
+                  },
+                  "RB": {
+                    "model_mae": 109.4,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.407
+                  },
+                  "TE": {
+                    "model_mae": 98.2,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.372
+                  },
+                  "WR": {
+                    "model_mae": 96.3,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.53
+                  }
+                },
+                "overall": {
+                  "model_mae": 111.3,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.466
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 141.4,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.521
+                  },
+                  "RB": {
+                    "model_mae": 109.9,
+                    "n": 101,
+                    "no_change_mae": 184.5,
+                    "skill": 0.404
+                  },
+                  "TE": {
+                    "model_mae": 107.7,
+                    "n": 56,
+                    "no_change_mae": 156.5,
+                    "skill": 0.311
+                  },
+                  "WR": {
+                    "model_mae": 106.0,
+                    "n": 137,
+                    "no_change_mae": 205.0,
+                    "skill": 0.483
+                  }
+                },
+                "overall": {
+                  "model_mae": 113.9,
+                  "n": 361,
+                  "no_change_mae": 208.5,
+                  "skill": 0.453
+                }
+              }
+            },
+            "candidate": {
+              "baseline": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 158.4,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.463
+                  },
+                  "RB": {
+                    "model_mae": 108.7,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.402
+                  },
+                  "TE": {
+                    "model_mae": 98.1,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.369
+                  },
+                  "WR": {
+                    "model_mae": 95.7,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.531
+                  }
+                },
+                "overall": {
+                  "model_mae": 111.3,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.463
+                }
+              },
+              "candidate": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 144.8,
+                    "n": 67,
+                    "no_change_mae": 295.1,
+                    "skill": 0.51
+                  },
+                  "RB": {
+                    "model_mae": 108.8,
+                    "n": 101,
+                    "no_change_mae": 181.6,
+                    "skill": 0.401
+                  },
+                  "TE": {
+                    "model_mae": 106.6,
+                    "n": 56,
+                    "no_change_mae": 155.5,
+                    "skill": 0.315
+                  },
+                  "WR": {
+                    "model_mae": 106.4,
+                    "n": 137,
+                    "no_change_mae": 204.2,
+                    "skill": 0.479
+                  }
+                },
+                "overall": {
+                  "model_mae": 114.2,
+                  "n": 361,
+                  "no_change_mae": 207.2,
+                  "skill": 0.449
+                }
+              }
+            }
+          },
+          "skill_gain": {
+            "baseline": -0.013,
+            "candidate": -0.014
+          },
+          "train_seasons": [
+            2020,
+            2021,
+            2022,
+            2023,
+            2024
+          ],
+          "train_years": 5
+        }
+      ]
+    },
+    "model_version": {
+      "gate_eligible": false,
+      "mapping": "relative change applied to each target's start value; the two scales differ, so read as informational",
+      "matched_test_rows": 363,
+      "missing_cells": [
+        "baseline-hl28-v3 labels without the candidate's added trades were not supplied, so the model-version effect without them is unresolved"
+      ],
+      "scores": {
+        "candidate": {
+          "candidate": {
+            "by_position": {
+              "QB": {
+                "model_mae": 155.8,
+                "n": 67,
+                "no_change_mae": 295.1,
+                "skill": 0.472
+              },
+              "RB": {
+                "model_mae": 109.2,
+                "n": 101,
+                "no_change_mae": 181.6,
+                "skill": 0.399
+              },
+              "TE": {
+                "model_mae": 104.0,
+                "n": 56,
+                "no_change_mae": 155.5,
+                "skill": 0.331
+              },
+              "WR": {
+                "model_mae": 103.3,
+                "n": 139,
+                "no_change_mae": 206.5,
+                "skill": 0.5
+              }
+            },
+            "overall": {
+              "model_mae": 114.7,
+              "n": 363,
+              "no_change_mae": 208.1,
+              "skill": 0.449
+            }
+          },
+          "model_effect": {
+            "by_position": {
+              "QB": {
+                "model_mae": 155.4,
+                "n": 67,
+                "no_change_mae": 295.1,
+                "skill": 0.474
+              },
+              "RB": {
+                "model_mae": 128.7,
+                "n": 101,
+                "no_change_mae": 181.6,
+                "skill": 0.291
+              },
+              "TE": {
+                "model_mae": 114.9,
+                "n": 56,
+                "no_change_mae": 155.5,
+                "skill": 0.261
+              },
+              "WR": {
+                "model_mae": 114.5,
+                "n": 139,
+                "no_change_mae": 206.5,
+                "skill": 0.445
+              }
+            },
+            "overall": {
+              "model_mae": 126.1,
+              "n": 363,
+              "no_change_mae": 208.1,
+              "skill": 0.394
+            }
+          }
+        },
+        "model_effect": {
+          "candidate": {
+            "by_position": {
+              "QB": {
+                "model_mae": 144.5,
+                "n": 67,
+                "no_change_mae": 230.4,
+                "skill": 0.373
+              },
+              "RB": {
+                "model_mae": 97.2,
+                "n": 101,
+                "no_change_mae": 143.1,
+                "skill": 0.32
+              },
+              "TE": {
+                "model_mae": 85.8,
+                "n": 56,
+                "no_change_mae": 127.1,
+                "skill": 0.325
+              },
+              "WR": {
+                "model_mae": 96.4,
+                "n": 139,
+                "no_change_mae": 162.4,
+                "skill": 0.406
+              }
+            },
+            "overall": {
+              "model_mae": 103.9,
+              "n": 363,
+              "no_change_mae": 164.1,
+              "skill": 0.367
+            }
+          },
+          "model_effect": {
+            "by_position": {
+              "QB": {
+                "model_mae": 115.1,
+                "n": 67,
+                "no_change_mae": 230.4,
+                "skill": 0.501
+              },
+              "RB": {
+                "model_mae": 92.9,
+                "n": 101,
+                "no_change_mae": 143.1,
+                "skill": 0.351
+              },
+              "TE": {
+                "model_mae": 89.1,
+                "n": 56,
+                "no_change_mae": 127.1,
+                "skill": 0.299
+              },
+              "WR": {
+                "model_mae": 85.2,
+                "n": 139,
+                "no_change_mae": 162.4,
+                "skill": 0.475
+              }
+            },
+            "overall": {
+              "model_mae": 93.5,
+              "n": 363,
+              "no_change_mae": 164.1,
+              "skill": 0.431
+            }
+          }
+        }
+      },
+      "skill_gain": {
+        "candidate": -0.055,
+        "model_effect": 0.064
+      },
+      "status": "informational",
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "versions": {
+        "candidate": "baseline-hl28-v1",
+        "model_effect": "baseline-hl28-v3"
+      }
+    },
+    "training_history": {
+      "baseline": {
+        "final_season_informational": {
+          "used_for_selection": false,
+          "windows": [
+            {
+              "by_position": {
+                "QB": {
+                  "model_mae": 166.4,
+                  "n": 67,
+                  "no_change_mae": 295.1,
+                  "skill": 0.436
+                },
+                "RB": {
+                  "model_mae": 112.3,
+                  "n": 101,
+                  "no_change_mae": 184.5,
+                  "skill": 0.391
+                },
+                "TE": {
+                  "model_mae": 102.0,
+                  "n": 56,
+                  "no_change_mae": 156.5,
+                  "skill": 0.348
+                },
+                "WR": {
+                  "model_mae": 103.9,
+                  "n": 137,
+                  "no_change_mae": 205.0,
+                  "skill": 0.493
+                }
+              },
+              "overall": {
+                "model_mae": 117.6,
+                "n": 361,
+                "no_change_mae": 208.5,
+                "skill": 0.436
+              },
+              "train_seasons": [
+                2022,
+                2023,
+                2024
+              ],
+              "train_years": 3
+            },
+            {
+              "by_position": {
+                "QB": {
+                  "model_mae": 155.0,
+                  "n": 67,
+                  "no_change_mae": 295.1,
+                  "skill": 0.475
+                },
+                "RB": {
+                  "model_mae": 115.6,
+                  "n": 101,
+                  "no_change_mae": 184.5,
+                  "skill": 0.374
+                },
+                "TE": {
+                  "model_mae": 103.6,
+                  "n": 56,
+                  "no_change_mae": 156.5,
+                  "skill": 0.338
+                },
+                "WR": {
+                  "model_mae": 96.3,
+                  "n": 137,
+                  "no_change_mae": 205.0,
+                  "skill": 0.53
+                }
+              },
+              "overall": {
+                "model_mae": 113.7,
+                "n": 361,
+                "no_change_mae": 208.5,
+                "skill": 0.455
+              },
+              "train_seasons": [
+                2021,
+                2022,
+                2023,
+                2024
+              ],
+              "train_years": 4
+            },
+            {
+              "by_position": {
+                "QB": {
+                  "model_mae": 155.9,
+                  "n": 67,
+                  "no_change_mae": 295.1,
+                  "skill": 0.472
+                },
+                "RB": {
+                  "model_mae": 109.4,
+                  "n": 101,
+                  "no_change_mae": 184.5,
+                  "skill": 0.407
+                },
+                "TE": {
+                  "model_mae": 98.2,
+                  "n": 56,
+                  "no_change_mae": 156.5,
+                  "skill": 0.372
+                },
+                "WR": {
+                  "model_mae": 96.3,
+                  "n": 137,
+                  "no_change_mae": 205.0,
+                  "skill": 0.53
+                }
+              },
+              "overall": {
+                "model_mae": 111.3,
+                "n": 361,
+                "no_change_mae": 208.5,
+                "skill": 0.466
+              },
+              "train_seasons": [
+                2020,
+                2021,
+                2022,
+                2023,
+                2024
+              ],
+              "train_years": 5
+            }
+          ]
+        },
+        "validation": {
+          "candidates": [
+            {
+              "by_validation_season": {
+                "2024": {
+                  "model_mae": 160.5,
+                  "n": 341,
+                  "no_change_mae": 274.9,
+                  "skill": 0.416
+                }
+              },
+              "eligible": true,
+              "pooled": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 239.6,
+                    "n": 63,
+                    "no_change_mae": 429.4,
+                    "skill": 0.442
+                  },
+                  "RB": {
+                    "model_mae": 141.4,
+                    "n": 96,
+                    "no_change_mae": 217.4,
+                    "skill": 0.349
+                  },
+                  "TE": {
+                    "model_mae": 115.5,
+                    "n": 52,
+                    "no_change_mae": 208.4,
+                    "skill": 0.446
+                  },
+                  "WR": {
+                    "model_mae": 154.3,
+                    "n": 130,
+                    "no_change_mae": 269.1,
+                    "skill": 0.427
+                  }
+                },
+                "overall": {
+                  "model_mae": 160.5,
+                  "n": 341,
+                  "no_change_mae": 274.9,
+                  "skill": 0.416
+                }
+              },
+              "train_years": 3,
+              "windows": {
+                "2024": [
+                  2021,
+                  2022,
+                  2023
+                ]
+              }
+            },
+            {
+              "by_validation_season": {
+                "2024": {
+                  "model_mae": 165.2,
+                  "n": 341,
+                  "no_change_mae": 274.9,
+                  "skill": 0.399
+                }
+              },
+              "eligible": true,
+              "pooled": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 241.0,
+                    "n": 63,
+                    "no_change_mae": 429.4,
+                    "skill": 0.439
+                  },
+                  "RB": {
+                    "model_mae": 147.6,
+                    "n": 96,
+                    "no_change_mae": 217.4,
+                    "skill": 0.321
+                  },
+                  "TE": {
+                    "model_mae": 109.8,
+                    "n": 52,
+                    "no_change_mae": 208.4,
+                    "skill": 0.473
+                  },
+                  "WR": {
+                    "model_mae": 163.5,
+                    "n": 130,
+                    "no_change_mae": 269.1,
+                    "skill": 0.392
+                  }
+                },
+                "overall": {
+                  "model_mae": 165.2,
+                  "n": 341,
+                  "no_change_mae": 274.9,
+                  "skill": 0.399
+                }
+              },
+              "train_years": 4,
+              "windows": {
+                "2024": [
+                  2020,
+                  2021,
+                  2022,
+                  2023
+                ]
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "no training rows for [2019]",
+              "train_years": 5,
+              "windows": {
+                "2024": [
+                  2019,
+                  2020,
+                  2021,
+                  2022,
+                  2023
+                ]
+              }
+            }
+          ],
+          "rationale": "best pooled validation skill 0.416; 3-season window scores 0.416 and is the shortest within 0.010 of the best",
+          "selected_train_years": 3,
+          "validation_seasons": [
+            2024
+          ]
+        }
+      },
+      "candidate": {
+        "final_season_informational": {
+          "used_for_selection": false,
+          "windows": [
+            {
+              "by_position": {
+                "QB": {
+                  "model_mae": 164.0,
+                  "n": 67,
+                  "no_change_mae": 295.1,
+                  "skill": 0.444
+                },
+                "RB": {
+                  "model_mae": 116.5,
+                  "n": 101,
+                  "no_change_mae": 181.6,
+                  "skill": 0.358
+                },
+                "TE": {
+                  "model_mae": 100.6,
+                  "n": 56,
+                  "no_change_mae": 155.5,
+                  "skill": 0.353
+                },
+                "WR": {
+                  "model_mae": 102.2,
+                  "n": 139,
+                  "no_change_mae": 206.5,
+                  "skill": 0.505
+                }
+              },
+              "overall": {
+                "model_mae": 117.4,
+                "n": 363,
+                "no_change_mae": 208.1,
+                "skill": 0.436
+              },
+              "train_seasons": [
+                2022,
+                2023,
+                2024
+              ],
+              "train_years": 3
+            },
+            {
+              "by_position": {
+                "QB": {
+                  "model_mae": 155.8,
+                  "n": 67,
+                  "no_change_mae": 295.1,
+                  "skill": 0.472
+                },
+                "RB": {
+                  "model_mae": 109.2,
+                  "n": 101,
+                  "no_change_mae": 181.6,
+                  "skill": 0.399
+                },
+                "TE": {
+                  "model_mae": 104.0,
+                  "n": 56,
+                  "no_change_mae": 155.5,
+                  "skill": 0.331
+                },
+                "WR": {
+                  "model_mae": 103.3,
+                  "n": 139,
+                  "no_change_mae": 206.5,
+                  "skill": 0.5
+                }
+              },
+              "overall": {
+                "model_mae": 114.7,
+                "n": 363,
+                "no_change_mae": 208.1,
+                "skill": 0.449
+              },
+              "train_seasons": [
+                2021,
+                2022,
+                2023,
+                2024
+              ],
+              "train_years": 4
+            },
+            {
+              "by_position": {
+                "QB": {
+                  "model_mae": 144.8,
+                  "n": 67,
+                  "no_change_mae": 295.1,
+                  "skill": 0.51
+                },
+                "RB": {
+                  "model_mae": 108.8,
+                  "n": 101,
+                  "no_change_mae": 181.6,
+                  "skill": 0.401
+                },
+                "TE": {
+                  "model_mae": 106.6,
+                  "n": 56,
+                  "no_change_mae": 155.5,
+                  "skill": 0.315
+                },
+                "WR": {
+                  "model_mae": 105.7,
+                  "n": 139,
+                  "no_change_mae": 206.5,
+                  "skill": 0.488
+                }
+              },
+              "overall": {
+                "model_mae": 113.9,
+                "n": 363,
+                "no_change_mae": 208.1,
+                "skill": 0.453
+              },
+              "train_seasons": [
+                2020,
+                2021,
+                2022,
+                2023,
+                2024
+              ],
+              "train_years": 5
+            }
+          ]
+        },
+        "validation": {
+          "candidates": [
+            {
+              "by_validation_season": {
+                "2024": {
+                  "model_mae": 145.7,
+                  "n": 343,
+                  "no_change_mae": 271.3,
+                  "skill": 0.463
+                }
+              },
+              "eligible": true,
+              "pooled": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 227.1,
+                    "n": 63,
+                    "no_change_mae": 428.8,
+                    "skill": 0.47
+                  },
+                  "RB": {
+                    "model_mae": 128.4,
+                    "n": 96,
+                    "no_change_mae": 215.0,
+                    "skill": 0.403
+                  },
+                  "TE": {
+                    "model_mae": 102.8,
+                    "n": 52,
+                    "no_change_mae": 207.6,
+                    "skill": 0.505
+                  },
+                  "WR": {
+                    "model_mae": 136.3,
+                    "n": 132,
+                    "no_change_mae": 262.1,
+                    "skill": 0.48
+                  }
+                },
+                "overall": {
+                  "model_mae": 145.7,
+                  "n": 343,
+                  "no_change_mae": 271.3,
+                  "skill": 0.463
+                }
+              },
+              "train_years": 3,
+              "windows": {
+                "2024": [
+                  2021,
+                  2022,
+                  2023
+                ]
+              }
+            },
+            {
+              "by_validation_season": {
+                "2024": {
+                  "model_mae": 139.7,
+                  "n": 343,
+                  "no_change_mae": 271.3,
+                  "skill": 0.485
+                }
+              },
+              "eligible": true,
+              "pooled": {
+                "by_position": {
+                  "QB": {
+                    "model_mae": 213.2,
+                    "n": 63,
+                    "no_change_mae": 428.8,
+                    "skill": 0.503
+                  },
+                  "RB": {
+                    "model_mae": 124.9,
+                    "n": 96,
+                    "no_change_mae": 215.0,
+                    "skill": 0.419
+                  },
+                  "TE": {
+                    "model_mae": 96.2,
+                    "n": 52,
+                    "no_change_mae": 207.6,
+                    "skill": 0.537
+                  },
+                  "WR": {
+                    "model_mae": 132.4,
+                    "n": 132,
+                    "no_change_mae": 262.1,
+                    "skill": 0.495
+                  }
+                },
+                "overall": {
+                  "model_mae": 139.7,
+                  "n": 343,
+                  "no_change_mae": 271.3,
+                  "skill": 0.485
+                }
+              },
+              "train_years": 4,
+              "windows": {
+                "2024": [
+                  2020,
+                  2021,
+                  2022,
+                  2023
+                ]
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "no training rows for [2019]",
+              "train_years": 5,
+              "windows": {
+                "2024": [
+                  2019,
+                  2020,
+                  2021,
+                  2022,
+                  2023
+                ]
+              }
+            }
+          ],
+          "rationale": "best pooled validation skill 0.485; 4-season window scores 0.485 and is the shortest within 0.010 of the best",
+          "selected_train_years": 4,
+          "validation_seasons": [
+            2024
+          ]
+        }
+      }
+    }
+  },
+  "final_evaluation": {
+    "candidate": {
+      "all": {
+        "by_position": {
+          "QB": {
+            "model_mae": 155.8,
+            "n": 67,
+            "no_change_mae": 295.1,
+            "skill": 0.472
+          },
+          "RB": {
+            "model_mae": 109.2,
+            "n": 101,
+            "no_change_mae": 181.6,
+            "skill": 0.399
+          },
+          "TE": {
+            "model_mae": 104.0,
+            "n": 56,
+            "no_change_mae": 155.5,
+            "skill": 0.331
+          },
+          "WR": {
+            "model_mae": 103.3,
+            "n": 139,
+            "no_change_mae": 206.5,
+            "skill": 0.5
+          }
+        },
+        "overall": {
+          "model_mae": 114.7,
+          "n": 363,
+          "no_change_mae": 208.1,
+          "skill": 0.449
+        }
+      },
+      "label_set": "candidate",
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    "control": {
+      "all": {
+        "by_position": {
+          "QB": {
+            "model_mae": 166.4,
+            "n": 67,
+            "no_change_mae": 295.1,
+            "skill": 0.436
+          },
+          "RB": {
+            "model_mae": 112.3,
+            "n": 101,
+            "no_change_mae": 184.5,
+            "skill": 0.391
+          },
+          "TE": {
+            "model_mae": 102.0,
+            "n": 56,
+            "no_change_mae": 156.5,
+            "skill": 0.348
+          },
+          "WR": {
+            "model_mae": 103.9,
+            "n": 137,
+            "no_change_mae": 205.0,
+            "skill": 0.493
+          }
+        },
+        "overall": {
+          "model_mae": 117.6,
+          "n": 361,
+          "no_change_mae": 208.5,
+          "skill": 0.436
+        }
+      },
+      "label_set": "baseline",
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ]
+    },
+    "holdout_status": "reused: PR #3 already chose a training window on this season's scores, so this is not an untouched holdout; an unseen season or separately held-out data is needed before any promotion",
+    "matched": {
+      "baseline": {
+        "candidate": {
+          "by_position": {
+            "QB": {
+              "model_mae": 152.4,
+              "n": 67,
+              "no_change_mae": 295.1,
+              "skill": 0.484
+            },
+            "RB": {
+              "model_mae": 110.1,
+              "n": 101,
+              "no_change_mae": 184.5,
+              "skill": 0.403
+            },
+            "TE": {
+              "model_mae": 105.3,
+              "n": 56,
+              "no_change_mae": 156.5,
+              "skill": 0.327
+            },
+            "WR": {
+              "model_mae": 104.1,
+              "n": 137,
+              "no_change_mae": 205.0,
+              "skill": 0.492
+            }
+          },
+          "overall": {
+            "model_mae": 114.9,
+            "n": 361,
+            "no_change_mae": 208.5,
+            "skill": 0.449
+          }
+        },
+        "control": {
+          "by_position": {
+            "QB": {
+              "model_mae": 166.4,
+              "n": 67,
+              "no_change_mae": 295.1,
+              "skill": 0.436
+            },
+            "RB": {
+              "model_mae": 112.3,
+              "n": 101,
+              "no_change_mae": 184.5,
+              "skill": 0.391
+            },
+            "TE": {
+              "model_mae": 102.0,
+              "n": 56,
+              "no_change_mae": 156.5,
+              "skill": 0.348
+            },
+            "WR": {
+              "model_mae": 103.9,
+              "n": 137,
+              "no_change_mae": 205.0,
+              "skill": 0.493
+            }
+          },
+          "overall": {
+            "model_mae": 117.6,
+            "n": 361,
+            "no_change_mae": 208.5,
+            "skill": 0.436
+          }
+        }
+      },
+      "candidate": {
+        "candidate": {
+          "by_position": {
+            "QB": {
+              "model_mae": 155.8,
+              "n": 67,
+              "no_change_mae": 295.1,
+              "skill": 0.472
+            },
+            "RB": {
+              "model_mae": 109.2,
+              "n": 101,
+              "no_change_mae": 181.6,
+              "skill": 0.399
+            },
+            "TE": {
+              "model_mae": 104.0,
+              "n": 56,
+              "no_change_mae": 155.5,
+              "skill": 0.331
+            },
+            "WR": {
+              "model_mae": 103.8,
+              "n": 137,
+              "no_change_mae": 204.2,
+              "skill": 0.492
+            }
+          },
+          "overall": {
+            "model_mae": 115.0,
+            "n": 361,
+            "no_change_mae": 207.2,
+            "skill": 0.445
+          }
+        },
+        "control": {
+          "by_position": {
+            "QB": {
+              "model_mae": 169.3,
+              "n": 67,
+              "no_change_mae": 295.1,
+              "skill": 0.426
+            },
+            "RB": {
+              "model_mae": 111.3,
+              "n": 101,
+              "no_change_mae": 181.6,
+              "skill": 0.387
+            },
+            "TE": {
+              "model_mae": 101.6,
+              "n": 56,
+              "no_change_mae": 155.5,
+              "skill": 0.347
+            },
+            "WR": {
+              "model_mae": 103.8,
+              "n": 137,
+              "no_change_mae": 204.2,
+              "skill": 0.492
+            }
+          },
+          "overall": {
+            "model_mae": 117.7,
+            "n": 361,
+            "no_change_mae": 207.2,
+            "skill": 0.432
+          }
+        }
+      }
+    },
+    "matched_test_rows": 361,
+    "test_season": 2025
+  },
+  "fits": [
+    {
+      "label_set": "candidate",
+      "test_season": 2024,
+      "train_seasons": [
+        2021,
+        2022,
+        2023
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2024,
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2025,
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2025,
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2025,
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2025,
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2025,
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2025,
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2025,
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2025,
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2024,
+      "train_seasons": [
+        2021,
+        2022,
+        2023
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2024,
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2025,
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2025,
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "baseline",
+      "test_season": 2025,
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2024,
+      "train_seasons": [
+        2021,
+        2022,
+        2023
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2024,
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2025,
+      "train_seasons": [
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2025,
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2025,
+      "train_seasons": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "candidate",
+      "test_season": 2025,
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    },
+    {
+      "label_set": "model_effect",
+      "test_season": 2025,
+      "train_seasons": [
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    }
+  ],
+  "frozen_candidate": {
+    "evaluation_targets": [
+      "baseline",
+      "candidate"
+    ],
+    "features": [
+      "log_start",
+      "age",
+      "points",
+      "position_code"
+    ],
+    "label_set": "candidate",
+    "min_trades": 5,
+    "model_params": {
+      "l2_regularization": 1.0,
+      "learning_rate": 0.05,
+      "loss": "absolute_error",
+      "max_iter": 300,
+      "max_leaf_nodes": 15,
+      "min_samples_leaf": 20,
+      "random_state": 0
+    },
+    "model_version": "baseline-hl28-v1",
+    "monotonic": [
+      0,
+      0,
+      1,
+      0
+    ],
+    "train_seasons": [
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "train_years": 4
+  },
+  "gate": {
+    "by_target": {
+      "baseline": {
+        "gain": 0.013,
+        "overall_guard": false,
+        "position_guard": true,
+        "qualified": false,
+        "sample_guard": true
+      },
+      "candidate": {
+        "gain": 0.013,
+        "overall_guard": false,
+        "position_guard": true,
+        "qualified": false,
+        "sample_guard": true
+      }
+    },
+    "evaluated": true,
+    "max_position_drop": 0.05,
+    "min_gain": 0.02,
+    "min_position_rows": 30,
+    "qualified": false,
+    "requires_every_target": true,
+    "requires_same_model_version": true
+  },
+  "inputs": {
+    "baseline": {
+      "file": "backchannel_labels_2019_2025.csv",
+      "model_version": "baseline-hl28-v1",
+      "rows": 5330,
+      "rows_by_season": {
+        "2019": 409,
+        "2020": 476,
+        "2021": 634,
+        "2022": 696,
+        "2023": 822,
+        "2024": 938,
+        "2025": 1355
+      },
+      "sha256": "eb8eab7365746b408d188a1fa2a78a20c6085a7650782a83abf512b7160491f5"
+    },
+    "candidate": {
+      "file": "backchannel_labels_2019_2025_mfl.csv",
+      "model_version": "baseline-hl28-v1",
+      "rows": 3560,
+      "rows_by_season": {
+        "2020": 457,
+        "2021": 540,
+        "2022": 587,
+        "2023": 631,
+        "2024": 634,
+        "2025": 711
+      },
+      "sha256": "efd42bc836b0706657cf7cc140c256d48fdc8eacbb08aface3069a74cf7f678a"
+    },
+    "model_effect": {
+      "file": "backchannel_labels_2019_2025_mfl_v3.csv",
+      "model_version": "baseline-hl28-v3",
+      "rows": 3560,
+      "rows_by_season": {
+        "2020": 457,
+        "2021": 540,
+        "2022": 587,
+        "2023": 631,
+        "2024": 634,
+        "2025": 711
+      },
+      "sha256": "d8a42e58bea6a0bac62860bcfffcfce26ffb77204f6ccf9608f36ad98562c8dd"
+    },
+    "training_data": {
+      "file": "training-data.zip",
+      "sha256": "b67e7b03e600ae9ad83b5b179b416f273b7e169c8d47eff7345ef257cb034a86"
+    }
+  },
+  "label_sets": {
+    "baseline": {
+      "model_version": "baseline-hl28-v1"
+    },
+    "candidate": {
+      "model_version": "baseline-hl28-v1"
+    },
+    "model_effect": {
+      "model_version": "baseline-hl28-v3"
+    }
+  },
+  "limitations": [
+    "reused: PR #3 already chose a training window on this season's scores, so this is not an untouched holdout; an unseen season or separately held-out data is needed before any promotion",
+    "baseline-hl28-v3 labels without the candidate's added trades were not supplied, so the model-version effect without them is unresolved"
+  ],
+  "methodology": {
+    "final_evaluation": "frozen candidate and deployed control trained through 2024, tested on 2025",
+    "holdout_status": "reused: PR #3 already chose a training window on this season's scores, so this is not an untouched holdout; an unseen season or separately held-out data is needed before any promotion",
+    "selection": "window length chosen on validation seasons [2024] (each trained on the preceding seasons only) using candidate labels; 2025 rows are removed before selection runs",
+    "target": "end_value of the named label set at the season's end cutoff, on (player_id, season) keys present in every compared predictor's test rows after the min_trades filter; each prediction's relative change (pred_value / own start_value) is applied to the target's start_value, and no-change predicts the target's start_value"
+  },
+  "schema_version": 2,
+  "selection": {
+    "candidates": [
+      {
+        "by_validation_season": {
+          "2024": {
+            "model_mae": 145.7,
+            "n": 343,
+            "no_change_mae": 271.3,
+            "skill": 0.463
+          }
+        },
+        "eligible": true,
+        "pooled": {
+          "by_position": {
+            "QB": {
+              "model_mae": 227.1,
+              "n": 63,
+              "no_change_mae": 428.8,
+              "skill": 0.47
+            },
+            "RB": {
+              "model_mae": 128.4,
+              "n": 96,
+              "no_change_mae": 215.0,
+              "skill": 0.403
+            },
+            "TE": {
+              "model_mae": 102.8,
+              "n": 52,
+              "no_change_mae": 207.6,
+              "skill": 0.505
+            },
+            "WR": {
+              "model_mae": 136.3,
+              "n": 132,
+              "no_change_mae": 262.1,
+              "skill": 0.48
+            }
+          },
+          "overall": {
+            "model_mae": 145.7,
+            "n": 343,
+            "no_change_mae": 271.3,
+            "skill": 0.463
+          }
+        },
+        "train_years": 3,
+        "windows": {
+          "2024": [
+            2021,
+            2022,
+            2023
+          ]
+        }
+      },
+      {
+        "by_validation_season": {
+          "2024": {
+            "model_mae": 139.7,
+            "n": 343,
+            "no_change_mae": 271.3,
+            "skill": 0.485
+          }
+        },
+        "eligible": true,
+        "pooled": {
+          "by_position": {
+            "QB": {
+              "model_mae": 213.2,
+              "n": 63,
+              "no_change_mae": 428.8,
+              "skill": 0.503
+            },
+            "RB": {
+              "model_mae": 124.9,
+              "n": 96,
+              "no_change_mae": 215.0,
+              "skill": 0.419
+            },
+            "TE": {
+              "model_mae": 96.2,
+              "n": 52,
+              "no_change_mae": 207.6,
+              "skill": 0.537
+            },
+            "WR": {
+              "model_mae": 132.4,
+              "n": 132,
+              "no_change_mae": 262.1,
+              "skill": 0.495
+            }
+          },
+          "overall": {
+            "model_mae": 139.7,
+            "n": 343,
+            "no_change_mae": 271.3,
+            "skill": 0.485
+          }
+        },
+        "train_years": 4,
+        "windows": {
+          "2024": [
+            2020,
+            2021,
+            2022,
+            2023
+          ]
+        }
+      },
+      {
+        "eligible": false,
+        "reason": "no training rows for [2019]",
+        "train_years": 5,
+        "windows": {
+          "2024": [
+            2019,
+            2020,
+            2021,
+            2022,
+            2023
+          ]
+        }
+      }
+    ],
+    "rationale": "best pooled validation skill 0.485; 4-season window scores 0.485 and is the shortest within 0.010 of the best",
+    "selected_train_years": 4,
+    "validation_seasons": [
+      2024
+    ]
+  }
+}
