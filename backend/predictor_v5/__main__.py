@@ -6,8 +6,8 @@
     python -m predictor_v5 predict --position WR --age 24 --start 5200 --points 260
     python -m predictor_v5 predict ... --sweep 100,150,200,250,300
     python -m predictor_v5 --labels backchannel:labels.csv --min-trades 5 holdout --train 2022-2024 --test 2025
-    python -m predictor_v5 build-labels --values raw.csv --out labels.csv
-    python -m predictor_v5 compare-labels
+    python -m predictor_v5 build-labels --values raw.csv --out labels.csv [--model-version baseline-hl28-v3]
+    python -m predictor_v5 compare-labels           # schema-2 report: select on 2024, evaluate on 2025
     python -m predictor_v5 season --player "Ja'Marr Chase" --points 330
     python -m predictor_v5 season --player "Bijan Robinson" --sweep 200,275,350
 
@@ -17,6 +17,7 @@ source (columns: player_id, season, start_value, end_value).
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from predictor_v5.data import DEFAULT_ZIP, build_dataset, load_season_stats
@@ -100,16 +101,31 @@ def cmd_season(args) -> None:
 
 
 def cmd_build_labels(args) -> None:
-    from predictor_v5.label_export import build_labels_file
+    from predictor_v5.label_export import build_labels_file, provenance_path
 
-    labels = build_labels_file(args.values, args.out, args.training_data)
-    print(f"Wrote {len(labels)} player-seasons to {args.out}")
+    expected = None
+    if args.expected_seasons:
+        first, _, last = args.expected_seasons.partition("-")
+        expected = tuple(range(int(first), int(last or first) + 1))
+    labels = build_labels_file(
+        args.values, args.out, args.training_data, expected_seasons=expected, model_version=args.model_version
+    )
+    report = labels.attrs["provenance"]
+    print(f"Wrote {len(labels)} player-seasons to {args.out} ({report['model_version'] or 'model version unverified'})")
+    print(f"Coverage and provenance: {provenance_path(args.out)}")
+    for warning in report["coverage"]["warnings"]:
+        print(f"WARNING: {warning}", file=sys.stderr)
 
 
 def cmd_compare_labels(args) -> None:
-    from predictor_v5.compare_labels import compare_label_files, write_report
+    from predictor_v5.compare_labels import (
+        compare_label_files,
+        gate_summary,
+        write_report,
+    )
 
     train_starts = tuple(int(value) for value in args.train_starts.split(","))
+    validation_seasons = tuple(int(value) for value in args.validation_seasons.split(","))
     result = compare_label_files(
         args.baseline_values,
         args.candidate_values,
@@ -118,9 +134,15 @@ def cmd_compare_labels(args) -> None:
         train_starts=train_starts,
         train_end=args.train_end,
         test_season=args.test,
+        validation_seasons=validation_seasons,
+        model_effect_path=args.model_effect_values or None,
+        baseline_model_version=args.baseline_model_version,
+        candidate_model_version=args.candidate_model_version,
+        model_effect_model_version=args.model_effect_model_version,
+        holdout_declaration={"status": args.holdout_status, "evidence": args.holdout_evidence} if args.holdout_status else None,
     )
     write_report(result, args.out)
-    print(json.dumps(result, indent=2, sort_keys=True))
+    print(json.dumps(gate_summary(result), indent=2, sort_keys=True))
     print(f"Wrote deterministic report to {args.out}")
 
 
@@ -166,16 +188,42 @@ def main() -> None:
     bl.add_argument("--values", required=True, help="raw CSV produced by sql/backchannel_labels.sql")
     bl.add_argument("--out", required=True, help="destination for the 14-column label CSV")
     bl.add_argument("--training-data", default=str(DEFAULT_ZIP))
+    bl.add_argument("--model-version", help="fail unless the export is this market model version")
+    bl.add_argument(
+        "--expected-seasons", default="2019-2025", help="fail if any of these seasons is absent; '' to skip"
+    )
     bl.set_defaults(func=cmd_build_labels)
 
-    cl = sub.add_parser("compare-labels", help="compare old and MFL-inclusive labels on the 2025 holdout")
+    cl = sub.add_parser(
+        "compare-labels",
+        help="select a candidate window on pre-test seasons, then compare it with the control on the test season",
+    )
     cl.add_argument("--baseline-values", default=str(DATA / "backchannel_labels_2019_2025.csv"))
     cl.add_argument("--candidate-values", default=str(DATA / "backchannel_labels_2019_2025_mfl.csv"))
-    cl.add_argument("--out", default=str(ARTIFACTS / "backchannel_mfl_comparison.json"))
+    cl.add_argument(
+        "--model-effect-values",
+        default=str(DATA / "backchannel_labels_2019_2025_mfl_v3.csv"),
+        help="candidate's trade corpus under another market model version (informational); '' to skip",
+    )
+    # Assertions only: each file's version comes from its .provenance.json or data/label_manifest.json,
+    # and a mismatch is an error.
+    cl.add_argument("--baseline-model-version")
+    cl.add_argument("--candidate-model-version")
+    cl.add_argument("--model-effect-model-version")
+    cl.add_argument(
+        "--holdout-status",
+        choices=["reused", "untouched", "unknown"],
+        help="declare the test season's history; recorded as unverified (only KNOWN_HOLDOUTS in compare_labels.py "
+        "is verified, and 2025 is on record as reused)",
+    )
+    cl.add_argument("--holdout-evidence", help="how the test season was held out; required with --holdout-status untouched")
+    # Schema-2 reports go to a new file so the schema-1 artifacts stay as committed.
+    cl.add_argument("--out", default=str(ARTIFACTS / "backchannel_label_experiments_v2.json"))
     cl.add_argument("--training-data", default=str(DEFAULT_ZIP))
     cl.add_argument("--min-trades", type=int, default=5)
-    cl.add_argument("--train-starts", default="2022,2021,2020")
+    cl.add_argument("--train-starts", default="2022,2021,2020", help="candidate window starts, read as lengths ending at --train-end")
     cl.add_argument("--train-end", type=int, default=2024)
+    cl.add_argument("--validation-seasons", default="2024", help="seasons before --test used to choose the window")
     cl.add_argument("--test", type=int, default=2025)
     cl.set_defaults(func=cmd_compare_labels)
 
