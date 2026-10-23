@@ -1410,3 +1410,43 @@ def test_build_labels_keeps_partial_coverage_and_the_2019_gap(tmp_path, monkeypa
     assert coverage["2019"]["labelled_rows"] == 0
     assert coverage["2019"]["training_archive_has_season"] is False
     assert coverage["2025"]["no_nfl_stats"] == 1
+
+
+def _joined_values(start, end):
+    """Market rows for the two players that join NFL stats (star, thin) plus one that doesn't."""
+    return _with_provenance(_market_values().assign(start_value=start, end_value=end))
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "counts"),
+    [
+        ([0, 0, 300], [110, 650, 310], "2 zero start only, 0 zero end only, 0 both zero"),
+        ([100, 500, 300], [0, 0, 310], "0 zero start only, 2 zero end only, 0 both zero"),
+        ([0, 500, 300], [110, 0, 310], "1 zero start only, 1 zero end only, 0 both zero"),
+        ([0, 0, 300], [0, 650, 310], "1 zero start only, 0 zero end only, 1 both zero"),
+    ],
+)
+def test_build_labels_refuses_a_file_with_no_trainable_rows(tmp_path, monkeypatch, start, end, counts):
+    out, sidecar = _old_pair(tmp_path)
+
+    with pytest.raises(ValueError, match=rf"2 joined rows, 0 with start_value and end_value both > 0 \({counts}\)"):
+        _build(tmp_path, monkeypatch, _joined_values(start, end))
+    _assert_untouched(tmp_path, out, sidecar)
+
+
+def test_build_labels_keeps_zero_valued_rows_when_one_row_is_trainable(tmp_path, monkeypatch):
+    labels = _build(tmp_path, monkeypatch, _joined_values([0, 500, 300], [110, 650, 310]))
+
+    written = pd.read_csv(tmp_path / "labels.csv", dtype={"player_id": str})
+    assert list(written.columns) == LABEL_EXPORT_COLUMNS
+    assert sorted(written["player_id"]) == ["star", "thin"]
+    assert written.set_index("player_id").loc["thin", "start_value"] == 0
+    assert len(labels) == 2
+
+
+def test_committed_label_files_all_have_trainable_rows():
+    from predictor_v5.data import has_positive_values
+
+    for path in sorted(LEGACY.glob("backchannel_labels_2019_2025*.csv")):
+        frame = pd.read_csv(path)
+        assert has_positive_values(frame).sum() > 0, path.name

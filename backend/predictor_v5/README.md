@@ -90,7 +90,12 @@ archive lacks), rows below 5 trades, missing next-board values and labelled
 rows by position, plus warnings when a season with stats joins nothing or a
 position is empty. A build where no market row joins at all (for example, ids
 that don't match the archive) is an error, reported with those counts, and
-nothing is written; partial coverage and the 2019 gap are fine. The same file records the model version, generation ids
+nothing is written; partial coverage and the 2019 gap are fine. The same
+applies when every joined row has a zero start or end value, because training
+keeps only rows with both values above zero; that error gives the zero-start,
+zero-end and both-zero counts. Zero-valued rows stay in the file whenever at
+least one row is trainable.
+The same file records the model version, generation ids
 and revisions per season, export time, and SHA-256 of the raw export, label
 file and training data. Both files are built and checked in a staging
 directory, then moved into place together; if either move fails the previous

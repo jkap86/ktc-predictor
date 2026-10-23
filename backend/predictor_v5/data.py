@@ -66,9 +66,14 @@ def drop_pre_nfl(stats: pd.DataFrame) -> pd.DataFrame:
     return stats[~college].reset_index(drop=True)
 
 
+def has_positive_values(df: pd.DataFrame) -> pd.Series:
+    """Rows the model can train on: log(end / start) needs both values > 0."""
+    return (df["start_value"] > 0) & (df["end_value"] > 0)
+
+
 def build_dataset(stats: pd.DataFrame, labels: LabelSource) -> pd.DataFrame:
     """Join stats to start/end values; keep rows where both values are > 0."""
     values = labels.load()
     df = stats.merge(values, on=["player_id", "season"], how="inner")
-    df = df[(df["start_value"] > 0) & (df["end_value"] > 0)]
+    df = df[has_positive_values(df)]
     return df.sort_values(["season", "player_id"]).reset_index(drop=True)

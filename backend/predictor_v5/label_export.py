@@ -19,7 +19,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from predictor_v5.data import DEFAULT_ZIP, drop_pre_nfl, read_season_stats
+from predictor_v5.data import (
+    DEFAULT_ZIP,
+    drop_pre_nfl,
+    has_positive_values,
+    read_season_stats,
+)
 
 DEFAULT_EXPECTED_SEASONS = tuple(range(2019, 2026))
 
@@ -341,6 +346,7 @@ def build_labels_file(
     labels = build_label_frame(values, stats)
     if labels.empty:
         _reject_empty_labels(values, stats, labels, expected_seasons)
+    _reject_untrainable_labels(labels)
     destination = Path(out_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     sidecar = provenance_path(destination)
@@ -381,6 +387,19 @@ def _reject_empty_labels(
         f"training archive lacks seasons {missing_seasons or 'none'}). "
         f"Check that the export's player ids and seasons match the training archive, e.g. {sample}. "
         "Nothing was written."
+    )
+
+
+def _reject_untrainable_labels(labels: pd.DataFrame) -> None:
+    """Zero-valued rows stay in the file, but at least one must survive build_dataset's filter."""
+    if has_positive_values(labels).any():
+        return
+    zero_start = labels["start_value"] <= 0
+    zero_end = labels["end_value"] <= 0
+    raise ValueError(
+        f"no trainable labels: {len(labels)} joined rows, 0 with start_value and end_value both > 0 "
+        f"({int((zero_start & ~zero_end).sum())} zero start only, {int((zero_end & ~zero_start).sum())} zero end only, "
+        f"{int((zero_start & zero_end).sum())} both zero). Nothing was written."
     )
 
 
