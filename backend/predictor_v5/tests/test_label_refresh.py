@@ -1283,3 +1283,130 @@ def test_inconsistent_provenance_fails_before_publishing(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="start_revision differs"):
         _build(tmp_path, monkeypatch, _with_provenance(_market_values(), start_revision=[2, 3, 2]))
     _assert_untouched(tmp_path, out, sidecar)
+
+
+# --- duplicate keys and empty label files -------------------------------------
+
+
+def _no_fitting(*args, **kwargs):
+    raise AssertionError("validation must fail before anything is loaded or fitted")
+
+
+def _label_files(tmp_path, duplicated=()):
+    paths = {}
+    for name in ("baseline", "candidate", "model_effect"):
+        path = _label_csv(tmp_path / f"{name}.csv")
+        if name in duplicated:
+            frame = pd.read_csv(path, dtype={"player_id": str})
+            # A thin repeat: it must be caught even though --min-trades would drop it.
+            repeat = frame.iloc[[0, 1]].assign(start_trades_window=0)
+            pd.concat([frame, repeat], ignore_index=True).to_csv(path, index=False)
+        paths[name] = path
+    return paths
+
+
+@pytest.mark.parametrize(
+    "duplicated",
+    [("baseline",), ("candidate",), ("model_effect",), ("baseline", "candidate", "model_effect")],
+)
+def test_compare_label_files_rejects_duplicate_keys_before_fitting(tmp_path, monkeypatch, duplicated):
+    monkeypatch.setattr(compare_labels, "load_season_stats", _no_fitting)
+    monkeypatch.setattr(compare_labels, "holdout", _no_fitting)
+    paths = _label_files(tmp_path, duplicated)
+
+    with pytest.raises(ValueError) as error:
+        compare_labels.compare_label_files(
+            paths["baseline"], paths["candidate"], model_effect_path=paths["model_effect"]
+        )
+    message = str(error.value)
+    # The first bad input in baseline, candidate, model_effect order is named.
+    first = duplicated[0]
+    assert f"duplicate player-season in {first} labels {first}.csv" in message
+    assert "2 keys repeated across 4 rows" in message
+    assert "e.g. p0/2023, p1/2023" in message
+
+
+def test_compare_label_files_accepts_unique_keys_unchanged(tmp_path, monkeypatch):
+    """Valid inputs reach the comparison exactly as before the duplicate check."""
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+    monkeypatch.setattr(compare_labels, "load_season_stats", lambda path: None)
+    monkeypatch.setattr(compare_labels, "build_dataset", lambda stats, labels: _frame())
+    monkeypatch.setattr(compare_labels, "file_sha256", lambda path: "0" * 64)
+    paths = _label_files(tmp_path)
+    manifest = _manifest(tmp_path / "m.json", {})
+
+    report = compare_labels.compare_label_files(
+        paths["baseline"], paths["candidate"], model_effect_path=paths["model_effect"], manifest_path=manifest
+    )
+    direct = compare_datasets(
+        *(LabelSet(n, _frame(), None, False, report["inputs"][n]["file"] + ", sha256 000000000000") for n in ("baseline", "candidate")),
+        model_effect=LabelSet("model_effect", _frame(), None, False, "model_effect.csv, sha256 000000000000"),
+        train_years=(3, 4, 5),
+    )
+
+    assert {k: v for k, v in report.items() if k != "inputs"} == direct
+    assert set(report["inputs"]) == {"baseline", "candidate", "model_effect", "training_data"}
+
+
+@pytest.mark.parametrize("name", ["baseline", "candidate", "model_effect"])
+def test_compare_datasets_rejects_duplicate_keys_after_the_stats_join(monkeypatch, name):
+    """A repeat introduced by the join (or by a direct caller) is caught before any fit."""
+    monkeypatch.setattr(compare_labels, "holdout", _no_fitting)
+    frames = {n: _frame() for n in ("baseline", "candidate", "model_effect")}
+    frames[name] = pd.concat([frames[name], frames[name].iloc[[5]]], ignore_index=True)
+    sets = {n: _ls(f, n) for n, f in frames.items()}
+
+    with pytest.raises(ValueError, match=rf"duplicate player-season in {name} \({name}.csv\) dataset: 1 keys .* p5/2020"):
+        compare_datasets(sets["baseline"], sets["candidate"], model_effect=sets["model_effect"])
+
+
+def test_duplicate_error_caps_its_sample():
+    from predictor_v5.label_export import _reject_duplicates
+
+    frame = _frame(range(2025, 2026), n=8)
+    with pytest.raises(ValueError, match=r"8 keys repeated across 16 rows, e\.g\. (p\d/2025, ){4}p4/2025 \(\+3 more\)$"):
+        _reject_duplicates(pd.concat([frame, frame]), "test")
+
+
+def test_build_labels_refuses_to_publish_an_empty_label_file(tmp_path, monkeypatch):
+    out, sidecar = _old_pair(tmp_path)
+    unmatched = _with_provenance(_market_values().assign(player_id=["a", "b", "c"]))
+
+    with pytest.raises(ValueError) as error:
+        _build(tmp_path, monkeypatch, unmatched)
+    message = str(error.value)
+    assert "3 market rows joined to 0 NFL stat rows" in message
+    assert "3 have no NFL stats for that player-season, 0 are pre-NFL seasons" in message
+    assert "e.g. a/2025, b/2025, c/2025" in message
+    _assert_untouched(tmp_path, out, sidecar)
+
+
+def test_build_labels_rejects_a_file_of_only_pre_nfl_rows(tmp_path, monkeypatch):
+    out, sidecar = _old_pair(tmp_path)
+    college_only = _with_provenance(_market_values().assign(player_id=["college", "x", "y"]))
+
+    with pytest.raises(ValueError, match="2 have no NFL stats for that player-season, 1 are pre-NFL seasons"):
+        _build(tmp_path, monkeypatch, college_only)
+    _assert_untouched(tmp_path, out, sidecar)
+
+
+def test_build_labels_keeps_partial_coverage_and_the_2019_gap(tmp_path, monkeypatch):
+    """Only an entirely empty result is refused: a season with no archive stats is still fine."""
+    from predictor_v5 import label_export
+
+    gap = _market_values().assign(season=2019)
+    values = _with_provenance(pd.concat([_market_values(), gap], ignore_index=True))
+    raw = tmp_path / "raw.csv"
+    values.to_csv(raw, index=False)
+    zip_path = tmp_path / "training-data.zip"
+    zip_path.write_bytes(b"stub")
+    monkeypatch.setattr(label_export, "read_season_stats", lambda path: _stats())
+
+    labels = build_labels_file(raw, tmp_path / "labels.csv", zip_path, expected_seasons=(2019, 2025))
+
+    assert list(labels.columns) == LABEL_EXPORT_COLUMNS
+    assert sorted(labels["player_id"]) == ["star", "thin"]
+    coverage = labels.attrs["provenance"]["coverage"]["by_season"]
+    assert coverage["2019"]["labelled_rows"] == 0
+    assert coverage["2019"]["training_archive_has_season"] is False
+    assert coverage["2025"]["no_nfl_stats"] == 1

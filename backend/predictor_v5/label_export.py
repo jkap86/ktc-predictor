@@ -83,12 +83,16 @@ def _require_columns(frame: pd.DataFrame, columns: list[str], source: str) -> No
         raise ValueError(f"{source} is missing columns: {', '.join(missing)}")
 
 
-def _reject_duplicates(frame: pd.DataFrame, source: str) -> None:
+def _reject_duplicates(frame: pd.DataFrame, source: str, sample_size: int = 5) -> None:
     duplicates = frame.duplicated(["player_id", "season"], keep=False)
     if duplicates.any():
         keys = frame.loc[duplicates, ["player_id", "season"]].drop_duplicates()
-        sample = ", ".join(f"{row.player_id}/{row.season}" for row in keys.itertuples(index=False))
-        raise ValueError(f"duplicate player-season in {source}: {sample}")
+        sample = ", ".join(f"{row.player_id}/{row.season}" for row in keys.head(sample_size).itertuples(index=False))
+        more = f" (+{len(keys) - sample_size} more)" if len(keys) > sample_size else ""
+        raise ValueError(
+            f"duplicate player-season in {source}: {len(keys)} keys repeated across {int(duplicates.sum())} rows, "
+            f"e.g. {sample}{more}"
+        )
 
 
 def build_label_frame(values: pd.DataFrame, stats: pd.DataFrame) -> pd.DataFrame:
@@ -335,6 +339,8 @@ def build_labels_file(
     validate_market_export(values, expected_seasons=expected_seasons, model_version=model_version)
     stats = read_season_stats(training_data_path)
     labels = build_label_frame(values, stats)
+    if labels.empty:
+        _reject_empty_labels(values, stats, labels, expected_seasons)
     destination = Path(out_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     sidecar = provenance_path(destination)
@@ -358,6 +364,24 @@ def build_labels_file(
         _publish_pair([(staged_csv, destination), (staged_sidecar, sidecar)])
     labels.attrs["provenance"] = report
     return labels
+
+
+def _reject_empty_labels(
+    values: pd.DataFrame, stats: pd.DataFrame, labels: pd.DataFrame, expected_seasons: tuple[int, ...] | None
+) -> None:
+    """Stop before staging: an empty label file would replace a good one with nothing to train on."""
+    coverage = label_coverage(values, stats, labels, expected_seasons=expected_seasons)["by_season"]
+    no_stats = sum(entry["no_nfl_stats"] for entry in coverage.values())
+    pre_nfl = sum(entry["pre_nfl_excluded"] for entry in coverage.values())
+    missing_seasons = sorted(int(s) for s, entry in coverage.items() if not entry["training_archive_has_season"])
+    sample = ", ".join(f"{row.player_id}/{row.season}" for row in values.head(5).itertuples(index=False))
+    raise ValueError(
+        f"no labelled rows: {len(values)} market rows joined to 0 NFL stat rows "
+        f"({no_stats} have no NFL stats for that player-season, {pre_nfl} are pre-NFL seasons; "
+        f"training archive lacks seasons {missing_seasons or 'none'}). "
+        f"Check that the export's player ids and seasons match the training archive, e.g. {sample}. "
+        "Nothing was written."
+    )
 
 
 def _check_staged_pair(csv_path: Path, sidecar_path: Path, rows: int) -> None:

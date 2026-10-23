@@ -88,12 +88,20 @@ ISO 8601 export timestamp. Ordinary exclusions are counted, not hidden, in
 pre-NFL seasons, players without QB/RB/WR/TE stats (all of 2019, which the
 archive lacks), rows below 5 trades, missing next-board values and labelled
 rows by position, plus warnings when a season with stats joins nothing or a
-position is empty. The same file records the model version, generation ids
+position is empty. A build where no market row joins at all (for example, ids
+that don't match the archive) is an error, reported with those counts, and
+nothing is written; partial coverage and the 2019 gap are fine. The same file records the model version, generation ids
 and revisions per season, export time, and SHA-256 of the raw export, label
 file and training data. Both files are built and checked in a staging
 directory, then moved into place together; if either move fails the previous
 CSV and provenance are put back, so a failed build never leaves a mismatched
 pair.
+
+**Duplicate keys.** `compare-labels` refuses any baseline, candidate or
+model-effect file with a repeated (player_id, season), before the min-trades
+filter and before loading stats or fitting, naming the file, the number of
+repeated keys and a sample. It checks the joined frames again, so a repeat
+from the stats join is caught too. Nothing is deduplicated.
 
 **Which model version a label file is.** `compare-labels` never takes a
 version on trust. It accepts a file's version from its `.provenance.json`

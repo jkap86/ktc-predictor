@@ -38,7 +38,12 @@ import pandas as pd
 
 from predictor_v5.data import DEFAULT_ZIP, build_dataset, load_season_stats
 from predictor_v5.evaluate import holdout, round_summary, summarize_exact
-from predictor_v5.label_export import LABEL_MANIFEST, file_sha256, label_identity
+from predictor_v5.label_export import (
+    LABEL_MANIFEST,
+    _reject_duplicates,
+    file_sha256,
+    label_identity,
+)
 from predictor_v5.labels import CsvLabels
 from predictor_v5.model import FEATURES, HGB_PARAMS, MONOTONIC
 
@@ -362,6 +367,10 @@ def compare_datasets(
     if train_end >= test_season:
         raise ValueError("train_end must precede the test season")
     control_train = sorted(control_train_seasons or range(2022, train_end + 1))
+    # A repeated key would weight that player twice and break the one-row-per-key target matching.
+    for label_set in (baseline, candidate, model_effect):
+        if label_set is not None:
+            _reject_duplicates(label_set.frame, f"{label_set.identity} dataset")
     record = holdout_record(test_season, holdout_declaration)
     log: list[dict] = []
     same_version = baseline.model_version is not None and baseline.model_version == candidate.model_version
@@ -784,10 +793,15 @@ def compare_label_files(
     The ``*_model_version`` arguments are assertions checked against each
     file's verified provenance, never its identity.
     """
-    stats = load_season_stats(training_data_path)
     specs = [("baseline", baseline_path, baseline_model_version), ("candidate", candidate_path, candidate_model_version)]
     if model_effect_path:
         specs.append(("model_effect", model_effect_path, model_effect_model_version))
+    # Every input is checked before anything is loaded or fitted, and before
+    # the min-trades filter, so a repeated key is never silently dropped.
+    for name, path, _ in specs:
+        raw = pd.read_csv(path, usecols=["player_id", "season"], dtype={"player_id": str})
+        _reject_duplicates(raw, f"{name} labels {Path(path).name}")
+    stats = load_season_stats(training_data_path)
     sets, inputs = {}, {}
     for name, path, asserted in specs:
         frame = build_dataset(stats, CsvLabels(path, name=name, min_trades=min_trades))
