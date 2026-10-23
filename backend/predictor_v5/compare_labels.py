@@ -61,8 +61,11 @@ TARGET_DEFINITION = (
 )
 
 HOLDOUT_STATUSES = ("reused", "untouched", "unknown")
-# Seasons whose use as a test season is on record. Anything else is "unknown"
-# unless the caller declares it, and "untouched" must come with evidence.
+# Seasons whose history as a test season is on record. This registry is the
+# only verified source: an entry lands here through a reviewed commit, with
+# evidence someone can check. A caller's --holdout-status is recorded as a
+# declaration but stays unverified, so it can never make evidence sufficient.
+# Anything else is "unknown".
 KNOWN_HOLDOUTS = {
     2025: {
         "status": "reused",
@@ -328,10 +331,17 @@ def holdout_record(test_season: int, declared: dict | None = None) -> dict:
             raise ValueError(f"{test_season} is on record as {known['status']!r}: {known['evidence']}")
         if status == "untouched" and not declared.get("evidence"):
             raise ValueError("declaring an untouched test season needs evidence of how it was held out")
-        return {"season": test_season, "status": status, "evidence": declared.get("evidence"), "source": "declared"}
+        if not known:
+            return {
+                "season": test_season,
+                "status": status,
+                "evidence": declared.get("evidence"),
+                "source": "declared",
+                "verified": False,
+            }
     if known:
-        return {"season": test_season, **known, "source": "registry"}
-    return {"season": test_season, "status": "unknown", "evidence": None, "source": "none"}
+        return {"season": test_season, **known, "source": "registry", "verified": True}
+    return {"season": test_season, "status": "unknown", "evidence": None, "source": "none", "verified": False}
 
 
 def compare_datasets(
@@ -404,7 +414,11 @@ def compare_datasets(
             "all": _summary(candidate_preds),
         }
         final["matched_test_rows"] = len(keys)
-        if same_version:
+        if not keys:
+            final["status"] = "insufficient_overlap"
+            final["overlap"] = _overlap(control_preds, candidate_preds, keys)
+            reason = "control and candidate share no test player-seasons, so nothing can be compared"
+        elif same_version:
             targets = {baseline.name: baseline.frame, candidate.name: candidate.frame}
             final["matched"] = _head_to_head({"control": control_preds, "candidate": candidate_preds}, targets, keys)
             by_target = {t: apply_gate(s["control"], s["candidate"]) for t, s in final["matched"].items()}
@@ -434,7 +448,8 @@ def compare_datasets(
     )
     gate_passed = bool(gate.get("qualified"))
     promotion_eligible = gate_passed and same_version and verified
-    evidence_sufficient = promotion_eligible and record["status"] == "untouched"
+    verified_untouched = record["status"] == "untouched" and record["verified"]
+    evidence_sufficient = promotion_eligible and verified_untouched
     decision = {
         # "update" is the experimental recommendation only; see promotion_authorized.
         "action": "update" if promotion_eligible else "retain",
@@ -443,7 +458,8 @@ def compare_datasets(
         "evidence_sufficient_for_promotion": evidence_sufficient,
         "promotion_authorized": False,
         "promotion_note": PROMOTION_NOTE,
-        "requires_unseen_season_confirmation": record["status"] != "untouched",
+        "holdout_verified": record["verified"],
+        "requires_unseen_season_confirmation": not verified_untouched,
         "selected_train_years": selected,
         "selected_train_start": frozen["train_seasons"][0] if frozen else None,
         "reason": reason,
@@ -466,7 +482,11 @@ def compare_datasets(
         if max(fit["train_seasons"]) >= fit["test_season"]:
             raise AssertionError(f"chronological leakage in {fit}")
     sets = [baseline, candidate] + ([model_effect] if model_effect is not None else [])
-    limitations = [f"test season {test_season} holdout status: {record['status']}" + _evidence(record)]
+    limitations = [
+        f"test season {test_season} holdout status: {record['status']}"
+        + ("" if record["verified"] else " (unverified)")
+        + _evidence(record)
+    ]
     limitations += [f"{s.name}: model version unverified" for s in sets if not s.verified]
     if not same_version:
         limitations.append("control and candidate are not on one known model version; the gate was not evaluated")
@@ -613,8 +633,18 @@ def _label_and_population_effect(baseline, candidate, train_years, train_end, te
     }
 
 
+def _overlap(first: pd.DataFrame, second: pd.DataFrame, keys: list) -> dict:
+    return {"first_rows": len(first), "second_rows": len(second), "matched_rows": len(keys)}
+
+
 def _scores(preds: dict, baseline: LabelSet, candidate: LabelSet, test_season: int) -> dict:
     keys = matched_keys(list(preds.values()), test_season)
+    if not keys:
+        return {
+            "status": "insufficient_overlap",
+            "matched_test_rows": 0,
+            "test_rows": {name: len(frame) for name, frame in preds.items()},
+        }
     scores = _head_to_head(preds, {s.name: s.frame for s in (baseline, candidate)}, keys)
     return {
         "matched_test_rows": len(keys),
@@ -656,8 +686,21 @@ def _model_version_effect(candidate, other, frozen, test_season, log) -> dict:
     seasons = frozen["train_seasons"]
     if not _complete([other], seasons):
         return {"status": "insufficient_history", "train_seasons": seasons}
+    if not (other.frame["season"] == test_season).any():
+        return {
+            "status": "insufficient_data",
+            "reason": f"{other.identity} has no rows for test season {test_season}",
+            "gate_eligible": False,
+        }
     preds = {s.name: _fit_predict(s, seasons, test_season, log) for s in (candidate, other)}
     keys = matched_keys(list(preds.values()), test_season)
+    if not keys:
+        return {
+            "status": "insufficient_overlap",
+            "gate_eligible": False,
+            "matched_test_rows": 0,
+            "test_rows": {name: len(frame) for name, frame in preds.items()},
+        }
     scores = _head_to_head(preds, {s.name: s.frame for s in (candidate, other)}, keys)
     return {
         "status": "informational",
@@ -768,7 +811,8 @@ def compare_label_files(
 def write_report(report: dict, out_path: Path | str) -> None:
     destination = Path(out_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    # allow_nan=False: a NaN or infinity anywhere is a bug, not something to write as non-standard JSON.
+    destination.write_text(json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n")
 
 
 def gate_summary(report: dict) -> dict:

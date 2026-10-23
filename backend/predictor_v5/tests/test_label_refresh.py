@@ -158,7 +158,7 @@ def test_validate_market_export_rejects_mixed_or_wrong_model_versions():
 
 
 def test_validate_market_export_requires_one_start_and_end_generation_per_season():
-    with pytest.raises(ValueError, match="start generation is not unique"):
+    with pytest.raises(ValueError, match=r"start_generation_id differs within seasons \[2025\]"):
         validate_market_export(_with_provenance(_market_values(), start_generation_id=[10, 12, 10]))
     with pytest.raises(ValueError, match=r"empty provenance values in \['end_generation_id'\]"):
         validate_market_export(_with_provenance(_market_values(), end_generation_id=[11, None, 11]))
@@ -719,10 +719,16 @@ def test_report_rounds_for_display_and_keeps_exact_skill(monkeypatch):
 
 
 def test_holdout_records():
-    assert holdout_record(2025)["status"] == "reused"
-    assert holdout_record(2026) == {"season": 2026, "status": "unknown", "evidence": None, "source": "none"}
+    assert (holdout_record(2025)["status"], holdout_record(2025)["verified"]) == ("reused", True)
+    assert holdout_record(2026) == {
+        "season": 2026,
+        "status": "unknown",
+        "evidence": None,
+        "source": "none",
+        "verified": False,
+    }
     declared = holdout_record(2026, {"status": "untouched", "evidence": "sealed before PR #4"})
-    assert (declared["status"], declared["source"]) == ("untouched", "declared")
+    assert (declared["status"], declared["source"], declared["verified"]) == ("untouched", "declared", False)
     with pytest.raises(ValueError, match="on record as 'reused'"):
         holdout_record(2025, {"status": "untouched", "evidence": "x"})
     with pytest.raises(ValueError, match="needs evidence"):
@@ -745,14 +751,8 @@ FUTURE_SKILLS = {
 }
 
 
-@pytest.mark.parametrize(
-    ("declared", "status", "sufficient"),
-    [(None, "unknown", False), ({"status": "untouched", "evidence": "sealed"}, "untouched", True)],
-)
-def test_future_season_status_controls_promotion_evidence(monkeypatch, declared, status, sufficient):
-    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(FUTURE_SKILLS, final_season=2026))
-
-    report = compare_datasets(
+def _future_report(declared=None):
+    return compare_datasets(
         *_sets(seasons=range(2020, 2027)),
         train_end=2025,
         test_season=2026,
@@ -761,10 +761,40 @@ def test_future_season_status_controls_promotion_evidence(monkeypatch, declared,
         holdout_declaration=declared,
     )
 
-    assert report["final_evaluation"]["holdout"]["status"] == status
+
+@pytest.mark.parametrize(
+    ("declared", "status"),
+    [(None, "unknown"), ({"status": "untouched", "evidence": "sealed"}, "untouched")],
+)
+def test_unverified_future_season_never_suffices_for_promotion(monkeypatch, declared, status):
+    """`--holdout-status untouched --holdout-evidence sealed` alone is a claim, not verified evidence."""
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(FUTURE_SKILLS, final_season=2026))
+
+    report = _future_report(declared)
+
+    holdout = report["final_evaluation"]["holdout"]
+    assert (holdout["status"], holdout["verified"]) == (status, False)
+    assert "PR #3" not in json.dumps(holdout)
     assert report["decision"]["gate_passed"] is True
-    assert report["decision"]["evidence_sufficient_for_promotion"] is sufficient
-    assert report["decision"]["requires_unseen_season_confirmation"] is not sufficient
+    assert report["decision"]["promotion_eligible"] is True
+    assert report["decision"]["holdout_verified"] is False
+    assert report["decision"]["evidence_sufficient_for_promotion"] is False
+    assert report["decision"]["requires_unseen_season_confirmation"] is True
+    assert report["decision"]["promotion_authorized"] is False
+
+
+def test_registry_verified_untouched_season_suffices_but_never_authorizes(monkeypatch):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(FUTURE_SKILLS, final_season=2026))
+    monkeypatch.setitem(
+        compare_labels.KNOWN_HOLDOUTS, 2026, {"status": "untouched", "evidence": "sealed in commit abc123"}
+    )
+
+    report = _future_report()
+
+    assert report["final_evaluation"]["holdout"]["source"] == "registry"
+    assert report["decision"]["holdout_verified"] is True
+    assert report["decision"]["evidence_sufficient_for_promotion"] is True
+    assert report["decision"]["requires_unseen_season_confirmation"] is False
     assert report["decision"]["promotion_authorized"] is False
 
 
@@ -1136,3 +1166,120 @@ def test_gate_fails_just_below_two_points():
     gate = apply_gate(_gate_summary(0.40, EVEN), _gate_summary(0.4199999, EVEN))
 
     assert gate["overall_guard"] is False
+
+
+def _disjoint(frame: pd.DataFrame, season: int = 2025) -> pd.DataFrame:
+    """Rename test-season players so they share no key with the original frame."""
+    test = frame["season"] == season
+    return frame.assign(player_id=frame["player_id"].where(~test, "other-" + frame["player_id"]))
+
+
+def test_disjoint_test_populations_cannot_pass_and_serialize_strictly(monkeypatch, tmp_path):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+    baseline, candidate = _sets()
+
+    report = compare_datasets(baseline, _ls(_disjoint(candidate.frame)))
+
+    final = report["final_evaluation"]
+    assert final["status"] == "insufficient_overlap"
+    assert final["overlap"] == {"first_rows": 120, "second_rows": 120, "matched_rows": 0}
+    assert report["gate"]["evaluated"] is False
+    assert report["decision"]["gate_passed"] is False
+    assert report["decision"]["action"] == "retain"
+    for name in ("label_effect", "label_and_population_effect"):
+        for row in report["experiments"][name]["windows"]:
+            assert row["status"] == "insufficient_overlap"
+            assert row["test_rows"] == {"baseline": 120, "candidate": 120}
+    compare_labels.write_report(report, tmp_path / "report.json")  # allow_nan=False: raises on NaN
+    assert json.loads((tmp_path / "report.json").read_text())["decision"]["action"] == "retain"
+
+
+def test_partial_overlap_scores_only_shared_keys(monkeypatch):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+    baseline, candidate = _sets()
+    frame = candidate.frame
+    keep = (frame["season"] != 2025) | frame["player_id"].isin([f"p{i}" for i in range(60)])
+
+    report = compare_datasets(baseline, _ls(frame[keep]))
+
+    assert "status" not in report["final_evaluation"]
+    assert report["final_evaluation"]["matched_test_rows"] == 60
+    assert report["final_evaluation"]["matched"]["baseline"]["control"]["overall"]["n"] == 60
+
+
+def test_zero_overlap_model_version_experiment_is_informational(monkeypatch):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+    other = _ls(_disjoint(_frame(scale=0.75)), "model_effect", "baseline-hl28-v3")
+
+    report = compare_datasets(*_sets(), model_effect=other)
+
+    experiment = report["experiments"]["model_version"]
+    assert experiment["status"] == "insufficient_overlap"
+    assert experiment["gate_eligible"] is False
+    assert report["decision"]["gate_passed"] is True  # primary evaluation unaffected
+
+
+def test_model_version_experiment_skips_missing_test_season(monkeypatch):
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+    no_2025 = _frame(scale=0.75)
+    other = _ls(no_2025[no_2025["season"] != 2025], "model_effect", "baseline-hl28-v3")
+
+    with_other = compare_datasets(*_sets(), model_effect=other)
+    without = compare_datasets(*_sets())
+
+    experiment = with_other["experiments"]["model_version"]
+    assert experiment["status"] == "insufficient_data"
+    assert "no rows for test season 2025" in experiment["reason"]
+    assert all(fit["label_set"] != "model_effect" for fit in with_other["fits"])
+    for key in ("final_evaluation", "gate", "decision", "selection"):
+        assert with_other[key] == without[key]
+    assert json.dumps(with_other, sort_keys=True) == json.dumps(
+        compare_datasets(*_sets(), model_effect=other), sort_keys=True
+    )
+
+
+def test_empty_summary_has_no_nan():
+    from predictor_v5.evaluate import summarize, summarize_exact
+
+    empty = pd.DataFrame(columns=["end_value", "pred_value", "start_value"])
+    assert summarize_exact(empty) == {"n": 0, "model_mae": None, "no_change_mae": None, "skill": None}
+    assert summarize(empty) == {"n": 0, "model_mae": None, "no_change_mae": None, "skill": None}
+
+
+def _two_seasons(**overrides) -> pd.DataFrame:
+    values = pd.concat([_market_values(), _market_values().assign(season=2024)], ignore_index=True)
+    return _with_provenance(values, **overrides)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"start_revision": [2, 3, 2, 2, 2, 2]}, r"start_revision differs within seasons \[2025\]"),
+        ({"end_board_rows": [4, 4, 5, 4, 4, 4]}, r"end_board_rows differs within seasons \[2025\]"),
+        ({"start_board_rows": [0] * 6}, "start_board_rows must be positive whole numbers"),
+        ({"end_revision": [1.5] * 6}, "end_revision must be non-negative whole numbers"),
+        (
+            {"next_generation_id": [7, None, 7, 8, 8, 8], "next_revision": [1, None, 1, 1, 1, 1]},
+            r"next-board generation is set for some rows but not others in seasons \[2025\]",
+        ),
+        ({"exported_at": ["2026-10-22T14:00:00Z"] * 3 + ["2026-10-23T09:00:00Z"] * 3}, "several export timestamps"),
+        ({"exported_at": ["yesterday"] * 6}, "not an ISO 8601 timestamp"),
+    ],
+)
+def test_inconsistent_export_provenance_is_rejected(overrides, message):
+    with pytest.raises(ValueError, match=message):
+        validate_market_export(_two_seasons(**overrides))
+
+
+def test_season_without_any_next_board_stays_valid():
+    values = _two_seasons(next_generation_id=[None, None, None, 8, 8, 8], next_revision=[None, None, None, 1, 1, 1])
+
+    validate_market_export(values, expected_seasons=(2024, 2025))
+
+
+def test_inconsistent_provenance_fails_before_publishing(tmp_path, monkeypatch):
+    out, sidecar = _old_pair(tmp_path)
+
+    with pytest.raises(ValueError, match="start_revision differs"):
+        _build(tmp_path, monkeypatch, _with_provenance(_market_values(), start_revision=[2, 3, 2]))
+    _assert_untouched(tmp_path, out, sidecar)

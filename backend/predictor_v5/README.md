@@ -80,7 +80,10 @@ joining it fails on integrity errors: duplicate player-seasons, missing or
 negative required values, an expected season (default 2019–2025) with no
 rows, mixed or unexpected model versions, or more than one start or end
 generation in a season. An export carrying any provenance column must carry
-all of them, filled in. Ordinary exclusions are counted, not hidden, in
+all of them, filled in and consistent: one start, end and next generation id
+and revision per season (next either set for every row of a season or for
+none), positive whole board sizes that agree within a season, and a single
+ISO 8601 export timestamp. Ordinary exclusions are counted, not hidden, in
 `<label file>.provenance.json`: per season, the market rows, labelled rows,
 pre-NFL seasons, players without QB/RB/WR/TE stats (all of 2019, which the
 archive lacks), rows below 5 trades, missing next-board values and labelled
@@ -145,10 +148,21 @@ The `decision` block separates what passed from what may happen:
   is a manual change to `season.py`.
 
 Test-season history comes from `KNOWN_HOLDOUTS` in `compare_labels.py`
-(2025: reused, because PR #3 picked a window from its scores) or from
-`--holdout-status` (`untouched` needs `--holdout-evidence`, and a season on
-record can't be redeclared). Any other season is `unknown`, which, like
-`reused`, keeps `requires_unseen_season_confirmation` true. Every training
+(2025: reused, because PR #3 picked a window from its scores). That
+registry is the only verified source: an entry gets there through a
+reviewed commit with evidence someone can check. `--holdout-status` (with
+`--holdout-evidence` for `untouched`) records a declaration as
+`verified: false`, so a declared untouched season never makes
+`evidence_sufficient_for_promotion` true; a season on record can't be
+redeclared. Any other season is `unknown`. `requires_unseen_season_confirmation`
+stays true unless the season is untouched *and* verified.
+
+If the control and candidate share no test player-seasons, the final
+evaluation is marked `insufficient_overlap`, the gate is not evaluated and
+the decision is `retain`; informational experiments with no overlap, or
+whose optional label set lacks the test season, are marked
+`insufficient_overlap` / `insufficient_data` and the rest of the report
+carries on. Reports are written with `allow_nan=False`. Every training
 window, control included, must have rows in each of its seasons, or the run
 stops with the label file and missing seasons named; `fits` records the rows
 each model trained on.

@@ -166,16 +166,37 @@ def validate_market_export(
             raise ValueError(f"market export mixes model versions: {versions}")
         if model_version and versions[0] != model_version:
             raise ValueError(f"market export is {versions[0]}, expected {model_version}")
-    for prefix, required in (("start", True), ("end", True), ("next", False)):
-        column = f"{prefix}_generation_id"
-        if column not in values.columns:
-            continue
-        per_season = values.groupby("season")[column].agg(lambda ids: ids.dropna().nunique())
-        missing = values.groupby("season")[column].agg(lambda ids: ids.isna().any())
-        if (per_season > 1).any():
-            raise ValueError(f"{prefix} generation is not unique for seasons {sorted(per_season[per_season > 1].index)}")
-        if required and missing.any():
-            raise ValueError(f"{prefix} generation is missing for seasons {sorted(missing[missing].index)}")
+    if present:
+        _check_provenance_consistency(values)
+
+
+def _check_provenance_consistency(values: pd.DataFrame) -> None:
+    """One export, one generation per board per season: anything else is a mixed or corrupt file."""
+    problems = []
+    by_season = values.groupby("season", sort=True)
+    id_columns = [f"{prefix}_{field}" for prefix in ("start", "end", "next") for field in ("generation_id", "revision")]
+    for column in id_columns + ["start_board_rows", "end_board_rows"]:
+        raw = values[column]
+        numbers = pd.to_numeric(raw, errors="coerce").astype(float)
+        positive = column.endswith(("generation_id", "board_rows"))
+        bad = raw.notna() & (~np.isfinite(numbers) | (numbers % 1 != 0) | (numbers <= 0 if positive else numbers < 0))
+        if bad.any():
+            kind = "positive" if positive else "non-negative"
+            problems.append(f"{column} must be {kind} whole numbers ({int(bad.sum())} rows are not)")
+        varying = by_season[column].agg(lambda c: c.dropna().nunique())
+        if (varying > 1).any():
+            problems.append(f"{column} differs within seasons {sorted(int(s) for s in varying[varying > 1].index)}")
+    mixed_next = by_season["next_generation_id"].agg(lambda c: 0 < c.isna().sum() < len(c))
+    if mixed_next.any():
+        seasons = sorted(int(s) for s in mixed_next[mixed_next].index)
+        problems.append(f"next-board generation is set for some rows but not others in seasons {seasons}")
+    stamps = values["exported_at"].astype(str).unique()
+    if len(stamps) > 1:
+        problems.append(f"several export timestamps {sorted(stamps)[:3]}: rows come from more than one export")
+    elif pd.isna(pd.to_datetime(stamps[0], utc=True, errors="coerce", format="ISO8601")):
+        problems.append(f"exported_at {stamps[0]!r} is not an ISO 8601 timestamp")
+    if problems:
+        raise ValueError("market export has inconsistent provenance: " + "; ".join(problems))
 
 
 def label_coverage(
@@ -272,12 +293,12 @@ def _provenance(values: pd.DataFrame, model_version: str | None) -> dict:
             else {"id": int(first[f"{prefix}_generation_id"]), "revision": int(first[f"{prefix}_revision"])}
             for prefix in ("start", "end", "next")
         }
-    exported = sorted(values["exported_at"].dropna().astype(str).unique())
+    exported = values["exported_at"].astype(str).iloc[0]  # one value, checked in validate_market_export
     return {
         "model_version": str(values["model_version"].iloc[0]),
         "model_version_source": "export",
         "generations": generations,
-        "exported_at": exported[0] if len(exported) == 1 else exported,
+        "exported_at": exported,
     }
 
 

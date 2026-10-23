@@ -213,7 +213,8 @@ def main() -> None:
     cl.add_argument(
         "--holdout-status",
         choices=["reused", "untouched", "unknown"],
-        help="test-season history when it isn't on record (2025 is on record as reused)",
+        help="declare the test season's history; recorded as unverified (only KNOWN_HOLDOUTS in compare_labels.py "
+        "is verified, and 2025 is on record as reused)",
     )
     cl.add_argument("--holdout-evidence", help="how the test season was held out; required with --holdout-status untouched")
     # Schema-2 reports go to a new file so the schema-1 artifacts stay as committed.

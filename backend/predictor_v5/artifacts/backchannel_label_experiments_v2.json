@@ -168,6 +168,7 @@
     "action": "retain",
     "evidence_sufficient_for_promotion": false,
     "gate_passed": false,
+    "holdout_verified": true,
     "promotion_authorized": false,
     "promotion_eligible": false,
     "promotion_note": "compare-labels never deploys a model; promotion is a manual change to season.py after review, and needs a passing gate on verified, same-version labels and an untouched test season",
@@ -2258,7 +2259,8 @@
       "evidence": "PR #3 (merged 2026-10-22) chose its training window from 2025 scores",
       "season": 2025,
       "source": "registry",
-      "status": "reused"
+      "status": "reused",
+      "verified": true
     },
     "matched": {
       "baseline": {
@@ -3073,7 +3075,8 @@
       "evidence": "PR #3 (merged 2026-10-22) chose its training window from 2025 scores",
       "season": 2025,
       "source": "registry",
-      "status": "reused"
+      "status": "reused",
+      "verified": true
     },
     "precision": "thresholds use full-precision skill; skill is rounded to 0.001 for display, skill_exact is not",
     "selection": "window length chosen on validation seasons [2024] (each trained on the preceding seasons only) using candidate labels; 2025 rows are removed before selection runs",

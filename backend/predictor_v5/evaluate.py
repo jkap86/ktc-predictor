@@ -21,7 +21,9 @@ def season_folds(df: pd.DataFrame, min_train_seasons: int = 1) -> list[int]:
 
 
 def summarize_exact(g: pd.DataFrame) -> dict:
-    """Full-precision MAEs and skill; ``skill`` is None when no-change MAE is 0."""
+    """Full-precision MAEs and skill; ``skill`` is None when no-change MAE is 0, everything is None with no rows."""
+    if len(g) == 0:
+        return {"n": 0, "model_mae": None, "no_change_mae": None, "skill": None}
     model_mae = _mae(g["end_value"], g["pred_value"])
     base_mae = _mae(g["end_value"], g["start_value"])
     return {
@@ -36,8 +38,8 @@ def round_summary(summary: dict) -> dict:
     """The display rounding used in every report: MAE to 0.1, skill to 0.001."""
     return {
         "n": summary["n"],
-        "model_mae": round(summary["model_mae"], 1),
-        "no_change_mae": round(summary["no_change_mae"], 1),
+        "model_mae": None if summary["model_mae"] is None else round(summary["model_mae"], 1),
+        "no_change_mae": None if summary["no_change_mae"] is None else round(summary["no_change_mae"], 1),
         "skill": None if summary["skill"] is None else round(summary["skill"], 3),
     }
 
