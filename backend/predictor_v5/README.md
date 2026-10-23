@@ -102,7 +102,9 @@ stale or incomplete sidecars, and files in neither place are unverified.
 `--baseline-model-version` and friends are assertions: a mismatch with a
 verified version is an error, and on an unverified file they only label an
 informational comparison. An unverified or unknown version can never make a
-candidate eligible for promotion. The committed CSVs predate the export's
+candidate eligible for promotion. An export without the provenance columns gets
+`model_version: null` in its sidecar; a `build-labels --model-version` given
+for it is stored as `asserted_model_version` and never counts as verified. The committed CSVs predate the export's
 provenance columns, so their generation ids are not recorded.
 
 ### How `compare-labels` chooses and judges a candidate (schema 2)

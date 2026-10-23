@@ -111,7 +111,7 @@ def cmd_build_labels(args) -> None:
         args.values, args.out, args.training_data, expected_seasons=expected, model_version=args.model_version
     )
     report = labels.attrs["provenance"]
-    print(f"Wrote {len(labels)} player-seasons to {args.out} ({report['model_version'] or 'model version unknown'})")
+    print(f"Wrote {len(labels)} player-seasons to {args.out} ({report['model_version'] or 'model version unverified'})")
     print(f"Coverage and provenance: {provenance_path(args.out)}")
     for warning in report["coverage"]["warnings"]:
         print(f"WARNING: {warning}", file=sys.stderr)

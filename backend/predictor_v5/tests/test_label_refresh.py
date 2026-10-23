@@ -1058,3 +1058,81 @@ def test_build_labels_file_accepts_exports_without_provenance_columns(tmp_path, 
     assert report["generations"] is None
     assert report["model_version_source"] == "unknown"
     assert "predates the provenance columns" in report["note"]
+
+
+@pytest.mark.parametrize(
+    ("name", "version"),
+    [("backchannel_labels_2019_2025_mfl.csv", "baseline-hl28-v1"), ("backchannel_labels_2019_2025_mfl_v3.csv", "baseline-hl28-v3")],
+)
+def test_committed_labels_declared_with_their_own_version_are_accepted(name, version):
+    label_set, info = resolve_label_set("candidate", LEGACY / name, _frame(), version)
+
+    assert (label_set.model_version, label_set.verified) == (version, True)
+    assert info["provenance_source"] == "manifest"
+    assert info["sha256"] == file_sha256(LEGACY / name)
+
+
+def test_unverifiable_file_declared_v1_cannot_be_promoted(monkeypatch, tmp_path):
+    """Declaring matching version strings does not stand in for verified provenance."""
+    monkeypatch.setattr(compare_labels, "holdout", _fake_holdout(SKILLS))
+    path = _label_csv(tmp_path / "relabelled_v3.csv", scale=0.75)
+    candidate, _ = resolve_label_set("candidate", path, _frame(), "baseline-hl28-v1", _manifest(tmp_path / "m.json", {}))
+    baseline = _ls(_frame(), "baseline")
+
+    report = compare_datasets(baseline, candidate)
+
+    assert report["decision"]["gate_passed"] is True
+    assert report["decision"]["action"] == "retain"
+    assert report["label_sets"]["candidate"] == {"model_version": "baseline-hl28-v1", "model_version_verified": False}
+
+
+def test_legacy_export_with_asserted_version_is_never_verified(tmp_path, monkeypatch):
+    from predictor_v5 import label_export
+
+    raw = tmp_path / "raw.csv"
+    _market_values().to_csv(raw, index=False)
+    zip_path = tmp_path / "training-data.zip"
+    zip_path.write_bytes(b"stub")
+    monkeypatch.setattr(label_export, "read_season_stats", lambda path: _stats())
+
+    out = tmp_path / "labels.csv"
+    labels = build_labels_file(raw, out, zip_path, expected_seasons=(2025,), model_version="baseline-hl28-v1")
+
+    report = labels.attrs["provenance"]
+    assert (report["model_version"], report["asserted_model_version"]) == (None, "baseline-hl28-v1")
+    identity = label_identity(out, _manifest(tmp_path / "m.json", {}))
+    assert identity["verified"] is False
+
+
+def test_malformed_provenance_fails_before_replacing_outputs(tmp_path, monkeypatch):
+    out, sidecar = _old_pair(tmp_path)
+    partial = _with_provenance(_market_values()).drop(columns=["end_revision"])
+
+    with pytest.raises(ValueError, match="end_revision"):
+        _build(tmp_path, monkeypatch, partial)
+    _assert_untouched(tmp_path, out, sidecar)
+
+
+def test_controlled_label_effect_responds_to_shared_label_values():
+    """The isolation must not hide real label differences on the shared rows."""
+    base = _synthetic(n_per_season=80, seasons=range(2021, 2026))
+    shifted = base.copy()
+    train = shifted["season"] < 2025
+    shifted.loc[train, "end_value"] = shifted.loc[train, "start_value"] * 1.5
+
+    def run(candidate_frame):
+        return compare_labels.label_effect(
+            _ls(base, "baseline"), _ls(candidate_frame), (3,), 2024, 2025, True, []
+        )["windows"][0]["scores"]
+
+    same = run(base.copy())
+    changed = run(shifted)
+
+    assert same["baseline"]["baseline"] == same["baseline"]["candidate"]
+    assert changed["baseline"]["candidate"] != changed["baseline"]["baseline"]
+
+
+def test_gate_fails_just_below_two_points():
+    gate = apply_gate(_gate_summary(0.40, EVEN), _gate_summary(0.4199999, EVEN))
+
+    assert gate["overall_guard"] is False

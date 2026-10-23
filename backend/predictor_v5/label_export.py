@@ -253,12 +253,15 @@ def label_coverage(
 
 def _provenance(values: pd.DataFrame, model_version: str | None) -> dict:
     if "model_version" not in values.columns:
+        # Nothing in the export says which model made it; a --model-version
+        # here is only the caller's claim, so it is kept apart and never verified.
         return {
-            "model_version": model_version,
-            "model_version_source": "argument" if model_version else "unknown",
+            "model_version": None,
+            "model_version_source": "unknown",
+            "asserted_model_version": model_version,
             "generations": None,
             "exported_at": None,
-            "note": "export predates the provenance columns; generation ids are unknown",
+            "note": "export predates the provenance columns; model version and generation ids are unknown",
         }
     generations = {}
     for season, rows in values.groupby("season", sort=True):
