@@ -4,6 +4,10 @@ import hashlib
 import inspect
 import json
 import math
+import os
+import platform
+import subprocess
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from numbers import Integral, Real
@@ -12,6 +16,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import sklearn
 
 from predictor_v5 import label_export, model
 from predictor_v5.data import build_dataset, read_season_stats
@@ -478,6 +483,86 @@ def run_confirmation(config: ConfirmationConfig) -> dict:
     """Preflight every sealed input, then execute the fixed confirmation."""
     context = preflight(config)
     return fit_and_score(context)
+
+
+def report_path(config: ConfirmationConfig) -> Path:
+    """Derive the sealed output path without accepting a caller-selected name."""
+    manifest_path = _config_file(config, config.manifest_path, "manifest")
+    _, manifest_sha = load_canonical_json(
+        manifest_path, lambda value: validate_manifest(value, config.repo_root)
+    )
+    output_dir = config.output_dir if config.output_dir.is_absolute() else config.repo_root / config.output_dir
+    return output_dir / f"2026-{manifest_sha}.json"
+
+
+def _git_revision(repo_root: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo_root, check=True,
+            capture_output=True, text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    revision = result.stdout.strip()
+    return revision if len(revision) == 40 else None
+
+
+def validate_report(wrapper: dict[str, Any]) -> None:
+    """Validate the exact outer report schema and its payload-only digest."""
+    fields = _fields(wrapper, {"schema_version", "payload", "payload_sha256"}, "report")
+    if fields["schema_version"] != 1:
+        raise ValueError("report schema_version must be 1")
+    if not isinstance(fields["payload"], dict):
+        raise ValueError("report payload must be an object")  # noqa: TRY004
+    _sha(fields["payload_sha256"], "report payload_sha256")
+    expected = sha256_bytes(canonical_json_bytes(fields["payload"]))
+    if fields["payload_sha256"] != expected:
+        raise ValueError("report payload_sha256 mismatch")
+
+
+def write_report(payload: dict, final_path: Path) -> dict:
+    """Write one canonical report atomically, without replacing an existing report."""
+    payload = dict(payload)
+    decision = payload.get("decision")
+    if not isinstance(decision, dict) or decision.get("promotion_authorized") is not False:
+        raise ValueError("report decision must set promotion_authorized to false")
+    payload["environment"] = {
+        "python": platform.python_version(),
+        "numpy": np.__version__,
+        "pandas": pd.__version__,
+        "scikit_learn": sklearn.__version__,
+        "git_revision": _git_revision(REPOSITORY_ROOT),
+    }
+    wrapper = {
+        "schema_version": 1,
+        "payload": payload,
+        "payload_sha256": sha256_bytes(canonical_json_bytes(payload)),
+    }
+    validate_report(wrapper)
+    final_path = Path(final_path)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    if final_path.exists():
+        raise FileExistsError(f"confirmation output already exists: {final_path}")
+    temporary: Path | None = None
+    try:
+        descriptor, name = tempfile.mkstemp(prefix=f".{final_path.name}.", suffix=".tmp", dir=final_path.parent)
+        temporary = Path(name)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(canonical_json_bytes(wrapper))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(temporary, final_path)
+        temporary.unlink()
+        temporary = None
+        directory = os.open(final_path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return wrapper
 
 
 _SCORED_COLUMNS = [

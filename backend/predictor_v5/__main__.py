@@ -146,7 +146,31 @@ def cmd_compare_labels(args) -> None:
     print(f"Wrote deterministic report to {args.out}")
 
 
-def main() -> None:
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "confirm-2026" in argv:
+        forbidden = ("--labels", "--min-trades", "--end-column")
+        if any(token in forbidden or token.startswith(tuple(name + "=" for name in forbidden)) for token in argv):
+            print("confirm-2026 accepts no options", file=sys.stderr)
+            return 2
+        if argv != ["confirm-2026"]:
+            print("confirm-2026 accepts no options", file=sys.stderr)
+            return 2
+        from predictor_v5 import confirmation
+
+        config = confirmation.ConfirmationConfig()
+        try:
+            payload = confirmation.run_confirmation(config)
+            wrapper = confirmation.write_report(payload, confirmation.report_path(config))
+        except confirmation.PreflightError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except Exception as error:  # noqa: BLE001 -- CLI boundary classifies unexpected/write failures
+            print(str(error), file=sys.stderr)
+            return 1
+        print(f"payload_sha256={wrapper['payload_sha256']}")
+        return 0
+
     parser = argparse.ArgumentParser(prog="predictor_v5")
     parser.add_argument("--labels", default="ktc", help="'ktc' or 'csv:<path>'")
     parser.add_argument("--min-trades", type=int, default=0, help="CSV labels: min trades at start and end")
@@ -227,11 +251,12 @@ def main() -> None:
     cl.add_argument("--test", type=int, default=2025)
     cl.set_defaults(func=cmd_compare_labels)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.cmd in ("predict", "season") and args.points is None and not args.sweep:
         parser.error(f"{args.cmd} needs --points or --sweep")
     args.func(args)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
