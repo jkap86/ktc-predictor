@@ -1,8 +1,5 @@
 """Fail-closed registration checks run before a target can be loaded."""
 
-import copy
-import json
-
 import pandas as pd
 import pytest
 
@@ -19,7 +16,8 @@ def sealed(tmp_path, monkeypatch):
     target = tmp_path / "target.csv"
     raw = {"player_id": "p1", "season": 2026, "start_value": 100, "end_value": 110, "position": "QB", "age": 25, "games": 17, "points": 300, "start_evidence": 5, "end_evidence": 5, "start_trades_window": 5, "end_trades_window": 5, "end_value_next_board": None, "end_evidence_next_board": None}
     pd.DataFrame([raw], columns=confirmation._LABEL_COLUMNS).to_csv(target, index=False)
-    sidecar = tmp_path / "target.provenance.json"; _write(sidecar, {})
+    sidecar = tmp_path / "target.provenance.json"
+    _write(sidecar, {"label_file": {"sha256": confirmation.file_sha256(target)}, "model_version": "baseline-hl28-v1", "model_version_source": "export"})
     train = tmp_path / "training.zip"; train.write_bytes(b"training")
     for name in ("baseline.csv", "candidate.csv"):
         pd.DataFrame({"season": [2021, 2022, 2023, 2024, 2025]}).to_csv(tmp_path / name, index=False)
@@ -31,7 +29,7 @@ def sealed(tmp_path, monkeypatch):
     att = {"registry_key": "2026:" + msha, "status": "untouched", "reviewer": "r", "evidence_commit": "c", "evidence_reference": "e", "reviewed_at": "now", "transition_source": "review"}
     registry = {"schema_version": 1, "attestation": "review and Git evidence; not proof of non-observation", "entries": [{"season": 2026, "manifest_sha256": msha, "status": "untouched", "sealing_commit": "x", "sealed_at": "x", **{k:v for k,v in att.items() if k not in {"registry_key", "status"}}}]}
     registry_path = tmp_path / "registry.json"; _write(registry_path, registry)
-    registration = {"schema_version": 1, "season": 2026, "manifest_sha256": msha, "target_csv": {"path": "target.csv", "sha256": sha(target)}, "target_sidecar": {"path": "target.provenance.json", "sha256": sha(sidecar)}, "provenance": {"model_version": "baseline-hl28-v1", "verified": True, "identity": "export"}, "target_contract": {"raw_market_columns": list(confirmation._RAW_MARKET_COLUMNS), "joined_model_columns": ["player_id", "season", "position", "age", "points", "start_value", "end_value"], "label_filter": {"positive_values": True, "min_trades": 5}}, "recipe": {"sql_path": "recipe.sql", "sql_sha256": sha(sql), "build_path": "build.py", "build_sha256": sha(build)}, "holdout_attestation": att}
+    registration = {"schema_version": 1, "season": 2026, "manifest_sha256": msha, "target_csv": {"path": "target.csv", "sha256": sha(target)}, "target_sidecar": {"path": "target.provenance.json", "sha256": sha(sidecar)}, "provenance": {"model_version": "baseline-hl28-v1", "verified": True, "identity": "sidecar"}, "target_contract": {"raw_market_columns": list(confirmation._RAW_MARKET_COLUMNS), "joined_model_columns": ["player_id", "season", "position", "age", "points", "start_value", "end_value"], "label_filter": {"positive_values": True, "min_trades": 5}}, "recipe": {"sql_path": "recipe.sql", "sql_sha256": sha(sql), "build_path": "build.py", "build_sha256": sha(build)}, "holdout_attestation": att}
     registration_path = tmp_path / "registration.json"; _write(registration_path, registration)
     calls = []
     config = confirmation.ConfirmationConfig(repo_root=tmp_path, manifest_path=manifest_path, registry_path=registry_path, input_registration_path=registration_path, target_loader=lambda *_: calls.append(True) or pd.DataFrame([raw]), output_dir=tmp_path / "out")
@@ -76,6 +74,30 @@ def test_identity_drift_is_rejected_before_loading(sealed, change):
 def test_raw_duplicates_are_rejected_before_loader(sealed):
     raw = pd.read_csv(sealed["target"]); pd.concat([raw, raw]).to_csv(sealed["target"], index=False)
     sealed["registration"]["target_csv"]["sha256"] = confirmation.file_sha256(sealed["target"]); _write(sealed["registration_path"], sealed["registration"]); _refuse(sealed)
+
+
+@pytest.mark.parametrize("change", ["malformed", "stale", "identity"])
+def test_sidecar_provenance_must_bind_the_target_before_loading(sealed, change):
+    if change == "malformed":
+        sealed["sidecar"].write_bytes(b"not-json")
+    elif change == "stale":
+        _write(sealed["sidecar"], {"label_file": {"sha256": "0" * 64}, "model_version": "baseline-hl28-v1", "model_version_source": "export"})
+    else:
+        sealed["registration"]["provenance"]["identity"] = "manifest"
+        _write(sealed["registration_path"], sealed["registration"])
+    if change != "identity":
+        sealed["registration"]["target_sidecar"]["sha256"] = confirmation.file_sha256(sealed["sidecar"])
+        _write(sealed["registration_path"], sealed["registration"])
+    _refuse(sealed)
+
+
+@pytest.mark.parametrize("identity", [
+    {"sha256": "0" * 64, "model_version": None, "verified": False, "source": None, "problems": ["unverified"]},
+    {"sha256": "0" * 64, "model_version": "wrong", "verified": True, "source": "sidecar", "problems": []},
+])
+def test_unverified_or_wrong_version_identity_never_loads(sealed, monkeypatch, identity):
+    monkeypatch.setattr(confirmation.label_export, "label_identity", lambda *_args, **_kwargs: identity)
+    _refuse(sealed)
 
 
 @pytest.mark.parametrize("frame", [pd.DataFrame([{"player_id":"x","season":2026,"position":"QB","age":1,"points":1,"start_value":1,"end_value":1,"start_trades_window":5,"end_trades_window":5}] * 2), pd.DataFrame([{"player_id":"x","season":2025,"position":"QB","age":1,"points":1,"start_value":1,"end_value":1,"start_trades_window":5,"end_trades_window":5}])])

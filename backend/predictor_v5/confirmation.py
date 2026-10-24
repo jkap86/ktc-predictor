@@ -429,6 +429,15 @@ def _preflight(config: ConfirmationConfig) -> PreflightContext:
         if file_sha256(path) != entry["sha256"]:
             raise ValueError("%s hash mismatch" % name)
     load_canonical_json(target_sidecar, lambda value: _fields(value, set(value), "target sidecar"))
+    identity = label_export.label_identity(target_csv, manifest_path=target_sidecar)
+    expected_identity_keys = {"sha256", "model_version", "verified", "source", "problems"}
+    if not isinstance(identity, dict) or set(identity) != expected_identity_keys:
+        raise ValueError("target label identity schema drift")
+    expected_provenance = {"sha256": registration["target_csv"]["sha256"], "model_version": "baseline-hl28-v1", "verified": True, "source": "sidecar", "problems": []}
+    if identity != expected_provenance:
+        raise _first_difference(expected_provenance, identity, "target label identity")
+    if registration["provenance"]["identity"] != identity["source"]:
+        raise ValueError("registered target provenance identity mismatch")
     recipe = registration["recipe"]
     for name, path_key, hash_key in (("sql", "sql_path", "sql_sha256"), ("build", "build_path", "build_sha256")):
         path = _repo_file(config.repo_root, recipe[path_key], "recipe " + name)
