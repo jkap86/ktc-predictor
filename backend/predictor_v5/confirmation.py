@@ -493,17 +493,21 @@ def _read_registered_stats_archive(path: Path, purpose: str) -> pd.DataFrame:
             if not isinstance(player, dict):
                 raise TypeError("player must be an object")
             position = player["position"]
-            if position not in ("QB", "RB", "TE", "WR"):
-                continue
-            str(player["player_id"])
-            seasons = player.get("seasons", [])
+            player_id = player["player_id"]
+            seasons = player["seasons"]
+            if isinstance(player_id, bool) or not isinstance(player_id, (str, int)):
+                raise TypeError("player_id must be a string or integer")
+            if not isinstance(position, str):
+                raise TypeError("position must be a string")
             if not isinstance(seasons, list):
                 raise TypeError("seasons must be a list")
+            if position not in ("QB", "RB", "TE", "WR"):
+                continue
             for season in seasons:
                 if not isinstance(season, dict):
                     raise TypeError("season must be an object")
                 rows.append({
-                    "player_id": str(player["player_id"]),
+                    "player_id": str(player_id),
                     "name": player.get("name"),
                     "season": int(season["year"]),
                     "position": position,

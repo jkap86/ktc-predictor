@@ -308,6 +308,7 @@ def test_training_integrity_fails_before_target_or_fit(sealed, name, change, mat
     ("malformed-json", "malformed JSON"),
     ("invalid-structure", "invalid stats structure"),
     ("invalid-row", "invalid stats row"),
+    ("invalid-unmodeled-row", "invalid stats row"),
 ])
 def test_corrupt_registered_stats_archive_is_preflight_refusal_and_cli_exit_two(
     sealed, monkeypatch, capsys, purpose, filename, corruption, cause
@@ -323,6 +324,12 @@ def test_corrupt_registered_stats_archive_is_preflight_refusal_and_cli_exit_two(
             "invalid-row": ("stats.json", json.dumps({"players": [{
                 "player_id": "QB", "position": "QB", "seasons": [{"age": 25}],
             }]})),
+            "invalid-unmodeled-row": ("stats.json", json.dumps({"players": [
+                {"player_id": "QB", "position": "QB", "seasons": [
+                    {"year": 2025, "age": 25, "fantasy_points": 100},
+                ]},
+                {"player_id": "K", "position": "K", "seasons": "not-a-list"},
+            ]})),
         }[corruption]
         with zipfile.ZipFile(archive_path, "w") as archive:
             archive.writestr(*payload)
@@ -363,6 +370,23 @@ def test_unexpected_registered_archive_reader_failure_remains_cli_exit_one(
     assert captured.err == "reader bug\n"
     assert not sealed["config"].output_dir.exists()
     assert fits == []
+
+
+def test_registered_archive_excludes_unmodeled_positions_without_validating_season_content(tmp_path):
+    archive_path = tmp_path / "stats.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("stats.json", json.dumps({"players": [
+            {"player_id": "QB", "position": "QB", "seasons": [
+                {"year": 2025, "age": 25, "fantasy_points": 100},
+            ]},
+            {"player_id": "K", "position": "K", "seasons": ["unmodeled content"]},
+        ]}))
+
+    stats_frame = c._read_registered_stats_archive(archive_path, "training archive")
+
+    assert stats_frame[["player_id", "position"]].to_dict("records") == [
+        {"player_id": "QB", "position": "QB"},
+    ]
 
 
 @pytest.mark.parametrize("field,value,match", [
