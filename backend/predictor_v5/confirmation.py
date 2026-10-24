@@ -621,6 +621,20 @@ def validate_report(wrapper: dict[str, Any]) -> None:
         raise ValueError("report payload_sha256 mismatch")
 
 
+def _sync_directory(path: Path) -> None:
+    directory = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    except Exception as error:
+        try:
+            os.close(directory)
+        except OSError as cleanup_error:
+            error.add_note(f"failed to close directory after sync failure: {cleanup_error}")
+        raise
+    else:
+        os.close(directory)
+
+
 def write_report(payload: dict, final_path: Path) -> dict:
     """Write one canonical report atomically, without replacing an existing report."""
     payload = dict(payload)
@@ -645,6 +659,8 @@ def write_report(payload: dict, final_path: Path) -> dict:
     if final_path.exists():
         raise FileExistsError(f"confirmation output already exists: {final_path}")
     temporary: Path | None = None
+    created_final = False
+    active_error: BaseException | None = None
     try:
         descriptor, name = tempfile.mkstemp(prefix=f".{final_path.name}.", suffix=".tmp", dir=final_path.parent)
         temporary = Path(name)
@@ -653,16 +669,31 @@ def write_report(payload: dict, final_path: Path) -> dict:
             handle.flush()
             os.fsync(handle.fileno())
         os.link(temporary, final_path)
+        created_final = True
         temporary.unlink()
         temporary = None
-        directory = os.open(final_path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        _sync_directory(final_path.parent)
+    except Exception as error:
+        active_error = error
+        if created_final:
+            try:
+                final_path.unlink()
+            except OSError as cleanup_error:
+                error.add_note(f"failed to roll back confirmation output: {cleanup_error}")
+            else:
+                try:
+                    _sync_directory(final_path.parent)
+                except OSError as cleanup_error:
+                    error.add_note(f"failed to sync confirmation directory after rollback: {cleanup_error}")
+        raise
     finally:
         if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                if active_error is None:
+                    raise
+                active_error.add_note(f"failed to remove temporary confirmation output: {cleanup_error}")
     return wrapper
 
 

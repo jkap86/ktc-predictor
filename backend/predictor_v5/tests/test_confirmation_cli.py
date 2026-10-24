@@ -25,7 +25,7 @@ def test_confirmation_keeps_existing_cli_imports_and_rejects_promotion_authoriza
         confirmation.write_report({"decision": {"promotion_authorized": True}}, tmp_path / "confirmation.json")
 
 
-def test_write_report_hashes_only_the_enriched_payload_and_writes_canonical_bytes(tmp_path, monkeypatch):
+def test_write_report_success_writes_canonical_bytes_with_payload_hash_semantics(tmp_path, monkeypatch):
     # Break caught: the digest becomes a self-hash or the report depends on JSON formatting.
     monkeypatch.setattr(confirmation, "_git_revision", lambda _root: None)
     final = tmp_path / "confirmation.json"
@@ -59,7 +59,7 @@ def test_report_schema_rejects_unknown_fields():
         confirmation.validate_report(wrapper)
 
 
-def test_write_report_never_replaces_existing_output_or_leaves_temps(tmp_path):
+def test_write_report_preserves_existing_output_and_leaves_no_temps(tmp_path):
     # Break caught: a second confirmation overwrites the first or strands partial bytes.
     final = tmp_path / "confirmation.json"
     final.write_bytes(b"original")
@@ -69,6 +69,47 @@ def test_write_report_never_replaces_existing_output_or_leaves_temps(tmp_path):
 
     assert final.read_bytes() == b"original"
     assert list(tmp_path.iterdir()) == [final]
+
+
+def test_write_report_rolls_back_final_when_directory_fsync_fails(tmp_path, monkeypatch):
+    # Break caught: a failed durability sync reports failure but leaves a published report behind.
+    final = tmp_path / "confirmation.json"
+    real_fsync = confirmation.os.fsync
+    fsync_calls = 0
+
+    def fail_first_directory_fsync(descriptor):
+        nonlocal fsync_calls
+        fsync_calls += 1
+        if fsync_calls == 2:
+            raise OSError("directory fsync failed")
+        return real_fsync(descriptor)
+
+    monkeypatch.setattr(confirmation.os, "fsync", fail_first_directory_fsync)
+
+    with pytest.raises(OSError, match="directory fsync failed"):
+        confirmation.write_report({"decision": {"promotion_authorized": False}}, final)
+
+    assert not final.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_write_report_rolls_back_final_when_directory_open_fails(tmp_path, monkeypatch):
+    # Break caught: failure opening the output directory strands the report linked by this call.
+    final = tmp_path / "confirmation.json"
+    real_open = confirmation.os.open
+
+    def fail_directory_open(path, *args):
+        if Path(path) == tmp_path:
+            raise OSError("directory open failed")
+        return real_open(path, *args)
+
+    monkeypatch.setattr(confirmation.os, "open", fail_directory_open)
+
+    with pytest.raises(OSError, match="directory open failed"):
+        confirmation.write_report({"decision": {"promotion_authorized": False}}, final)
+
+    assert not final.exists()
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_write_failure_cleans_up_temporary_file(tmp_path, monkeypatch):
