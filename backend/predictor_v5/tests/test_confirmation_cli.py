@@ -119,6 +119,23 @@ def test_confirm_success_writes_once_and_prints_only_payload_fingerprint(tmp_pat
     assert wrapper["payload"]["decision"]["promotion_authorized"] is False
 
 
+def test_confirm_success_artifact_never_authorizes_promotion(tmp_path, monkeypatch, capsys):
+    # Break caught: a successful CLI report authorizes a deployment.
+    output = tmp_path / "out.json"
+    monkeypatch.setattr(
+        confirmation,
+        "run_confirmation",
+        lambda _config: {"decision": {"promotion_authorized": False}, "result": "ok"},
+    )
+    monkeypatch.setattr(confirmation, "report_path", lambda _config: output)
+
+    assert cli.main(["confirm-2026"]) == 0
+
+    wrapper = json.loads(output.read_text(encoding="utf-8"))
+    assert wrapper["payload"]["decision"]["promotion_authorized"] is False
+    assert capsys.readouterr().err == ""
+
+
 def test_confirm_preflight_refusal_has_exact_streams_and_no_report(tmp_path, monkeypatch, capsys):
     # Break caught: expected sealed-input refusal is classified as a runtime failure or writes output.
     output = tmp_path / "out.json"
