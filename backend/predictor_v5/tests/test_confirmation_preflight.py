@@ -1,5 +1,6 @@
 """Real artifact preflight; every refusal asserts its stage and loader ordering."""
 import json
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -11,6 +12,17 @@ from predictor_v5 import __main__ as cli
 from predictor_v5 import confirmation as c
 
 ROOT = Path(__file__).resolve().parents[3]
+
+_CONFIRMATION_SOURCE_PATHS = (
+    "backend/predictor_v5/model.py",
+    "backend/predictor_v5/sql/backchannel_labels.sql",
+    "backend/predictor_v5/label_export.py",
+    "backend/predictor_v5/data.py",
+    "backend/predictor_v5/labels.py",
+    "backend/predictor_v5/evaluate.py",
+    "backend/predictor_v5/confirmation.py",
+    "backend/predictor_v5/__main__.py",
+)
 
 
 def write(path, value):
@@ -64,10 +76,16 @@ def save_registration(e):
 @pytest.fixture
 def sealed(tmp_path, monkeypatch):
     manifest = json.loads((ROOT / c.MANIFEST_PATH).read_text())
-    for source in manifest["source_identities"]:
+    manifest["source_identities"] = {
+        source: c.file_sha256(ROOT / source) for source in _CONFIRMATION_SOURCE_PATHS
+    }
+    for source in _CONFIRMATION_SOURCE_PATHS:
         destination = tmp_path / source
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / source, destination)
+    for recipe_name in ("sql", "build"):
+        recipe = manifest["target_recipe"][recipe_name]
+        recipe["sha256"] = c.file_sha256(tmp_path / recipe["path"])
     for name in ("baseline", "candidate"):
         labels(range(2021, 2026)).to_csv(tmp_path / f"{name}.csv", index=False)
         manifest[name]["path"] = f"{name}.csv"
@@ -141,6 +159,25 @@ def test_real_preflight_calls_default_loader_once_with_registered_stats(sealed):
     assert len(context.target_frame) == 4
     assert set(context.target_frame.season) == {2026}
     assert set(c.read_season_stats(context.training_archive).season) == set(range(2021, 2026))
+
+
+@pytest.mark.parametrize("source", [
+    "backend/predictor_v5/data.py",
+    "backend/predictor_v5/labels.py",
+    "backend/predictor_v5/evaluate.py",
+    "backend/predictor_v5/confirmation.py",
+    "backend/predictor_v5/__main__.py",
+])
+def test_source_hash_drift_refuses_before_target_loading(sealed, source):
+    # Break caught: a source that affects confirmation can change without invalidating the seal.
+    source_copy = sealed["root"] / source
+    registered_hash = sealed["manifest"]["source_identities"][source]
+    source_copy.write_bytes(source_copy.read_bytes() + b"\n# test-only drift\n")
+
+    assert c.file_sha256(source_copy) != registered_hash
+    with pytest.raises(ValueError, match=re.escape(source)):
+        c.validate_manifest(sealed["manifest"], sealed["root"])
+    refuse(sealed, re.escape(source))
 
 
 @pytest.mark.parametrize("change,match", [

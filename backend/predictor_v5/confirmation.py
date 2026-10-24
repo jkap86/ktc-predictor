@@ -33,6 +33,11 @@ _SOURCE_PATHS = (
     "backend/predictor_v5/model.py",
     "backend/predictor_v5/sql/backchannel_labels.sql",
     "backend/predictor_v5/label_export.py",
+    "backend/predictor_v5/data.py",
+    "backend/predictor_v5/labels.py",
+    "backend/predictor_v5/evaluate.py",
+    "backend/predictor_v5/confirmation.py",
+    "backend/predictor_v5/__main__.py",
 )
 _LABEL_COLUMNS = (
     "player_id", "season", "start_value", "end_value", "position", "age", "games", "points",

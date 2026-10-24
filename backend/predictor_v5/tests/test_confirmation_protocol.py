@@ -51,10 +51,15 @@ def test_committed_manifest_is_canonical_and_binds_the_frozen_protocol():
     assert manifest["registry_path"] == "backend/predictor_v5/data/model_2026_holdout_registry.json"
     assert manifest["input_registration_path"] == "backend/predictor_v5/data/model_2026_confirmation_inputs.json"
     assert manifest["output_template"] == "backend/predictor_v5/artifacts/confirmations/2026-<manifest-sha256>.json"
-    assert set(manifest["source_identities"]) == {
+    assert set(confirmation._SOURCE_PATHS) == {
         "backend/predictor_v5/model.py",
         "backend/predictor_v5/sql/backchannel_labels.sql",
         "backend/predictor_v5/label_export.py",
+        "backend/predictor_v5/data.py",
+        "backend/predictor_v5/labels.py",
+        "backend/predictor_v5/evaluate.py",
+        "backend/predictor_v5/confirmation.py",
+        "backend/predictor_v5/__main__.py",
     }
 
 
