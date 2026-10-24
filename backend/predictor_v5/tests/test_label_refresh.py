@@ -524,17 +524,23 @@ def _manifest(path: Path, entries: dict) -> Path:
 
 def test_committed_label_files_are_verified_by_hash_not_name(tmp_path):
     expected = {
-        "backchannel_labels_2019_2025.csv": "baseline-hl28-v1",
-        "backchannel_labels_2019_2025_mfl.csv": "baseline-hl28-v1",
-        "backchannel_labels_2019_2025_mfl_v3.csv": "baseline-hl28-v3",
+        "backchannel_labels_2019_2025.csv": ("baseline-hl28-v1", "manifest"),
+        "backchannel_labels_2019_2025_mfl.csv": ("baseline-hl28-v1", "sidecar"),
+        "backchannel_labels_2019_2025_mfl_v3.csv": ("baseline-hl28-v3", "sidecar"),
     }
-    for name, version in expected.items():
+    for name, (version, source) in expected.items():
         identity = label_identity(LEGACY / name)
-        assert (identity["verified"], identity["model_version"], identity["source"]) == (True, version, "manifest")
+        assert (identity["verified"], identity["model_version"], identity["source"]) == (True, version, source)
 
-    # A copy under another name is still the same file; a different file under the old name is not.
+    # Legacy files verify by content hash regardless of name.
+    renamed_legacy = tmp_path / "old-anything.csv"
+    shutil.copy(LEGACY / "backchannel_labels_2019_2025.csv", renamed_legacy)
+    assert label_identity(renamed_legacy)["model_version"] == "baseline-hl28-v1"
+    # Refreshed files need their export sidecar; their names alone prove nothing.
     renamed = tmp_path / "anything.csv"
     shutil.copy(LEGACY / "backchannel_labels_2019_2025_mfl_v3.csv", renamed)
+    assert label_identity(renamed)["verified"] is False
+    shutil.copy(provenance_path(LEGACY / "backchannel_labels_2019_2025_mfl_v3.csv"), provenance_path(renamed))
     assert label_identity(renamed)["model_version"] == "baseline-hl28-v3"
     impostor = _label_csv(tmp_path / "backchannel_labels_2019_2025.csv")
     assert label_identity(impostor)["verified"] is False
@@ -542,7 +548,7 @@ def test_committed_label_files_are_verified_by_hash_not_name(tmp_path):
 
 def test_v3_file_declared_v1_is_rejected():
     frame = _frame()
-    with pytest.raises(ValueError, match="is baseline-hl28-v3 by its manifest provenance, not baseline-hl28-v1"):
+    with pytest.raises(ValueError, match="is baseline-hl28-v3 by its sidecar provenance, not baseline-hl28-v1"):
         resolve_label_set(
             "candidate", LEGACY / "backchannel_labels_2019_2025_mfl_v3.csv", frame, "baseline-hl28-v1"
         )
@@ -1098,7 +1104,7 @@ def test_committed_labels_declared_with_their_own_version_are_accepted(name, ver
     label_set, info = resolve_label_set("candidate", LEGACY / name, _frame(), version)
 
     assert (label_set.model_version, label_set.verified) == (version, True)
-    assert info["provenance_source"] == "manifest"
+    assert info["provenance_source"] == "sidecar"
     assert info["sha256"] == file_sha256(LEGACY / name)
 
 
