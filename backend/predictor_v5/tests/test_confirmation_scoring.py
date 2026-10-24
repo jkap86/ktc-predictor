@@ -241,3 +241,32 @@ def test_fit_and_score_uses_exact_windows_common_target_and_is_deterministic(tmp
     for diagnostic in first["diagnostics"].values():
         assert diagnostic["used_for_configuration"] is False
         assert diagnostic["used_for_promotion"] is False
+
+
+def test_coverage_filtered_stage_uses_loader_dropna_semantics(tmp_path, monkeypatch):
+    context, stats = _context(tmp_path)
+    baseline = pd.read_csv(context.baseline_csv, dtype={"player_id": str})
+    invalid = baseline.iloc[[0]].assign(player_id=None, season=None)
+    pd.concat([baseline, invalid], ignore_index=True).to_csv(context.baseline_csv, index=False)
+
+    class FakeModel:
+        def __init__(self, label_source, scale_max):
+            self.label_source = label_source
+
+        def fit(self, frame):
+            return self
+
+        def predict(self, frame):
+            return frame["start_value"].to_numpy(float)
+
+    monkeypatch.setattr(confirmation, "WhatIfModel", FakeModel)
+    monkeypatch.setattr(confirmation, "read_season_stats", lambda _: stats)
+
+    coverage = confirmation.fit_and_score(context)["diagnostics"]["coverage"]["training"]
+
+    assert coverage["baseline"]["raw"]["total"] == 21
+    assert coverage["baseline"]["filtered"]["total"] == 20
+    assert coverage["baseline"]["joined"]["total"] == 20
+    assert coverage["baseline"]["trainable"]["total"] == 20
+    assert coverage["candidate"]["raw"]["total"] == 20
+    assert coverage["candidate"]["filtered"]["total"] == 20

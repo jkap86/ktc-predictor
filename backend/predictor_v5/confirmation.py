@@ -487,6 +487,18 @@ _SCORED_COLUMNS = [
 _DIAGNOSTIC_TAGS = {"used_for_configuration": False, "used_for_promotion": False}
 
 
+@dataclass(frozen=True)
+class _LoadedLabels:
+    """Expose one already-loaded label frame through the LabelSource contract."""
+
+    name: str
+    scale_max: float
+    frame: pd.DataFrame
+
+    def load(self) -> pd.DataFrame:
+        return self.frame.copy()
+
+
 def score_predictions(
     predictions: pd.DataFrame,
     target: pd.DataFrame,
@@ -741,21 +753,16 @@ def fit_and_score(context: PreflightContext) -> dict:
         name: pd.read_csv(path, dtype={"player_id": str})
         for name, path in (("baseline", context.baseline_csv), ("candidate", context.candidate_csv))
     }
-    filtered_labels = {
-        name: frame[
-            (frame["start_value"] > 0)
-            & (frame["end_value"] > 0)
-            & (frame["start_trades_window"] >= 5)
-            & (frame["end_trades_window"] >= 5)
-        ]
-        for name, frame in raw_labels.items()
-    }
     sources = {
         "baseline": CsvLabels(context.baseline_csv, name="baseline", scale_max=10000.0, min_trades=5),
         "candidate": CsvLabels(context.candidate_csv, name="candidate", scale_max=10000.0, min_trades=5),
     }
+    filtered_labels = {name: source.load() for name, source in sources.items()}
     joined_labels = {
-        name: build_dataset(stats, source).loc[:, ["player_id", "season", "position", "age", "points", "start_value", "end_value"]]
+        name: build_dataset(
+            stats,
+            _LoadedLabels(name=name, scale_max=source.scale_max, frame=filtered_labels[name]),
+        ).loc[:, ["player_id", "season", "position", "age", "points", "start_value", "end_value"]]
         for name, source in sources.items()
     }
     datasets = {
