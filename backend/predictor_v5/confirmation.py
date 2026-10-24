@@ -9,6 +9,7 @@ import platform
 import subprocess
 import tempfile
 import zipfile
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -478,7 +479,10 @@ def _read_registered_stats_archive(path: Path, purpose: str) -> pd.DataFrame:
             member = next((name for name in archive.namelist() if name.endswith(".json")), None)
             if member is None:
                 raise ValueError(f"{purpose}: missing JSON member")
-            raw = archive.read(member)
+            try:
+                raw = archive.read(member)
+            except zlib.error as error:
+                raise ValueError(f"{purpose}: invalid ZIP archive ({error})") from error
     except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
         raise ValueError(f"{purpose}: invalid ZIP archive ({error})") from error
     try:

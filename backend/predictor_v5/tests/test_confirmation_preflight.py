@@ -37,6 +37,24 @@ def stats(path, seasons):
         archive.writestr("stats.json", json.dumps({"players": players}))
 
 
+def corrupt_deflated_stats_member(path):
+    payload = json.dumps({"players": []})
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("stats.json", payload)
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("stats.json").decode() == payload
+        info = archive.getinfo("stats.json")
+
+    raw = bytearray(path.read_bytes())
+    header = info.header_offset
+    assert raw[header : header + 4] == b"PK\x03\x04"
+    name_length = int.from_bytes(raw[header + 26 : header + 28], "little")
+    extra_length = int.from_bytes(raw[header + 28 : header + 30], "little")
+    compressed_data = header + 30 + name_length + extra_length
+    raw[compressed_data] = (raw[compressed_data] & 0xF8) | 0x07
+    path.write_bytes(raw)
+
+
 def labels(seasons):
     return pd.DataFrame([{
         "player_id": p, "season": s, "start_value": 100, "end_value": 110,
@@ -304,6 +322,7 @@ def test_training_integrity_fails_before_target_or_fit(sealed, name, change, mat
 ])
 @pytest.mark.parametrize("corruption,cause", [
     ("not-zip", "invalid ZIP archive"),
+    ("corrupt-deflate", "invalid ZIP archive"),
     ("missing-json", "missing JSON member"),
     ("malformed-json", "malformed JSON"),
     ("invalid-structure", "invalid stats structure"),
@@ -316,6 +335,8 @@ def test_corrupt_registered_stats_archive_is_preflight_refusal_and_cli_exit_two(
     archive_path = sealed["root"] / filename
     if corruption == "not-zip":
         archive_path.write_bytes(b"not a zip archive")
+    elif corruption == "corrupt-deflate":
+        corrupt_deflated_stats_member(archive_path)
     else:
         payload = {
             "missing-json": ("readme.txt", "nothing to parse"),
