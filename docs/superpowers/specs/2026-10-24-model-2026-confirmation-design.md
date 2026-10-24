@@ -51,6 +51,16 @@ separators, newline); unknown or missing fields and noncanonical bytes fail.
 committed before outcome evaluation. Its SHA-256 is `manifest_sha256` and it
 is authoritative field-by-field:
 
+Sealing uses two commits to avoid a self-referential Git identity. The
+manifest's `sealing_commit` is the immutable source anchor whose bytes are
+hashed by `source_identities`; it is not the commit containing the finalized
+manifest. `SEALED_ARTIFACT_SHA` names the later Git commit that contains the
+canonical manifest, matching registry, and this documentation. The handoff
+records `SEALED_ARTIFACT_SHA` outside the protocol artifacts after that commit
+exists. `manifest_sha256` is independently the SHA-256 of the canonical
+manifest bytes. Neither the future artifact commit SHA nor a Git tag is
+self-embedded in the manifest or registry.
+
 | Field | Required value/meaning |
 | --- | --- |
 | `schema_version`, `protocol` | Version 2, `model-2026-confirmation` identity |
