@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from numbers import Integral, Real
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -87,6 +88,7 @@ class PreflightContext:
     training_archive: Path
     target_csv: Path
     target_sidecar: Path
+    target_stats: Path
     output_path: Path
     train_seasons: tuple[int, ...]
     positions: tuple[str, ...]
@@ -94,6 +96,7 @@ class PreflightContext:
     target_recipe: dict
     target_loader: Callable[[Path, Path], pd.DataFrame]
     target_frame: pd.DataFrame | None = field(default=None, init=False)
+    training_frames: dict | None = field(default=None, init=False)
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -159,6 +162,31 @@ def _fields(value: Any, required: set, context: str) -> dict[str, Any]:
     return value
 
 
+def _nonempty(value: Any, context: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{context} must be a nonempty string")
+
+
+def _timestamp(value: Any, context: str) -> datetime:
+    _nonempty(value, context)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError(f"{context} must be a canonical timestamp") from error
+    if parsed.tzinfo is None or value != parsed.isoformat(timespec="seconds"):
+        raise ValueError(f"{context} must be a canonical timestamp with seconds and UTC offset")
+    return parsed
+
+
+def _review_metadata(value: dict, context: str) -> datetime:
+    for name in ("reviewer", "evidence_commit", "evidence_reference"):
+        _nonempty(value[name], f"{context} {name}")
+    reviewed = _timestamp(value["reviewed_at"], context + " reviewed_at")
+    if value["transition_source"] != "sealed":
+        raise ValueError(context + " transition_source must be sealed")
+    return reviewed
+
+
 def _sha(value: Any, context: str) -> None:
     if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
         raise ValueError(f"{context} must be a lowercase SHA-256")
@@ -217,12 +245,10 @@ def validate_manifest(manifest: dict[str, Any], repo_root: Path = REPOSITORY_ROO
         "target_recipe", "gate", "walk_forward", "bootstrap", "registry_path", "input_registration_path", "output_template",
     }
     _fields(manifest, required, "manifest")
-    if manifest["schema_version"] != 1 or manifest["protocol"] != "model-2026-confirmation":
+    if manifest["schema_version"] != 2 or manifest["protocol"] != "model-2026-confirmation":
         raise ValueError("manifest protocol identity drift")
-    if not isinstance(manifest["sealing_commit"], str) or not manifest["sealing_commit"]:
-        raise ValueError("manifest sealing_commit must be nonempty")
-    if not isinstance(manifest["sealed_at"], str) or not manifest["sealed_at"]:
-        raise ValueError("manifest sealed_at must be nonempty")
+    _nonempty(manifest["sealing_commit"], "manifest sealing_commit")
+    _timestamp(manifest["sealed_at"], "manifest sealed_at")
     for name in ("baseline", "candidate"):
         entry = _fields(manifest[name], {"path", "sha256", "label_columns", "provenance"}, name)
         validate_repo_relative_path(entry["path"])
@@ -254,7 +280,7 @@ def validate_manifest(manifest: dict[str, Any], repo_root: Path = REPOSITORY_ROO
         live_hash = file_sha256(repo_root / validate_repo_relative_path(source_path))
         if identity != live_hash:
             raise _drift(source_path + " sha256", live_hash, identity)
-    recipe = _fields(manifest["target_recipe"], {"sql", "build", "output_columns", "provenance_contract"}, "target_recipe")
+    recipe = _fields(manifest["target_recipe"], {"sql", "build", "output_columns", "provenance_contract", "stats_contract"}, "target_recipe")
     _identity(recipe["sql"], "target_recipe.sql")
     _identity(recipe["build"], "target_recipe.build")
     expected_recipe_paths = {"sql": "backend/predictor_v5/sql/backchannel_labels.sql", "build": "backend/predictor_v5/label_export.py"}
@@ -269,8 +295,10 @@ def validate_manifest(manifest: dict[str, Any], repo_root: Path = REPOSITORY_ROO
             raise _drift(str(recipe_path) + " recipe sha256", live_hash, identity["sha256"])
     if recipe["output_columns"] != list(_LABEL_COLUMNS):
         raise ValueError("target recipe output column drift")
-    if recipe["provenance_contract"] != {"helper": "label_identity", "model_version": "baseline-hl28-v1", "verified": True}:
+    if recipe["provenance_contract"] != {"helper": "registered_sidecar", "schema_version": 1, "model_version": "baseline-hl28-v1", "verified": True}:
         raise ValueError("label export provenance contract drift")
+    if recipe["stats_contract"] != {"registration_field": "target_stats", "format": "training-players-zip", "seasons": [2026], "verified_columns": ["position", "age", "games", "points"]}:
+        raise ValueError("target stats contract drift")
     if manifest["gate"] != {"minimum_gain": 0.02, "minimum_position_count": 30, "maximum_position_drop": 0.05}:
         raise ValueError("gate drift")
     if manifest["walk_forward"] != {"folds": {"2022": [2021], "2023": [2021, 2022], "2024": [2021, 2022, 2023], "2025": [2021, 2022, 2023, 2024]}, "no_shortening": True}:
@@ -285,19 +313,23 @@ def validate_manifest(manifest: dict[str, Any], repo_root: Path = REPOSITORY_ROO
 
 def validate_registry(registry: dict[str, Any]) -> None:
     _fields(registry, {"schema_version", "attestation", "entries"}, "registry")
-    if registry["schema_version"] != 1 or registry["attestation"] != "review and Git evidence; not proof of non-observation":
+    if registry["schema_version"] != 2 or registry["attestation"] != "review and Git evidence; not proof of non-observation":
         raise ValueError("registry identity drift")
     if not isinstance(registry["entries"], list):
         raise ValueError("registry entries must be a list")  # noqa: TRY004 -- protocol failures are ValueError
     keys = set()
     for entry in registry["entries"]:
-        if not isinstance(entry, dict) or entry.get("status") not in {"sealed", "untouched", "reused"}:
+        if not isinstance(entry, dict) or not isinstance(entry.get("status"), str) or entry["status"] not in {"sealed", "untouched", "reused"}:
             raise ValueError("invalid registry lifecycle entry")
         status = entry["status"]
         fields = {"season", "manifest_sha256", "status", "sealing_commit", "sealed_at"}
         if status in {"untouched", "reused"}:
             fields |= {"reviewer", "evidence_reference", "evidence_commit", "reviewed_at", "transition_source"}
         _fields(entry, fields, "registry entry")
+        _nonempty(entry["sealing_commit"], "registry sealing_commit")
+        sealed = _timestamp(entry["sealed_at"], "registry sealed_at")
+        if status != "sealed" and _review_metadata(entry, "registry") < sealed:
+            raise ValueError("registry reviewed_at predates sealing")
         if not isinstance(entry["season"], int) or entry["season"] < 1:
             raise ValueError("registry season must be a positive integer")
         _sha(entry["manifest_sha256"], "registry manifest_sha256")
@@ -310,15 +342,16 @@ def validate_registry(registry: dict[str, Any]) -> None:
 def validate_input_registration(registration: dict[str, Any]) -> None:
     """Validate the post-season artifact without reading its target files."""
     required = {
-        "schema_version", "season", "manifest_sha256", "target_csv", "target_sidecar", "provenance",
+        "schema_version", "season", "manifest_sha256", "target_csv", "target_sidecar", "target_stats", "provenance",
         "target_contract", "recipe", "holdout_attestation",
     }
     _fields(registration, required, "input registration")
-    if registration["schema_version"] != 1 or registration["season"] != 2026:
+    if registration["schema_version"] != 2 or registration["season"] != 2026:
         raise ValueError("input registration identity drift")
     _sha(registration["manifest_sha256"], "input registration manifest_sha256")
     _identity(registration["target_csv"], "target_csv")
     _identity(registration["target_sidecar"], "target_sidecar")
+    _identity(registration["target_stats"], "target_stats")
     provenance = _fields(registration["provenance"], {"model_version", "verified", "identity"}, "provenance")
     if provenance["model_version"] != "baseline-hl28-v1" or provenance["verified"] is not True or not isinstance(provenance["identity"], str) or not provenance["identity"]:
         raise ValueError("target provenance drift")
@@ -343,9 +376,7 @@ def validate_input_registration(registration: dict[str, Any]) -> None:
         raise ValueError("holdout attestation key mismatch")
     if attestation["status"] != "untouched":
         raise ValueError("holdout attestation must be untouched")
-    for name in ("reviewer", "evidence_commit", "evidence_reference", "reviewed_at", "transition_source"):
-        if not isinstance(attestation[name], str) or not attestation[name]:
-            raise ValueError(f"holdout attestation {name} must be nonempty")
+    _review_metadata(attestation, "holdout attestation")
 
 
 def _repo_file(root: Path, value: str, context: str) -> Path:
@@ -366,11 +397,39 @@ def _config_file(config: ConfirmationConfig, value: Path, context: str) -> Path:
     return _repo_file(config.repo_root, str(path), context)
 
 
-def _default_target_loader(target_csv: Path, training_archive: Path) -> pd.DataFrame:
+def _default_target_loader(target_csv: Path, target_stats: Path) -> pd.DataFrame:
     values = pd.read_csv(target_csv, dtype={"player_id": str})
     label_export.validate_market_export(values, expected_seasons=(2026,), model_version="baseline-hl28-v1")
-    stats = read_season_stats(training_archive)
-    return label_export.build_label_frame(values, stats)
+    stats = read_season_stats(target_stats)
+    if set(stats["season"]) != {2026}:
+        raise ValueError("target stats must contain only season 2026")
+    joined = label_export.build_label_frame(values, stats)
+    keys = ["player_id", "season"]
+    checked = values.merge(joined, on=keys, how="left", suffixes=("_csv", "_stats"), validate="one_to_one", indicator=True)
+    missing = checked[checked["_merge"] != "both"]
+    if not missing.empty:
+        raise ValueError(f"target stats missing keys count={len(missing)} sample={missing[keys].head().to_dict('records')}")
+    for column in ("position", "age", "games", "points"):
+        bad = checked[checked[column + "_csv"] != checked[column + "_stats"]]
+        if not bad.empty:
+            raise ValueError(f"target stats mismatch {column} count={len(bad)} sample={bad[keys].head().to_dict('records')}")
+    return joined
+
+
+def _validate_registered_sidecar(sidecar: dict, registration: dict) -> None:
+    _fields(sidecar, {"schema_version", "target_csv", "target_stats", "model_version", "verified", "problems", "source", "identity"}, "target sidecar")
+    if type(sidecar["schema_version"]) is not int or sidecar["schema_version"] != 1:
+        raise ValueError("target sidecar schema_version must be 1")
+    for name in ("target_csv", "target_stats"):
+        _identity(sidecar[name], "target sidecar " + name)
+        if sidecar[name] != registration[name]:
+            raise ValueError(f"target sidecar {name} mismatch")
+    expected = {"model_version": "baseline-hl28-v1", "verified": True, "problems": [], "source": "export", "identity": registration["provenance"]["identity"]}
+    for name, value in expected.items():
+        if type(sidecar[name]) is not type(value) or sidecar[name] != value:
+            raise ValueError(f"target sidecar {name} mismatch")
+    if sidecar["identity"] != "sidecar":
+        raise ValueError("target sidecar identity must be sidecar")
 
 
 def _matching_entry(entries: list, season: int, manifest_sha: str, context: str) -> dict:
@@ -387,21 +446,64 @@ def _validate_target_frame(frame: pd.DataFrame, context: PreflightContext) -> No
         raise ValueError(f"joined target missing columns: {missing}")
     data = frame.copy()
     data["player_id"] = data["player_id"].astype(str)
-    if data.duplicated(["player_id", "season"]).any():
-        raise ValueError("joined target has duplicate player-season keys")
+    _reject_duplicate_rows(data, "joined target")
     if set(data["season"].astype(int)) - {2026}:
         raise ValueError("target contains training-season leakage")
     filtered = data[(data["start_value"] > 0) & (data["end_value"] > 0) & (data["start_trades_window"] >= 5) & (data["end_trades_window"] >= 5)]
-    if filtered.empty:
-        raise ValueError("target has no rows after the registered label filter")
     context.target_frame = filtered.sort_values(["season", "player_id"], kind="stable").reset_index(drop=True)
 
 
-def _validate_training_coverage(path: Path, seasons: tuple[int, ...], name: str) -> None:
-    data = pd.read_csv(path, usecols=["season"])
-    missing = sorted(set(seasons) - set(data["season"].astype(int)))
+def _reject_duplicate_rows(data: pd.DataFrame, source: str) -> None:
+    bad = data[data.duplicated(["player_id", "season"], keep=False)]
+    if not bad.empty:
+        raise PreflightError(f"{source} duplicate keys count={len(bad)} sample={bad[['player_id', 'season']].head().to_dict('records')}")
+
+
+def _reject_future_rows(data: pd.DataFrame, source: str) -> None:
+    bad = data[pd.to_numeric(data["season"], errors="raise") >= 2026]
+    if not bad.empty:
+        raise PreflightError(f"{source} future leakage count={len(bad)} sample={bad[['player_id', 'season']].head().to_dict('records')}")
+
+
+def _require_coverage(data: pd.DataFrame, seasons, positions, source: str) -> None:
+    actual = set(zip(data["season"], data["position"]))
+    missing = [(season, position) for season in seasons for position in positions if (season, position) not in actual]
     if missing:
-        raise ValueError(f"{name} is missing required training seasons {missing}")
+        raise PreflightError(f"{source} coverage missing count={len(missing)} sample={missing[:5]}")
+
+
+def _validate_folds(data: pd.DataFrame, seasons, positions, folds: dict, source: str) -> None:
+    _require_coverage(data, seasons, positions, source + " trainable")
+    for test_season, history in folds.items():
+        _require_coverage(data, history, positions, f"{source} fold {test_season} train")
+        _require_coverage(data, [int(test_season)], positions, f"{source} fold {test_season} test")
+
+
+def _prepare_training(context: PreflightContext) -> dict:
+    stats = read_season_stats(context.training_archive)
+    _reject_future_rows(stats, "training archive raw")
+    raw, filtered, joined, trainable = {}, {}, {}, {}
+    # Validate both complete raw sources before any filtering can hide defects.
+    for name, path in (("baseline", context.baseline_csv), ("candidate", context.candidate_csv)):
+        raw[name] = pd.read_csv(path, dtype={"player_id": str})
+        _reject_duplicate_rows(raw[name], name + " raw")
+        _reject_future_rows(raw[name], name + " raw")
+    for name, path in (("baseline", context.baseline_csv), ("candidate", context.candidate_csv)):
+        filtered[name] = CsvLabels(path, name=name, scale_max=10000.0, min_trades=5).load()
+        # Check the unfiltered join first; positive-value filtering must not hide duplicates.
+        unfiltered_join = stats.merge(filtered[name], on=["player_id", "season"], how="inner")
+        _reject_duplicate_rows(unfiltered_join, name + " joined")
+        joined[name] = build_dataset(stats, _LoadedLabels(name, 10000.0, filtered[name]))
+        data = joined[name]
+        numeric = data[["age", "points", "start_value", "end_value"]].to_numpy(float)
+        trainable[name] = data[
+            data["season"].isin(context.train_seasons)
+            & data["position"].isin(context.positions)
+            & np.isfinite(numeric).all(axis=1)
+        ].sort_values(["season", "player_id"], kind="stable").reset_index(drop=True)
+        _validate_folds(trainable[name], context.train_seasons, context.positions,
+                        context.manifest["walk_forward"]["folds"], name)
+    return {"raw": raw, "filtered": filtered, "joined": joined, "trainable": trainable}
 
 
 def preflight(config: ConfirmationConfig) -> PreflightContext:
@@ -422,6 +524,9 @@ def _preflight(config: ConfirmationConfig) -> PreflightContext:
     registry_path = _config_file(config, config.registry_path, "registry")
     registry, registry_sha = load_canonical_json(registry_path, validate_registry)
     registry_entry = _matching_entry(registry["entries"], 2026, manifest_sha, "registry")
+    for name in ("sealing_commit", "sealed_at"):
+        if registry_entry[name] != manifest[name]:
+            raise ValueError(f"registry {name} mismatch with manifest")
     if registry_entry["status"] != "untouched":
         raise ValueError("2026 registry entry must be untouched")
     registration_path = _config_file(config, config.input_registration_path, "input registration")
@@ -436,30 +541,16 @@ def _preflight(config: ConfirmationConfig) -> PreflightContext:
             raise ValueError(f"registry attestation {key} mismatch")
     target_csv = _repo_file(config.repo_root, registration["target_csv"]["path"], "target CSV")
     target_sidecar = _repo_file(config.repo_root, registration["target_sidecar"]["path"], "target sidecar")
-    for path, entry, name in ((target_csv, registration["target_csv"], "target CSV"), (target_sidecar, registration["target_sidecar"], "target sidecar")):
+    target_stats = _repo_file(config.repo_root, registration["target_stats"]["path"], "target stats")
+    for path, entry, name in ((target_csv, registration["target_csv"], "target CSV"), (target_sidecar, registration["target_sidecar"], "target sidecar"), (target_stats, registration["target_stats"], "target stats")):
         if file_sha256(path) != entry["sha256"]:
             raise ValueError(f"{name} hash mismatch")
-    load_canonical_json(target_sidecar, lambda value: _fields(value, set(value), "target sidecar"))
-    identity = label_export.label_identity(target_csv, manifest_path=target_sidecar)
-    expected_identity_keys = {"sha256", "model_version", "verified", "source", "problems"}
-    if not isinstance(identity, dict) or set(identity) != expected_identity_keys:
-        raise ValueError("target label identity schema drift")
-    expected_provenance = {"sha256": registration["target_csv"]["sha256"], "model_version": "baseline-hl28-v1", "verified": True, "source": "sidecar", "problems": []}
-    if identity != expected_provenance:
-        raise _first_difference(expected_provenance, identity, "target label identity")
-    if registration["provenance"]["identity"] != identity["source"]:
-        raise ValueError("registered target provenance identity mismatch")
+    load_canonical_json(target_sidecar, lambda value: _validate_registered_sidecar(value, registration))
     recipe = registration["recipe"]
     for name, path_key, hash_key in (("sql", "sql_path", "sql_sha256"), ("build", "build_path", "build_sha256")):
         path = _repo_file(config.repo_root, recipe[path_key], "recipe " + name)
         if file_sha256(path) != recipe[hash_key] or recipe[hash_key] != manifest["target_recipe"][name]["sha256"]:
             raise ValueError(f"recipe {name} hash mismatch")
-    raw = pd.read_csv(target_csv, dtype={"player_id": str})
-    if list(raw.columns) != list(_LABEL_COLUMNS):
-        raise ValueError("target CSV build-labels column contract drift")
-    # Derived stat fields are deliberately not presented as market-export
-    # columns to the validator; the loader re-derives and verifies their join.
-    label_export.validate_market_export(raw.loc[:, _RAW_MARKET_COLUMNS], expected_seasons=(2026,))
     training_archive = _repo_file(config.repo_root, manifest["training_data"]["path"], "training archive")
     if file_sha256(training_archive) != manifest["training_data"]["sha256"]:
         raise ValueError("training archive hash mismatch")
@@ -468,14 +559,19 @@ def _preflight(config: ConfirmationConfig) -> PreflightContext:
     for path, entry, name in ((baseline_csv, manifest["baseline"], "baseline CSV"), (candidate_csv, manifest["candidate"], "candidate CSV")):
         if file_sha256(path) != entry["sha256"]:
             raise ValueError(f"{name} hash mismatch")
-        _validate_training_coverage(path, tuple(manifest["train_seasons"]), name)
     context = PreflightContext(manifest=manifest, manifest_sha256=manifest_sha, input_registration=registration,
         input_registration_sha256=registration_sha, holdout_registry=registry, holdout_registry_sha256=registry_sha,
         baseline_csv=baseline_csv, candidate_csv=candidate_csv,
-        training_archive=training_archive, target_csv=target_csv, target_sidecar=target_sidecar, output_path=output_path,
+        training_archive=training_archive, target_csv=target_csv, target_sidecar=target_sidecar, target_stats=target_stats, output_path=output_path,
         train_seasons=tuple(manifest["train_seasons"]), positions=tuple(manifest["positions"]),
         label_filter=registration["target_contract"]["label_filter"], target_recipe=registration["recipe"], target_loader=config.target_loader)
-    _validate_target_frame(config.target_loader(target_csv, training_archive), context)
+    context.training_frames = _prepare_training(context)
+    raw = pd.read_csv(target_csv, dtype={"player_id": str})
+    if list(raw.columns) != list(_LABEL_COLUMNS):
+        raise ValueError("target CSV build-labels column contract drift")
+    # Derived stat fields are verified against the independently registered stats.
+    label_export.validate_market_export(raw.loc[:, _RAW_MARKET_COLUMNS], expected_seasons=(2026,))
+    _validate_target_frame(config.target_loader(target_csv, target_stats), context)
     return context
 
 
@@ -815,6 +911,7 @@ def evaluate_gate(
 
 
 def _fit_label_set(name: str, dataset: pd.DataFrame, target: pd.DataFrame, train_seasons: tuple[int, ...], folds: dict) -> tuple[dict, pd.DataFrame, dict]:
+    _validate_folds(dataset, train_seasons, ("QB", "RB", "TE", "WR"), folds, name)
     fold_results = {}
     for test_season, fold_train_seasons in sorted((int(key), value) for key, value in folds.items()):
         train = dataset[dataset["season"].isin(fold_train_seasons)]
@@ -826,38 +923,16 @@ def _fit_label_set(name: str, dataset: pd.DataFrame, target: pd.DataFrame, train
     training = dataset[dataset["season"].isin(train_seasons)].sort_values(["season", "player_id"], kind="stable")
     fitted = WhatIfModel(label_source=name, scale_max=10000.0).fit(training)
     predictions = target.copy().sort_values(["season", "player_id"], kind="stable")
-    predictions["pred_value"] = fitted.predict(predictions)
+    predictions["pred_value"] = fitted.predict(predictions) if not predictions.empty else pd.Series(dtype=float)
     fit = {"label_source": name, "train_seasons": list(train_seasons), "n_train": len(training), "scale_max": 10000.0}
     return fit, predictions, fold_results
 
 
 def fit_and_score(context: PreflightContext) -> dict:
     """Fit both preregistered models and score their common 2026 cohort."""
-    stats = read_season_stats(context.training_archive)
-    raw_labels = {
-        name: pd.read_csv(path, dtype={"player_id": str})
-        for name, path in (("baseline", context.baseline_csv), ("candidate", context.candidate_csv))
-    }
-    sources = {
-        "baseline": CsvLabels(context.baseline_csv, name="baseline", scale_max=10000.0, min_trades=5),
-        "candidate": CsvLabels(context.candidate_csv, name="candidate", scale_max=10000.0, min_trades=5),
-    }
-    filtered_labels = {name: source.load() for name, source in sources.items()}
-    joined_labels = {
-        name: build_dataset(
-            stats,
-            _LoadedLabels(name=name, scale_max=source.scale_max, frame=filtered_labels[name]),
-        ).loc[:, ["player_id", "season", "position", "age", "points", "start_value", "end_value"]]
-        for name, source in sources.items()
-    }
-    datasets = {
-        name: frame[
-            frame["season"].isin(context.train_seasons)
-            & frame["position"].isin(context.positions)
-            & frame[["age", "points", "start_value", "end_value"]].notna().all(axis=1)
-        ].sort_values(["season", "player_id"], kind="stable").reset_index(drop=True)
-        for name, frame in joined_labels.items()
-    }
+    prepared = context.training_frames if context.training_frames is not None else _prepare_training(context)
+    raw_labels, filtered_labels = prepared["raw"], prepared["filtered"]
+    joined_labels, datasets = prepared["joined"], prepared["trainable"]
     target = context.target_frame.copy().loc[:, ["player_id", "season", "position", "age", "points", "start_value", "end_value"]]
     target["player_id"] = target["player_id"].astype(str)
     target = target.sort_values(["season", "player_id"], kind="stable").reset_index(drop=True)

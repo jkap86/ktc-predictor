@@ -211,7 +211,7 @@ def _context(tmp_path: Path):
         manifest_sha256="a" * 64, input_registration={}, input_registration_sha256="b" * 64,
         holdout_registry={}, holdout_registry_sha256="c" * 64, baseline_csv=baseline_path,
         candidate_csv=candidate_path, training_archive=tmp_path / "stats.zip", target_csv=tmp_path / "target.csv",
-        target_sidecar=tmp_path / "target.json", output_path=tmp_path / "out.json",
+        target_sidecar=tmp_path / "target.json", target_stats=tmp_path / "target-stats.zip", output_path=tmp_path / "out.json",
         train_seasons=(2021, 2022, 2023, 2024, 2025), positions=("QB", "RB", "TE", "WR"),
         label_filter={"positive_values": True, "min_trades": 5}, target_recipe={}, target_loader=lambda *_: target,
     )
@@ -286,3 +286,15 @@ def test_coverage_filtered_stage_uses_loader_dropna_semantics(tmp_path, monkeypa
     assert coverage["baseline"]["trainable"]["total"] == 20
     assert coverage["candidate"]["raw"]["total"] == 20
     assert coverage["candidate"]["filtered"]["total"] == 20
+
+
+def test_missing_walk_forward_history_refuses_before_any_fit(tmp_path, monkeypatch):
+    context, _stats = _context(tmp_path)
+    dataset = pd.read_csv(context.baseline_csv)
+    dataset = dataset[dataset.season != 2023]
+    fits = []
+    monkeypatch.setattr(confirmation.WhatIfModel, "fit", lambda self, frame: fits.append(frame))
+    with pytest.raises(confirmation.PreflightError, match="baseline.*coverage.*2023"):
+        confirmation._fit_label_set("baseline", dataset, context.target_frame, context.train_seasons,
+                                    context.manifest["walk_forward"]["folds"])
+    assert fits == []
