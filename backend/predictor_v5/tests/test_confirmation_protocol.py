@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,27 @@ def test_committed_manifest_is_canonical_and_binds_the_frozen_protocol():
         "backend/predictor_v5/sql/backchannel_labels.sql",
         "backend/predictor_v5/label_export.py",
     }
+
+
+def test_frozen_sql_recipe_has_only_the_announced_2026_cutoff_and_no_target_data():
+    # Break caught: the future export recipe omits, duplicates, or misdates 2026,
+    # changes historical cutoffs/default model, or commits holdout target data.
+    sql = (ROOT / "backend/predictor_v5/sql/backchannel_labels.sql").read_text(encoding="utf-8")
+    values = re.search(r"WITH cutoffs\(season, start_date, end_date\) AS \(\s*VALUES(?P<rows>.*?)\n\)", sql, re.DOTALL)
+    assert values is not None
+    rows = re.findall(r"\((\d+), DATE '([^']+)', DATE '([^']+)'\)", values.group("rows"))
+    assert rows == [
+        ("2019", "2019-09-05", "2019-12-29"),
+        ("2020", "2020-09-10", "2021-01-03"),
+        ("2021", "2021-09-09", "2022-01-09"),
+        ("2022", "2022-09-08", "2023-01-08"),
+        ("2023", "2023-09-07", "2024-01-07"),
+        ("2024", "2024-09-05", "2025-01-05"),
+        ("2025", "2025-09-04", "2026-01-04"),
+        ("2026", "2026-09-09", "2027-01-10"),
+    ]
+    assert "\\set model_version baseline-hl28-v1" in sql
+    assert not (ROOT / "backend/predictor_v5/data/model_2026_confirmation_inputs.json").exists()
 
 
 def test_manifest_rejects_unknown_or_missing_fields():

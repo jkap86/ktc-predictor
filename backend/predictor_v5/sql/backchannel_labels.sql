@@ -31,7 +31,8 @@ WITH cutoffs(season, start_date, end_date) AS (
     (2022, DATE '2022-09-08', DATE '2023-01-08'),
     (2023, DATE '2023-09-07', DATE '2024-01-07'),
     (2024, DATE '2024-09-05', DATE '2025-01-05'),
-    (2025, DATE '2025-09-04', DATE '2026-01-04')
+    (2025, DATE '2025-09-04', DATE '2026-01-04'),
+    (2026, DATE '2026-09-09', DATE '2027-01-10')
 ),
 params AS (
   SELECT CAST(:'model_version' AS text) AS model_version
