@@ -158,7 +158,7 @@ def test_real_preflight_calls_default_loader_once_with_registered_stats(sealed):
     assert context.target_stats == sealed["root"] / "target-stats.zip"
     assert len(context.target_frame) == 4
     assert set(context.target_frame.season) == {2026}
-    assert set(c.read_season_stats(context.training_archive).season) == set(range(2021, 2026))
+    assert set(c._read_registered_stats_archive(context.training_archive, "training archive").season) == set(range(2021, 2026))
 
 
 @pytest.mark.parametrize("source", [
@@ -296,6 +296,73 @@ def test_training_integrity_fails_before_target_or_fit(sealed, name, change, mat
     data.to_csv(path, index=False)
     rebind(e)
     refuse(e, ("baseline" if change == "joined" else name) + ".*" + match)
+
+
+@pytest.mark.parametrize("purpose,filename", [
+    ("training archive", "training.zip"),
+    ("target stats", "target-stats.zip"),
+])
+@pytest.mark.parametrize("corruption,cause", [
+    ("not-zip", "invalid ZIP archive"),
+    ("missing-json", "missing JSON member"),
+    ("malformed-json", "malformed JSON"),
+    ("invalid-structure", "invalid stats structure"),
+    ("invalid-row", "invalid stats row"),
+])
+def test_corrupt_registered_stats_archive_is_preflight_refusal_and_cli_exit_two(
+    sealed, monkeypatch, capsys, purpose, filename, corruption, cause
+):
+    archive_path = sealed["root"] / filename
+    if corruption == "not-zip":
+        archive_path.write_bytes(b"not a zip archive")
+    else:
+        payload = {
+            "missing-json": ("readme.txt", "nothing to parse"),
+            "malformed-json": ("stats.json", "{not-json"),
+            "invalid-structure": ("stats.json", json.dumps({"players": {}})),
+            "invalid-row": ("stats.json", json.dumps({"players": [{
+                "player_id": "QB", "position": "QB", "seasons": [{"age": 25}],
+            }]})),
+        }[corruption]
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr(*payload)
+    rebind(sealed)
+    fits = []
+    monkeypatch.setattr(c.WhatIfModel, "fit", lambda self, frame: fits.append(frame))
+
+    match = rf"{purpose}: {cause}"
+    with pytest.raises(c.PreflightError, match=match):
+        c.preflight(sealed["config"])
+    monkeypatch.setattr(c, "ConfirmationConfig", lambda: sealed["config"])
+    assert cli.main(["confirm-2026"]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert re.search(match, captured.err)
+    assert not sealed["config"].output_dir.exists()
+    assert fits == []
+
+
+def test_unexpected_registered_archive_reader_failure_remains_cli_exit_one(
+    sealed, monkeypatch, capsys
+):
+    fits = []
+    monkeypatch.setattr(c.WhatIfModel, "fit", lambda self, frame: fits.append(frame))
+    monkeypatch.setattr(
+        c.zipfile, "ZipFile",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("reader bug")),
+    )
+    monkeypatch.setattr(c, "ConfirmationConfig", lambda: sealed["config"])
+
+    with pytest.raises(RuntimeError, match="reader bug"):
+        c.preflight(sealed["config"])
+    assert cli.main(["confirm-2026"]) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "reader bug\n"
+    assert not sealed["config"].output_dir.exists()
+    assert fits == []
 
 
 @pytest.mark.parametrize("field,value,match", [

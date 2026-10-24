@@ -236,7 +236,7 @@ def test_fit_and_score_uses_exact_windows_common_target_and_is_deterministic(tmp
             return frame["start_value"].to_numpy(float) * ratio
 
     monkeypatch.setattr(confirmation, "WhatIfModel", FakeModel)
-    monkeypatch.setattr(confirmation, "read_season_stats", lambda _: stats)
+    monkeypatch.setattr(confirmation, "_read_registered_stats_archive", lambda _path, _purpose: stats)
     first = confirmation.fit_and_score(context)
     context.target_frame = context.target_frame.sample(frac=1, random_state=4)
     second = confirmation.fit_and_score(context)
@@ -276,7 +276,7 @@ def test_coverage_filtered_stage_uses_loader_dropna_semantics(tmp_path, monkeypa
             return frame["start_value"].to_numpy(float)
 
     monkeypatch.setattr(confirmation, "WhatIfModel", FakeModel)
-    monkeypatch.setattr(confirmation, "read_season_stats", lambda _: stats)
+    monkeypatch.setattr(confirmation, "_read_registered_stats_archive", lambda _path, _purpose: stats)
 
     coverage = confirmation.fit_and_score(context)["diagnostics"]["coverage"]["training"]
 

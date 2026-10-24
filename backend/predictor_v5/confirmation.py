@@ -8,6 +8,7 @@ import os
 import platform
 import subprocess
 import tempfile
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,7 +21,7 @@ import pandas as pd
 import sklearn
 
 from predictor_v5 import label_export, model
-from predictor_v5.data import build_dataset, read_season_stats
+from predictor_v5.data import build_dataset
 from predictor_v5.evaluate import summarize_exact
 from predictor_v5.labels import CsvLabels
 from predictor_v5.model import WhatIfModel
@@ -405,7 +406,7 @@ def _config_file(config: ConfirmationConfig, value: Path, context: str) -> Path:
 def _default_target_loader(target_csv: Path, target_stats: Path) -> pd.DataFrame:
     values = pd.read_csv(target_csv, dtype={"player_id": str})
     label_export.validate_market_export(values, expected_seasons=(2026,), model_version="baseline-hl28-v1")
-    stats = read_season_stats(target_stats)
+    stats = _read_registered_stats_archive(target_stats, "target stats")
     if set(stats["season"]) != {2026}:
         raise ValueError("target stats must contain only season 2026")
     joined = label_export.build_label_frame(values, stats)
@@ -470,6 +471,54 @@ def _reject_future_rows(data: pd.DataFrame, source: str) -> None:
         raise PreflightError(f"{source} future leakage count={len(bad)} sample={bad[['player_id', 'season']].head().to_dict('records')}")
 
 
+def _read_registered_stats_archive(path: Path, purpose: str) -> pd.DataFrame:
+    """Read a hash-verified stats ZIP, classifying only known input defects."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            member = next((name for name in archive.namelist() if name.endswith(".json")), None)
+            if member is None:
+                raise ValueError(f"{purpose}: missing JSON member")
+            raw = archive.read(member)
+    except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
+        raise ValueError(f"{purpose}: invalid ZIP archive ({error})") from error
+    try:
+        payload = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{purpose}: malformed JSON ({error})") from error
+    if not isinstance(payload, dict) or not isinstance(payload.get("players"), list):
+        raise ValueError(f"{purpose}: invalid stats structure (players must be a list)")  # noqa: TRY004 -- input refusal
+    rows = []
+    try:
+        for player in payload["players"]:
+            if not isinstance(player, dict):
+                raise TypeError("player must be an object")
+            position = player["position"]
+            if position not in ("QB", "RB", "TE", "WR"):
+                continue
+            str(player["player_id"])
+            seasons = player.get("seasons", [])
+            if not isinstance(seasons, list):
+                raise TypeError("seasons must be a list")
+            for season in seasons:
+                if not isinstance(season, dict):
+                    raise TypeError("season must be an object")
+                rows.append({
+                    "player_id": str(player["player_id"]),
+                    "name": player.get("name"),
+                    "season": int(season["year"]),
+                    "position": position,
+                    "age": float(season["age"]),
+                    "points": float(season.get("fantasy_points") or 0.0),
+                    "games": int(season.get("games_played") or 0),
+                    "years_exp": int(season["years_exp"]) if season.get("years_exp") is not None else -1,
+                })
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise ValueError(f"{purpose}: invalid stats row ({error})") from error
+    return pd.DataFrame(rows, columns=(
+        "player_id", "name", "season", "position", "age", "points", "games", "years_exp",
+    ))
+
+
 def _require_coverage(data: pd.DataFrame, seasons, positions, source: str) -> None:
     actual = set(zip(data["season"], data["position"]))
     missing = [(season, position) for season in seasons for position in positions if (season, position) not in actual]
@@ -485,7 +534,7 @@ def _validate_folds(data: pd.DataFrame, seasons, positions, folds: dict, source:
 
 
 def _prepare_training(context: PreflightContext) -> dict:
-    stats = read_season_stats(context.training_archive)
+    stats = _read_registered_stats_archive(context.training_archive, "training archive")
     _reject_future_rows(stats, "training archive raw")
     raw, filtered, joined, trainable = {}, {}, {}, {}
     # Validate both complete raw sources before any filtering can hide defects.
