@@ -7,10 +7,14 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, Tuple
 
+import numpy as np
 import pandas as pd
 
 from predictor_v5 import label_export, model
-from predictor_v5.data import read_season_stats
+from predictor_v5.data import build_dataset, read_season_stats
+from predictor_v5.evaluate import summarize_exact
+from predictor_v5.labels import CsvLabels
+from predictor_v5.model import WhatIfModel
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -469,6 +473,304 @@ def _preflight(config: ConfirmationConfig) -> PreflightContext:
 
 
 def run_confirmation(config: ConfirmationConfig) -> dict:
-    """Reserve confirmation execution behind preflight; scoring is intentionally separate."""
+    """Preflight every sealed input, then execute the fixed confirmation."""
     context = preflight(config)
-    return {"status": "preflight-passed", "output_path": str(context.output_path)}
+    return fit_and_score(context)
+
+
+_SCORED_COLUMNS = [
+    "player_id", "season", "position", "start_value", "end_value", "pred_value",
+    "abs_error", "no_change_abs_error", "residual",
+]
+_DIAGNOSTIC_TAGS = {"used_for_configuration": False, "used_for_promotion": False}
+
+
+def score_predictions(
+    predictions: pd.DataFrame,
+    target: pd.DataFrame,
+    keys: list[tuple[str, int]],
+) -> pd.DataFrame:
+    """Apply model-relative changes to one shared target value scale."""
+    normalized_keys = sorted((str(player_id), int(season)) for player_id, season in keys)
+    index = pd.MultiIndex.from_tuples(normalized_keys, names=["player_id", "season"])
+    own = predictions.assign(
+        player_id=predictions["player_id"].astype(str), season=predictions["season"].astype(int)
+    ).set_index(["player_id", "season"])
+    truth = target.assign(
+        player_id=target["player_id"].astype(str), season=target["season"].astype(int)
+    ).set_index(["player_id", "season"])
+    missing = [key for key in normalized_keys if key not in own.index or key not in truth.index]
+    if missing:
+        raise KeyError("keys missing from predictions or target: %s" % missing[:5])
+    own = own.loc[index]
+    truth = truth.loc[index]
+    pred_value = (
+        truth["start_value"].to_numpy(float)
+        * own["pred_value"].to_numpy(float)
+        / own["start_value"].to_numpy(float)
+    )
+    end_value = truth["end_value"].to_numpy(float)
+    start_value = truth["start_value"].to_numpy(float)
+    scored = pd.DataFrame({
+        "player_id": [key[0] for key in normalized_keys],
+        "season": [key[1] for key in normalized_keys],
+        "position": truth["position"].astype(str).to_numpy(),
+        "start_value": start_value,
+        "end_value": end_value,
+        "pred_value": pred_value,
+        "abs_error": np.abs(pred_value - end_value),
+        "no_change_abs_error": np.abs(start_value - end_value),
+        "residual": pred_value - end_value,
+    })
+    return scored.loc[:, _SCORED_COLUMNS]
+
+
+def summarize_metrics(scored: pd.DataFrame) -> dict:
+    """Return full-precision error and residual diagnostics."""
+    if scored.empty:
+        return {
+            "n": 0, "mae": None, "median_absolute_error": None, "p90_absolute_error": None,
+            "signed_residual_mean": None,
+            "residual_summary": {"min": None, "p10": None, "median": None, "p90": None, "max": None},
+            **_DIAGNOSTIC_TAGS,
+        }
+    errors = scored["abs_error"].to_numpy(float)
+    residuals = scored["residual"].to_numpy(float)
+    return {
+        "n": int(len(scored)),
+        "mae": float(np.mean(errors)),
+        "median_absolute_error": float(np.median(errors)),
+        "p90_absolute_error": float(np.percentile(errors, 90)),
+        "signed_residual_mean": float(np.mean(residuals)),
+        "residual_summary": {
+            "min": float(np.min(residuals)),
+            "p10": float(np.percentile(residuals, 10)),
+            "median": float(np.median(residuals)),
+            "p90": float(np.percentile(residuals, 90)),
+            "max": float(np.max(residuals)),
+        },
+        **_DIAGNOSTIC_TAGS,
+    }
+
+
+def _coverage_counts(frame: pd.DataFrame) -> dict:
+    by_season = frame.groupby("season", sort=True).size() if "season" in frame else pd.Series(dtype=int)
+    by_position = frame.groupby("position", sort=True).size() if "position" in frame else pd.Series(dtype=int)
+    return {
+        "total": int(len(frame)),
+        "by_season": {str(int(key)): int(value) for key, value in by_season.items()},
+        "by_position": {str(key): int(value) for key, value in by_position.items()},
+    }
+
+
+def coverage_report(raw, filtered, joined, trainable, one_sided, matched, missing) -> dict:
+    """Count each fixed cohort stage by season and position."""
+    return {
+        "raw": _coverage_counts(raw),
+        "filtered": _coverage_counts(filtered),
+        "joined": _coverage_counts(joined),
+        "trainable": _coverage_counts(trainable),
+        "one_sided": _coverage_counts(one_sided),
+        "matched": _coverage_counts(matched),
+        "missing": _coverage_counts(missing),
+        **_DIAGNOSTIC_TAGS,
+    }
+
+
+def bootstrap_delta(
+    scored: pd.DataFrame,
+    seed: int = 20261024,
+    resamples: int = 10000,
+    percentile: tuple[float, float] = (2.5, 97.5),
+) -> dict:
+    """Bootstrap paired candidate-minus-baseline absolute-error deltas."""
+    ordered = scored.copy()
+    sort_columns = [column for column in ("season", "player_id") if column in ordered]
+    if sort_columns:
+        ordered = ordered.sort_values(sort_columns, kind="stable")
+    delta = (
+        ordered["candidate_abs_error"].to_numpy(float)
+        - ordered["baseline_abs_error"].to_numpy(float)
+    )
+    if not len(delta):
+        interval = {"lower": None, "upper": None, "percentile": [float(percentile[0]), float(percentile[1])]}
+        return {
+            "n": 0, "mean_delta": None, "median_delta": None, "candidate_wins": 0, "ties": 0,
+            "candidate_losses": 0, "interval": interval, "seed": int(seed), "resamples": int(resamples),
+            **_DIAGNOSTIC_TAGS,
+        }
+    rng = np.random.default_rng(seed)
+    sampled = delta[rng.integers(0, len(delta), size=(resamples, len(delta)))].mean(axis=1)
+    bounds = np.percentile(sampled, percentile)
+    return {
+        "n": int(len(delta)),
+        "mean_delta": float(np.mean(delta)),
+        "median_delta": float(np.median(delta)),
+        "candidate_wins": int(np.sum(delta < 0)),
+        "ties": int(np.sum(delta == 0)),
+        "candidate_losses": int(np.sum(delta > 0)),
+        "interval": {"lower": float(bounds[0]), "upper": float(bounds[1]), "percentile": [float(percentile[0]), float(percentile[1])]},
+        "seed": int(seed),
+        "resamples": int(resamples),
+        **_DIAGNOSTIC_TAGS,
+    }
+
+
+def _score_summary(scored: pd.DataFrame) -> dict:
+    return {
+        "overall": summarize_exact(scored),
+        "by_position": {
+            str(position): summarize_exact(group)
+            for position, group in scored.groupby("position", sort=True)
+        },
+    }
+
+
+def evaluate_gate(
+    baseline: dict,
+    candidate: dict,
+    positions: tuple[str, ...],
+    minimum_gain: float = 0.02,
+    maximum_position_drop: float = 0.05,
+    minimum_position_count: int = 30,
+) -> dict:
+    """Evaluate the preregistered promotion gate without display rounding."""
+    reasons = []
+    base_overall, candidate_overall = baseline["overall"], candidate["overall"]
+    if not base_overall.get("n") or not candidate_overall.get("n"):
+        reasons.append("empty_overlap")
+    if not base_overall.get("no_change_mae") or not candidate_overall.get("no_change_mae"):
+        reasons.append("zero_no_change_mae")
+    base_skill, candidate_skill = base_overall.get("skill"), candidate_overall.get("skill")
+    gain = None if base_skill is None or candidate_skill is None else candidate_skill - base_skill
+    if gain is None:
+        reasons.append("missing_overall_skill")
+    elif gain < minimum_gain:
+        reasons.append("minimum_gain_not_met")
+    position_deltas = {}
+    for position in positions:
+        base_position = baseline.get("by_position", {}).get(position)
+        candidate_position = candidate.get("by_position", {}).get(position)
+        if base_position is None or candidate_position is None:
+            reasons.append("missing_position:%s" % position)
+            continue
+        if base_position.get("n", 0) < minimum_position_count or candidate_position.get("n", 0) < minimum_position_count:
+            reasons.append("insufficient_position_count:%s" % position)
+        left, right = base_position.get("skill"), candidate_position.get("skill")
+        if left is None or right is None:
+            reasons.append("missing_position_skill:%s" % position)
+            continue
+        position_deltas[position] = right - left
+        if position_deltas[position] < -maximum_position_drop:
+            reasons.append("maximum_position_drop_exceeded:%s" % position)
+    return {
+        "passed": not reasons,
+        "gain": gain,
+        "position_skill_deltas": position_deltas,
+        "thresholds": {
+            "minimum_gain": minimum_gain,
+            "maximum_position_drop": maximum_position_drop,
+            "minimum_position_count": minimum_position_count,
+        },
+        "reasons": reasons,
+    }
+
+
+def _fit_label_set(name: str, dataset: pd.DataFrame, target: pd.DataFrame, train_seasons: tuple[int, ...], folds: dict) -> tuple[dict, pd.DataFrame, dict]:
+    fold_results = {}
+    for test_season, fold_train_seasons in sorted((int(key), value) for key, value in folds.items()):
+        train = dataset[dataset["season"].isin(fold_train_seasons)]
+        test = dataset[dataset["season"] == test_season].copy()
+        fitted = WhatIfModel(label_source=name, scale_max=10000.0).fit(train)
+        test["pred_value"] = fitted.predict(test)
+        fold_scored = score_predictions(test, test, list(zip(test["player_id"].astype(str), test["season"].astype(int))))
+        fold_results[str(test_season)] = {"train_seasons": list(fold_train_seasons), "metrics": summarize_metrics(fold_scored), **_DIAGNOSTIC_TAGS}
+    training = dataset[dataset["season"].isin(train_seasons)].sort_values(["season", "player_id"], kind="stable")
+    fitted = WhatIfModel(label_source=name, scale_max=10000.0).fit(training)
+    predictions = target.copy().sort_values(["season", "player_id"], kind="stable")
+    predictions["pred_value"] = fitted.predict(predictions)
+    fit = {"label_source": name, "train_seasons": list(train_seasons), "n_train": int(len(training)), "scale_max": 10000.0}
+    return fit, predictions, fold_results
+
+
+def fit_and_score(context: PreflightContext) -> dict:
+    """Fit both preregistered models and score their common 2026 cohort."""
+    stats = read_season_stats(context.training_archive)
+    raw_labels = {
+        name: pd.read_csv(path, dtype={"player_id": str})
+        for name, path in (("baseline", context.baseline_csv), ("candidate", context.candidate_csv))
+    }
+    filtered_labels = {
+        name: frame[
+            (frame["start_value"] > 0)
+            & (frame["end_value"] > 0)
+            & (frame["start_trades_window"] >= 5)
+            & (frame["end_trades_window"] >= 5)
+        ]
+        for name, frame in raw_labels.items()
+    }
+    sources = {
+        "baseline": CsvLabels(context.baseline_csv, name="baseline", scale_max=10000.0, min_trades=5),
+        "candidate": CsvLabels(context.candidate_csv, name="candidate", scale_max=10000.0, min_trades=5),
+    }
+    datasets = {
+        name: build_dataset(stats, source).loc[:, ["player_id", "season", "position", "age", "points", "start_value", "end_value"]]
+        for name, source in sources.items()
+    }
+    target = context.target_frame.copy().loc[:, ["player_id", "season", "position", "age", "points", "start_value", "end_value"]]
+    target["player_id"] = target["player_id"].astype(str)
+    target = target.sort_values(["season", "player_id"], kind="stable").reset_index(drop=True)
+    folds = context.manifest["walk_forward"]["folds"]
+    fits, predictions, walk_forward = {}, {}, {}
+    for name in ("baseline", "candidate"):
+        fits[name], predictions[name], walk_forward[name] = _fit_label_set(name, datasets[name], target, context.train_seasons, folds)
+    key_sets = {
+        name: set(zip(frame["player_id"].astype(str), frame["season"].astype(int)))
+        for name, frame in predictions.items()
+    }
+    keys = sorted(key_sets["baseline"] & key_sets["candidate"])
+    scored = {name: score_predictions(predictions[name], target, keys) for name in ("baseline", "candidate")}
+    summaries = {name: _score_summary(scored[name]) for name in ("baseline", "candidate")}
+    gate_config = context.manifest["gate"]
+    gate = evaluate_gate(
+        summaries["baseline"], summaries["candidate"], context.positions,
+        minimum_gain=gate_config["minimum_gain"],
+        maximum_position_drop=gate_config["maximum_position_drop"],
+        minimum_position_count=gate_config["minimum_position_count"],
+    )
+    paired = scored["baseline"][["player_id", "season", "abs_error"]].rename(columns={"abs_error": "baseline_abs_error"}).merge(
+        scored["candidate"][["player_id", "season", "abs_error"]].rename(columns={"abs_error": "candidate_abs_error"}),
+        on=["player_id", "season"], validate="one_to_one",
+    )
+    bootstrap = context.manifest["bootstrap"]
+    prediction_key_sets = key_sets
+    one_sided_keys = prediction_key_sets["baseline"] ^ prediction_key_sets["candidate"]
+    missing_keys = set(zip(target["player_id"], target["season"])) - set(keys)
+    raw_coverage = pd.concat(raw_labels.values(), ignore_index=True)
+    filtered_coverage = pd.concat(filtered_labels.values(), ignore_index=True)
+    joined_coverage = pd.concat(datasets.values(), ignore_index=True)
+    coverage = coverage_report(
+        raw_coverage, filtered_coverage, joined_coverage, joined_coverage,
+        target.loc[[key in one_sided_keys for key in zip(target.player_id, target.season)]],
+        target.loc[[key in set(keys) for key in zip(target.player_id, target.season)]],
+        target.loc[[key in missing_keys for key in zip(target.player_id, target.season)]],
+    )
+    diagnostics = {
+        "walk_forward": {"folds": {str(key): list(value) for key, value in folds.items()}, "results": walk_forward, **_DIAGNOSTIC_TAGS},
+        "baseline_metrics": {"overall": summarize_metrics(scored["baseline"]), "by_position": {p: summarize_metrics(g) for p, g in scored["baseline"].groupby("position", sort=True)}, **_DIAGNOSTIC_TAGS},
+        "candidate_metrics": {"overall": summarize_metrics(scored["candidate"]), "by_position": {p: summarize_metrics(g) for p, g in scored["candidate"].groupby("position", sort=True)}, **_DIAGNOSTIC_TAGS},
+        "coverage": coverage,
+        "bootstrap_delta": bootstrap_delta(paired, seed=bootstrap["seed"], resamples=bootstrap["resamples"], percentile=tuple(bootstrap["percentiles"])),
+    }
+    passed = gate["passed"]
+    decision = {
+        "status": "recommend_promotion" if passed else "retain",
+        "gate_evaluated": True,
+        "gate_passed": passed,
+        "promotion_authorized": False,
+        "reason": "gate_passed" if passed else ";".join(gate["reasons"]),
+        "manifest_sha256": context.manifest_sha256,
+        "input_registration_sha256": context.input_registration_sha256,
+        "holdout_registry_sha256": context.holdout_registry_sha256,
+    }
+    return {"fits": fits, "cohort": {"n": len(keys), **summaries}, "gate": gate, "diagnostics": diagnostics, "decision": decision}
