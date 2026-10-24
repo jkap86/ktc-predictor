@@ -3,8 +3,10 @@
 import hashlib
 import inspect
 import json
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from numbers import Integral, Real
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -564,15 +566,22 @@ def _coverage_counts(frame: pd.DataFrame) -> dict:
 
 
 def coverage_report(raw, filtered, joined, trainable, one_sided, matched, missing) -> dict:
-    """Count each fixed cohort stage by season and position."""
+    """Count per-source training funnels and unique target cohorts."""
+    training = {}
+    for source in ("baseline", "candidate"):
+        training[source] = {
+            "raw": _coverage_counts(raw[source]),
+            "filtered": _coverage_counts(filtered[source]),
+            "joined": _coverage_counts(joined[source]),
+            "trainable": _coverage_counts(trainable[source]),
+        }
     return {
-        "raw": _coverage_counts(raw),
-        "filtered": _coverage_counts(filtered),
-        "joined": _coverage_counts(joined),
-        "trainable": _coverage_counts(trainable),
-        "one_sided": _coverage_counts(one_sided),
-        "matched": _coverage_counts(matched),
-        "missing": _coverage_counts(missing),
+        "training": training,
+        "target": {
+            "one_sided": _coverage_counts(one_sided),
+            "matched": _coverage_counts(matched),
+            "missing": _coverage_counts(missing),
+        },
         **_DIAGNOSTIC_TAGS,
     }
 
@@ -637,15 +646,32 @@ def evaluate_gate(
     """Evaluate the preregistered promotion gate without display rounding."""
     reasons = []
     base_overall, candidate_overall = baseline["overall"], candidate["overall"]
-    if not base_overall.get("n") or not candidate_overall.get("n"):
-        reasons.append("empty_overlap")
-    if not base_overall.get("no_change_mae") or not candidate_overall.get("no_change_mae"):
-        reasons.append("zero_no_change_mae")
+
+    def valid_count(value) -> bool:
+        return isinstance(value, Integral) and not isinstance(value, bool) and value >= 0
+
+    def finite(value) -> bool:
+        return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(value)
+
+    for name, summary in (("baseline", base_overall), ("candidate", candidate_overall)):
+        count = summary.get("n")
+        if not valid_count(count):
+            reasons.append(f"invalid_overall_n:{name}")
+        elif count == 0:
+            reasons.append("empty_overlap")
+        no_change_mae = summary.get("no_change_mae")
+        if not finite(no_change_mae):
+            reasons.append(f"invalid_overall_no_change_mae:{name}")
+        elif no_change_mae <= 0:
+            reasons.append("zero_no_change_mae")
+        if not finite(summary.get("skill")):
+            reasons.append(f"invalid_overall_skill:{name}")
     base_skill, candidate_skill = base_overall.get("skill"), candidate_overall.get("skill")
-    gain = None if base_skill is None or candidate_skill is None else candidate_skill - base_skill
-    if gain is None:
-        reasons.append("missing_overall_skill")
-    elif gain < minimum_gain:
+    gain = candidate_skill - base_skill if finite(base_skill) and finite(candidate_skill) else None
+    if gain is not None and not finite(gain):
+        reasons.append("invalid_gain")
+        gain = None
+    elif gain is not None and gain < minimum_gain:
         reasons.append("minimum_gain_not_met")
     position_deltas = {}
     for position in positions:
@@ -654,14 +680,29 @@ def evaluate_gate(
         if base_position is None or candidate_position is None:
             reasons.append(f"missing_position:{position}")
             continue
-        if base_position.get("n", 0) < minimum_position_count or candidate_position.get("n", 0) < minimum_position_count:
-            reasons.append(f"insufficient_position_count:{position}")
+        position_valid = True
+        for name, summary in (("baseline", base_position), ("candidate", candidate_position)):
+            count = summary.get("n")
+            if not valid_count(count):
+                reasons.append(f"invalid_position_n:{name}:{position}")
+                position_valid = False
+            elif count < minimum_position_count:
+                reasons.append(f"insufficient_position_count:{position}")
+            no_change_mae = summary.get("no_change_mae")
+            if not finite(no_change_mae) or no_change_mae <= 0:
+                reasons.append(f"invalid_position_no_change_mae:{name}:{position}")
+                position_valid = False
+            if not finite(summary.get("skill")):
+                reasons.append(f"invalid_position_skill:{name}:{position}")
+                position_valid = False
         left, right = base_position.get("skill"), candidate_position.get("skill")
-        if left is None or right is None:
-            reasons.append(f"missing_position_skill:{position}")
+        if not position_valid or not finite(left) or not finite(right):
             continue
         position_deltas[position] = right - left
-        if position_deltas[position] < -maximum_position_drop:
+        if not finite(position_deltas[position]):
+            reasons.append(f"invalid_position_delta:{position}")
+            del position_deltas[position]
+        elif position_deltas[position] < -maximum_position_drop:
             reasons.append(f"maximum_position_drop_exceeded:{position}")
     return {
         "passed": not reasons,
@@ -713,9 +754,17 @@ def fit_and_score(context: PreflightContext) -> dict:
         "baseline": CsvLabels(context.baseline_csv, name="baseline", scale_max=10000.0, min_trades=5),
         "candidate": CsvLabels(context.candidate_csv, name="candidate", scale_max=10000.0, min_trades=5),
     }
-    datasets = {
+    joined_labels = {
         name: build_dataset(stats, source).loc[:, ["player_id", "season", "position", "age", "points", "start_value", "end_value"]]
         for name, source in sources.items()
+    }
+    datasets = {
+        name: frame[
+            frame["season"].isin(context.train_seasons)
+            & frame["position"].isin(context.positions)
+            & frame[["age", "points", "start_value", "end_value"]].notna().all(axis=1)
+        ].sort_values(["season", "player_id"], kind="stable").reset_index(drop=True)
+        for name, frame in joined_labels.items()
     }
     target = context.target_frame.copy().loc[:, ["player_id", "season", "position", "age", "points", "start_value", "end_value"]]
     target["player_id"] = target["player_id"].astype(str)
@@ -746,11 +795,8 @@ def fit_and_score(context: PreflightContext) -> dict:
     prediction_key_sets = key_sets
     one_sided_keys = prediction_key_sets["baseline"] ^ prediction_key_sets["candidate"]
     missing_keys = set(zip(target["player_id"], target["season"])) - set(keys)
-    raw_coverage = pd.concat(raw_labels.values(), ignore_index=True)
-    filtered_coverage = pd.concat(filtered_labels.values(), ignore_index=True)
-    joined_coverage = pd.concat(datasets.values(), ignore_index=True)
     coverage = coverage_report(
-        raw_coverage, filtered_coverage, joined_coverage, joined_coverage,
+        raw_labels, filtered_labels, joined_labels, datasets,
         target.loc[[key in one_sided_keys for key in zip(target.player_id, target.season)]],
         target.loc[[key in set(keys) for key in zip(target.player_id, target.season)]],
         target.loc[[key in missing_keys for key in zip(target.player_id, target.season)]],

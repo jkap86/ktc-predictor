@@ -63,9 +63,28 @@ def test_coverage_and_bootstrap_have_stable_shapes_and_tags():
         {"season": 2022, "position": "WR"},
     ])
     empty = raw.iloc[0:0]
-    coverage = confirmation.coverage_report(raw, raw.iloc[:2], raw.iloc[:1], raw.iloc[:1], empty, raw.iloc[:1], empty)
-    assert coverage["raw"] == {"total": 3, "by_season": {"2021": 2, "2022": 1}, "by_position": {"QB": 2, "WR": 1}}
-    assert set(coverage) == {"raw", "filtered", "joined", "trainable", "one_sided", "matched", "missing", "used_for_configuration", "used_for_promotion"}
+    training = {
+        "baseline": {"raw": raw, "filtered": raw.iloc[:2], "joined": raw.iloc[:1], "trainable": raw.iloc[:1]},
+        "candidate": {"raw": raw.iloc[:2], "filtered": raw.iloc[:1], "joined": empty, "trainable": empty},
+    }
+    coverage = confirmation.coverage_report(
+        {name: stages["raw"] for name, stages in training.items()},
+        {name: stages["filtered"] for name, stages in training.items()},
+        {name: stages["joined"] for name, stages in training.items()},
+        {name: stages["trainable"] for name, stages in training.items()},
+        empty, raw.iloc[:1], raw.iloc[1:2],
+    )
+    assert coverage["training"]["baseline"] == {
+        "raw": {"total": 3, "by_season": {"2021": 2, "2022": 1}, "by_position": {"QB": 2, "WR": 1}},
+        "filtered": {"total": 2, "by_season": {"2021": 2}, "by_position": {"QB": 2}},
+        "joined": {"total": 1, "by_season": {"2021": 1}, "by_position": {"QB": 1}},
+        "trainable": {"total": 1, "by_season": {"2021": 1}, "by_position": {"QB": 1}},
+    }
+    assert coverage["training"]["candidate"]["raw"]["total"] == 2
+    assert coverage["training"]["candidate"]["trainable"]["total"] == 0
+    assert coverage["target"]["matched"]["total"] == 1
+    assert coverage["target"]["missing"]["total"] == 1
+    assert set(coverage) == {"training", "target", "used_for_configuration", "used_for_promotion"}
     assert coverage["used_for_configuration"] is coverage["used_for_promotion"] is False
 
     paired = _scored([1.0, 2.0, 3.0]).rename(columns={"abs_error": "baseline_abs_error"})
@@ -114,6 +133,46 @@ def test_gate_retains_when_evidence_is_insufficient(case):
     gate = confirmation.evaluate_gate(baseline, candidate, positions)
     assert gate["passed"] is False
     assert gate["reasons"]
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("field", ["n", "no_change_mae", "skill"])
+def test_gate_retains_for_non_finite_overall_metrics(field, bad):
+    positions = ("QB", "RB", "TE", "WR")
+    baseline = {"overall": _summary(0.10), "by_position": {p: _summary(0.10) for p in positions}}
+    candidate = {"overall": _summary(0.13), "by_position": {p: _summary(0.13) for p in positions}}
+    candidate["overall"][field] = bad
+
+    gate = confirmation.evaluate_gate(baseline, candidate, positions)
+
+    assert gate["passed"] is False
+    assert any(reason.startswith(f"invalid_overall_{field}:candidate") for reason in gate["reasons"])
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("field", ["n", "no_change_mae", "skill"])
+def test_gate_retains_for_non_finite_position_metrics(field, bad):
+    positions = ("QB", "RB", "TE", "WR")
+    baseline = {"overall": _summary(0.10), "by_position": {p: _summary(0.10) for p in positions}}
+    candidate = {"overall": _summary(0.13), "by_position": {p: _summary(0.13) for p in positions}}
+    candidate["by_position"]["QB"][field] = bad
+
+    gate = confirmation.evaluate_gate(baseline, candidate, positions)
+
+    assert gate["passed"] is False
+    assert any(reason.startswith(f"invalid_position_{field}:candidate:QB") for reason in gate["reasons"])
+
+
+def test_gate_retains_when_derived_gain_or_position_delta_overflows():
+    positions = ("QB", "RB", "TE", "WR")
+    baseline = {"overall": _summary(-1e308), "by_position": {p: _summary(-1e308) for p in positions}}
+    candidate = {"overall": _summary(1e308), "by_position": {p: _summary(1e308) for p in positions}}
+
+    gate = confirmation.evaluate_gate(baseline, candidate, positions)
+
+    assert gate["passed"] is False
+    assert "invalid_gain" in gate["reasons"]
+    assert "invalid_position_delta:QB" in gate["reasons"]
 
 
 def _context(tmp_path: Path):
