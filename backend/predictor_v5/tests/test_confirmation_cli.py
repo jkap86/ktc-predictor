@@ -1,10 +1,28 @@
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
 from predictor_v5 import __main__ as cli
 from predictor_v5 import confirmation
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_confirmation_keeps_existing_cli_imports_and_rejects_promotion_authorization(tmp_path):
+    # Break caught: confirmation rewires existing CLI dependencies or emits an authorizing report.
+    source = (ROOT / "backend/predictor_v5/__main__.py").read_text(encoding="utf-8")
+    for statement in (
+        "from predictor_v5.data import DEFAULT_ZIP, build_dataset, load_season_stats",
+        "from predictor_v5.evaluate import evaluate, holdout",
+        "from predictor_v5.labels import get_label_source",
+        "from predictor_v5.model import WhatIfModel",
+    ):
+        assert statement in source
+
+    with pytest.raises(ValueError, match="promotion_authorized"):
+        confirmation.write_report({"decision": {"promotion_authorized": True}}, tmp_path / "confirmation.json")
 
 
 def test_write_report_hashes_only_the_enriched_payload_and_writes_canonical_bytes(tmp_path, monkeypatch):

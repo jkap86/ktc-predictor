@@ -1,9 +1,23 @@
 """Fail-closed registration checks run before a target can be loaded."""
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
-import predictor_v5.confirmation as confirmation
+from predictor_v5 import confirmation
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_confirmation_does_not_change_deployment_runtime_configuration():
+    # Break caught: experimental confirmation alters the deployed process or Python runtime.
+    assert (ROOT / "Procfile").read_text(encoding="utf-8") == (
+        "web: cd backend && LOKY_MAX_CPU_COUNT=1 gunicorn app.main:app "
+        "--worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT "
+        "--timeout 120 --graceful-timeout 15\n"
+    )
+    assert (ROOT / "runtime.txt").read_text(encoding="utf-8") == "python-3.11.11\n"
 
 
 def _write(path, value):

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,12 +13,33 @@ from predictor_v5.confirmation import (
     load_canonical_json,
     sha256_bytes,
     validate_manifest,
-    validate_repo_relative_path,
     validate_registry,
+    validate_repo_relative_path,
 )
 
-
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_confirmation_branch_scope_excludes_deployment_surfaces():
+    # Break caught: confirmation work changes the serving, UI, model, or runtime surface.
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "origin/master...HEAD"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert set(result.stdout.splitlines()) <= {
+        "backend/predictor_v5/__main__.py",
+        "backend/predictor_v5/confirmation.py",
+        "backend/predictor_v5/data/model_2026_confirmation_manifest.json",
+        "backend/predictor_v5/data/model_2026_holdout_registry.json",
+        "backend/predictor_v5/tests/test_confirmation_cli.py",
+        "backend/predictor_v5/tests/test_confirmation_preflight.py",
+        "backend/predictor_v5/tests/test_confirmation_protocol.py",
+        "backend/predictor_v5/tests/test_confirmation_scoring.py",
+    }
 
 
 def _canonical(value):

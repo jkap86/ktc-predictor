@@ -3,7 +3,23 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from predictor_v5 import confirmation
+from predictor_v5 import confirmation, model
+
+
+def test_confirmation_preserves_the_serving_model_constants():
+    # Break caught: confirmation changes the predictor that production requests use.
+    assert model.FEATURES == ["log_start", "age", "points", "position_code"]
+    assert model.MONOTONIC == [0, 0, 1, 0]
+    assert model.HGB_PARAMS == {
+        "loss": "absolute_error",
+        "max_iter": 300,
+        "learning_rate": 0.05,
+        "max_leaf_nodes": 15,
+        "min_samples_leaf": 20,
+        "l2_regularization": 1.0,
+        "random_state": 0,
+    }
+    assert model.POINTS_GRID_STEP == 1.0
 
 
 def _scored(errors, residuals=None):
