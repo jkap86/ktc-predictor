@@ -204,3 +204,49 @@ def test_confirm_unexpected_or_write_failure_exits_one(tmp_path, monkeypatch, ca
     assert captured.out == ""
     assert captured.err == "disk full\n"
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["confirm-2026", "--labels", "ktc"],
+        ["--labels", "ktc", "confirm-2026"],
+        ["confirm-2026", "extra"],
+    ],
+)
+def test_confirm_rejects_options_or_extra_arguments(argv, capsys):
+    # Break caught: confirmation silently accepts extra command-line input.
+    assert cli.main(argv) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "confirm-2026 accepts no options\n"
+
+
+@pytest.mark.parametrize(
+    ("argv", "handler", "expected"),
+    [
+        (["train", "--out", "confirm-2026"], "cmd_train", {"out": "confirm-2026"}),
+        (
+            ["build-labels", "--values", "raw.csv", "--out", "confirm-2026"],
+            "cmd_build_labels",
+            {"values": "raw.csv", "out": "confirm-2026"},
+        ),
+    ],
+)
+def test_confirmation_string_in_command_option_value_does_not_change_command_dispatch(monkeypatch, argv, handler, expected):
+    # Break caught: an output path named confirm-2026 enters the confirmation workflow instead of its command.
+    received = {}
+
+    def command(args):
+        received.update(vars(args))
+
+    monkeypatch.setattr(cli, handler, command)
+    monkeypatch.setattr(
+        confirmation,
+        "run_confirmation",
+        lambda _config: (_ for _ in ()).throw(AssertionError("confirmation must not run")),
+    )
+
+    assert cli.main(argv) == 0
+    assert {name: received[name] for name in expected} == expected

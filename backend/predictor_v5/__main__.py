@@ -146,9 +146,24 @@ def cmd_compare_labels(args) -> None:
     print(f"Wrote deterministic report to {args.out}")
 
 
+def _is_confirmation_command(argv: list[str]) -> bool:
+    global_options = {"--labels", "--min-trades", "--end-column"}
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token in global_options:
+            index += 2
+            continue
+        if token.startswith(tuple(option + "=" for option in global_options)):
+            index += 1
+            continue
+        return token == "confirm-2026"
+    return False
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if "confirm-2026" in argv:
+    if _is_confirmation_command(argv):
         forbidden = ("--labels", "--min-trades", "--end-column")
         if any(token in forbidden or token.startswith(tuple(name + "=" for name in forbidden)) for token in argv):
             print("confirm-2026 accepts no options", file=sys.stderr)
