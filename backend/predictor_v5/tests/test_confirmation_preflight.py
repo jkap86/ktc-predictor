@@ -469,6 +469,43 @@ def test_default_loader_rejects_derived_csv_stat_mismatch(sealed, column, value)
     assert len(sealed["calls"]) == 1
 
 
+@pytest.mark.parametrize("column", ["age", "points"])
+@pytest.mark.parametrize("value", [float("inf"), float("-inf")], ids=["positive-infinity", "negative-infinity"])
+def test_matching_nonfinite_target_stats_are_preflight_refusal_and_cli_exit_two(
+    sealed, monkeypatch, capsys, column, value
+):
+    # Break caught: matching infinities in both registered target artifacts reach model fitting.
+    csv_path = sealed["root"] / "target.csv"
+    csv_data = pd.read_csv(csv_path)
+    csv_data[column] = csv_data[column].astype(float)
+    csv_data.loc[0, column] = value
+    csv_data.to_csv(csv_path, index=False)
+
+    stats_path = sealed["root"] / "target-stats.zip"
+    with zipfile.ZipFile(stats_path) as archive:
+        payload = json.loads(archive.read("stats.json"))
+    stats_column = "fantasy_points" if column == "points" else column
+    payload["players"][0]["seasons"][0][stats_column] = value
+    with zipfile.ZipFile(stats_path, "w") as archive:
+        archive.writestr("stats.json", json.dumps(payload))
+
+    rebind(sealed)
+    fits = []
+    monkeypatch.setattr(c.WhatIfModel, "fit", lambda self, frame: fits.append(frame))
+
+    match = rf"joined target non-finite.*{column}.*count=1.*sample="
+    with pytest.raises(c.PreflightError, match=match):
+        c.preflight(sealed["config"])
+    monkeypatch.setattr(c, "ConfirmationConfig", lambda: sealed["config"])
+    assert cli.main(["confirm-2026"]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert re.search(match, captured.err)
+    assert fits == []
+    assert not sealed["config"].output_dir.exists()
+
+
 def test_raw_target_duplicates_refuse_before_loading(sealed):
     path = sealed["root"] / "target.csv"
     data = pd.read_csv(path)

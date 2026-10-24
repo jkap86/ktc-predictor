@@ -456,6 +456,13 @@ def _validate_target_frame(frame: pd.DataFrame, context: PreflightContext) -> No
     _reject_duplicate_rows(data, "joined target")
     if set(data["season"].astype(int)) - {2026}:
         raise ValueError("target contains training-season leakage")
+    for column in ("age", "points"):
+        bad = data[~np.isfinite(data[column].to_numpy(float))]
+        if not bad.empty:
+            raise ValueError(
+                f"joined target non-finite {column} count={len(bad)} "
+                f"sample={bad[['player_id', 'season']].head().to_dict('records')}"
+            )
     filtered = data[(data["start_value"] > 0) & (data["end_value"] > 0) & (data["start_trades_window"] >= 5) & (data["end_trades_window"] >= 5)]
     context.target_frame = filtered.sort_values(["season", "player_id"], kind="stable").reset_index(drop=True)
 
