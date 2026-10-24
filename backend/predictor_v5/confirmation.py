@@ -3,9 +3,10 @@
 import hashlib
 import inspect
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Dict, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -15,7 +16,6 @@ from predictor_v5.data import build_dataset, read_season_stats
 from predictor_v5.evaluate import summarize_exact
 from predictor_v5.labels import CsvLabels
 from predictor_v5.model import WhatIfModel
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = Path("backend/predictor_v5/data/model_2026_confirmation_manifest.json")
@@ -116,45 +116,45 @@ def validate_repo_relative_path(value: Any) -> Path:
     return Path(*path.parts)
 
 
-def _no_duplicate_keys(pairs: list) -> Dict[str, Any]:
-    value: Dict[str, Any] = {}
+def _no_duplicate_keys(pairs: list) -> dict[str, Any]:
+    value: dict[str, Any] = {}
     for key, item in pairs:
         if key in value:
-            raise ValueError("duplicate JSON object key: %s" % key)
+            raise ValueError(f"duplicate JSON object key: {key}")
         value[key] = item
     return value
 
 
-def load_canonical_json(path: Path, schema: Callable[[Dict[str, Any]], None]) -> Tuple[Dict[str, Any], str]:
+def load_canonical_json(path: Path, schema: Callable[[dict[str, Any]], None]) -> tuple[dict[str, Any], str]:
     raw = Path(path).read_bytes()
     try:
         decoded = raw.decode("utf-8")
         value = json.loads(decoded, object_pairs_hook=_no_duplicate_keys)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
-        raise ValueError("invalid JSON artifact: %s" % error) from error
+        raise ValueError(f"invalid JSON artifact: {error}") from error
     if not isinstance(value, dict):
-        raise ValueError("artifact root must be an object")
+        raise ValueError("artifact root must be an object")  # noqa: TRY004 -- protocol failures are ValueError
     if raw != canonical_json_bytes(value):
         raise ValueError("artifact bytes are not canonical JSON")
     schema(value)
     return value, sha256_bytes(raw)
 
 
-def _fields(value: Any, required: set, context: str) -> Dict[str, Any]:
+def _fields(value: Any, required: set, context: str) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ValueError("%s must be an object" % context)
+        raise ValueError(f"{context} must be an object")  # noqa: TRY004 -- protocol failures are ValueError
     missing = required - set(value)
     unknown = set(value) - required
     if missing:
-        raise ValueError("%s missing fields: %s" % (context, sorted(missing)))
+        raise ValueError(f"{context} missing fields: {sorted(missing)}")
     if unknown:
-        raise ValueError("%s has unknown fields: %s" % (context, sorted(unknown)))
+        raise ValueError(f"{context} has unknown fields: {sorted(unknown)}")
     return value
 
 
 def _sha(value: Any, context: str) -> None:
     if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
-        raise ValueError("%s must be a lowercase SHA-256" % context)
+        raise ValueError(f"{context} must be a lowercase SHA-256")
 
 
 def _identity(value: Any, context: str) -> None:
@@ -164,7 +164,7 @@ def _identity(value: Any, context: str) -> None:
 
 
 def _drift(context: str, expected: Any, actual: Any) -> ValueError:
-    return ValueError("%s drift: expected %r; actual %r" % (context, expected, actual))
+    return ValueError(f"{context} drift: expected {expected!r}; actual {actual!r}")
 
 
 def _first_difference(expected: Any, actual: Any, context: str) -> ValueError:
@@ -177,7 +177,7 @@ def _first_difference(expected: Any, actual: Any, context: str) -> ValueError:
     return _drift(context, expected, actual)
 
 
-def _validate_live_label_identity(name: str, entry: Dict[str, Any], repo_root: Path = REPOSITORY_ROOT) -> None:
+def _validate_live_label_identity(name: str, entry: dict[str, Any], repo_root: Path = REPOSITORY_ROOT) -> None:
     path = validate_repo_relative_path(entry["path"])
     absolute = repo_root / path
     live_sha = file_sha256(absolute)
@@ -203,7 +203,7 @@ def _validate_live_label_identity(name: str, entry: Dict[str, Any], repo_root: P
         raise _drift(name + " label_identity verification", "nonempty source and [] problems", {"source": identity["source"], "problems": identity["problems"]})
 
 
-def validate_manifest(manifest: Dict[str, Any], repo_root: Path = REPOSITORY_ROOT) -> None:
+def validate_manifest(manifest: dict[str, Any], repo_root: Path = REPOSITORY_ROOT) -> None:
     required = {
         "schema_version", "protocol", "sealing_commit", "sealed_at", "baseline", "candidate", "training_data",
         "market_model_version", "train_seasons", "positions", "label_filter", "model", "source_identities",
@@ -276,12 +276,12 @@ def validate_manifest(manifest: Dict[str, Any], repo_root: Path = REPOSITORY_ROO
         raise ValueError("output template drift")
 
 
-def validate_registry(registry: Dict[str, Any]) -> None:
+def validate_registry(registry: dict[str, Any]) -> None:
     _fields(registry, {"schema_version", "attestation", "entries"}, "registry")
     if registry["schema_version"] != 1 or registry["attestation"] != "review and Git evidence; not proof of non-observation":
         raise ValueError("registry identity drift")
     if not isinstance(registry["entries"], list):
-        raise ValueError("registry entries must be a list")
+        raise ValueError("registry entries must be a list")  # noqa: TRY004 -- protocol failures are ValueError
     keys = set()
     for entry in registry["entries"]:
         if not isinstance(entry, dict) or entry.get("status") not in {"sealed", "untouched", "reused"}:
@@ -300,7 +300,7 @@ def validate_registry(registry: Dict[str, Any]) -> None:
         keys.add(key)
 
 
-def validate_input_registration(registration: Dict[str, Any]) -> None:
+def validate_input_registration(registration: dict[str, Any]) -> None:
     """Validate the post-season artifact without reading its target files."""
     required = {
         "schema_version", "season", "manifest_sha256", "target_csv", "target_sidecar", "provenance",
@@ -338,7 +338,7 @@ def validate_input_registration(registration: Dict[str, Any]) -> None:
         raise ValueError("holdout attestation must be untouched")
     for name in ("reviewer", "evidence_commit", "evidence_reference", "reviewed_at", "transition_source"):
         if not isinstance(attestation[name], str) or not attestation[name]:
-            raise ValueError("holdout attestation %s must be nonempty" % name)
+            raise ValueError(f"holdout attestation {name} must be nonempty")
 
 
 def _repo_file(root: Path, value: str, context: str) -> Path:
@@ -346,7 +346,7 @@ def _repo_file(root: Path, value: str, context: str) -> Path:
     root = root.resolve()
     path = (root / relative).resolve()
     if root not in path.parents or not path.is_file():
-        raise ValueError("%s is not a regular repository file" % context)
+        raise ValueError(f"{context} is not a regular repository file")
     return path
 
 
@@ -354,7 +354,7 @@ def _config_file(config: ConfirmationConfig, value: Path, context: str) -> Path:
     path = Path(value)
     if path.is_absolute():
         if not path.is_file():
-            raise ValueError("%s is not a regular file" % context)
+            raise ValueError(f"{context} is not a regular file")
         return path
     return _repo_file(config.repo_root, str(path), context)
 
@@ -369,7 +369,7 @@ def _default_target_loader(target_csv: Path, training_archive: Path) -> pd.DataF
 def _matching_entry(entries: list, season: int, manifest_sha: str, context: str) -> dict:
     found = [entry for entry in entries if entry["season"] == season and entry["manifest_sha256"] == manifest_sha]
     if len(found) != 1:
-        raise ValueError("%s must contain exactly one matching entry" % context)
+        raise ValueError(f"{context} must contain exactly one matching entry")
     return found[0]
 
 
@@ -377,7 +377,7 @@ def _validate_target_frame(frame: pd.DataFrame, context: PreflightContext) -> No
     required = ["player_id", "season", "position", "age", "points", "start_value", "end_value", "start_trades_window", "end_trades_window"]
     missing = [column for column in required if column not in frame]
     if missing:
-        raise ValueError("joined target missing columns: %s" % missing)
+        raise ValueError(f"joined target missing columns: {missing}")
     data = frame.copy()
     data["player_id"] = data["player_id"].astype(str)
     if data.duplicated(["player_id", "season"]).any():
@@ -394,7 +394,7 @@ def _validate_training_coverage(path: Path, seasons: tuple[int, ...], name: str)
     data = pd.read_csv(path, usecols=["season"])
     missing = sorted(set(seasons) - set(data["season"].astype(int)))
     if missing:
-        raise ValueError("%s is missing required training seasons %s" % (name, missing))
+        raise ValueError(f"{name} is missing required training seasons {missing}")
 
 
 def preflight(config: ConfirmationConfig) -> PreflightContext:
@@ -426,12 +426,12 @@ def _preflight(config: ConfirmationConfig) -> PreflightContext:
         raise ValueError("input registration does not attest the registry entry")
     for key in ("reviewer", "evidence_commit", "evidence_reference", "reviewed_at", "transition_source"):
         if registry_entry.get(key) != attestation[key]:
-            raise ValueError("registry attestation %s mismatch" % key)
+            raise ValueError(f"registry attestation {key} mismatch")
     target_csv = _repo_file(config.repo_root, registration["target_csv"]["path"], "target CSV")
     target_sidecar = _repo_file(config.repo_root, registration["target_sidecar"]["path"], "target sidecar")
     for path, entry, name in ((target_csv, registration["target_csv"], "target CSV"), (target_sidecar, registration["target_sidecar"], "target sidecar")):
         if file_sha256(path) != entry["sha256"]:
-            raise ValueError("%s hash mismatch" % name)
+            raise ValueError(f"{name} hash mismatch")
     load_canonical_json(target_sidecar, lambda value: _fields(value, set(value), "target sidecar"))
     identity = label_export.label_identity(target_csv, manifest_path=target_sidecar)
     expected_identity_keys = {"sha256", "model_version", "verified", "source", "problems"}
@@ -446,7 +446,7 @@ def _preflight(config: ConfirmationConfig) -> PreflightContext:
     for name, path_key, hash_key in (("sql", "sql_path", "sql_sha256"), ("build", "build_path", "build_sha256")):
         path = _repo_file(config.repo_root, recipe[path_key], "recipe " + name)
         if file_sha256(path) != recipe[hash_key] or recipe[hash_key] != manifest["target_recipe"][name]["sha256"]:
-            raise ValueError("recipe %s hash mismatch" % name)
+            raise ValueError(f"recipe {name} hash mismatch")
     raw = pd.read_csv(target_csv, dtype={"player_id": str})
     if list(raw.columns) != list(_LABEL_COLUMNS):
         raise ValueError("target CSV build-labels column contract drift")
@@ -460,7 +460,7 @@ def _preflight(config: ConfirmationConfig) -> PreflightContext:
     candidate_csv = _repo_file(config.repo_root, manifest["candidate"]["path"], "candidate CSV")
     for path, entry, name in ((baseline_csv, manifest["baseline"], "baseline CSV"), (candidate_csv, manifest["candidate"], "candidate CSV")):
         if file_sha256(path) != entry["sha256"]:
-            raise ValueError("%s hash mismatch" % name)
+            raise ValueError(f"{name} hash mismatch")
         _validate_training_coverage(path, tuple(manifest["train_seasons"]), name)
     context = PreflightContext(manifest=manifest, manifest_sha256=manifest_sha, input_registration=registration,
         input_registration_sha256=registration_sha, holdout_registry=registry, holdout_registry_sha256=registry_sha,
@@ -501,7 +501,7 @@ def score_predictions(
     ).set_index(["player_id", "season"])
     missing = [key for key in normalized_keys if key not in own.index or key not in truth.index]
     if missing:
-        raise KeyError("keys missing from predictions or target: %s" % missing[:5])
+        raise KeyError(f"keys missing from predictions or target: {missing[:5]}")
     own = own.loc[index]
     truth = truth.loc[index]
     pred_value = (
@@ -537,7 +537,7 @@ def summarize_metrics(scored: pd.DataFrame) -> dict:
     errors = scored["abs_error"].to_numpy(float)
     residuals = scored["residual"].to_numpy(float)
     return {
-        "n": int(len(scored)),
+        "n": len(scored),
         "mae": float(np.mean(errors)),
         "median_absolute_error": float(np.median(errors)),
         "p90_absolute_error": float(np.percentile(errors, 90)),
@@ -557,7 +557,7 @@ def _coverage_counts(frame: pd.DataFrame) -> dict:
     by_season = frame.groupby("season", sort=True).size() if "season" in frame else pd.Series(dtype=int)
     by_position = frame.groupby("position", sort=True).size() if "position" in frame else pd.Series(dtype=int)
     return {
-        "total": int(len(frame)),
+        "total": len(frame),
         "by_season": {str(int(key)): int(value) for key, value in by_season.items()},
         "by_position": {str(key): int(value) for key, value in by_position.items()},
     }
@@ -603,7 +603,7 @@ def bootstrap_delta(
     sampled = delta[rng.integers(0, len(delta), size=(resamples, len(delta)))].mean(axis=1)
     bounds = np.percentile(sampled, percentile)
     return {
-        "n": int(len(delta)),
+        "n": len(delta),
         "mean_delta": float(np.mean(delta)),
         "median_delta": float(np.median(delta)),
         "candidate_wins": int(np.sum(delta < 0)),
@@ -652,17 +652,17 @@ def evaluate_gate(
         base_position = baseline.get("by_position", {}).get(position)
         candidate_position = candidate.get("by_position", {}).get(position)
         if base_position is None or candidate_position is None:
-            reasons.append("missing_position:%s" % position)
+            reasons.append(f"missing_position:{position}")
             continue
         if base_position.get("n", 0) < minimum_position_count or candidate_position.get("n", 0) < minimum_position_count:
-            reasons.append("insufficient_position_count:%s" % position)
+            reasons.append(f"insufficient_position_count:{position}")
         left, right = base_position.get("skill"), candidate_position.get("skill")
         if left is None or right is None:
-            reasons.append("missing_position_skill:%s" % position)
+            reasons.append(f"missing_position_skill:{position}")
             continue
         position_deltas[position] = right - left
         if position_deltas[position] < -maximum_position_drop:
-            reasons.append("maximum_position_drop_exceeded:%s" % position)
+            reasons.append(f"maximum_position_drop_exceeded:{position}")
     return {
         "passed": not reasons,
         "gain": gain,
@@ -689,7 +689,7 @@ def _fit_label_set(name: str, dataset: pd.DataFrame, target: pd.DataFrame, train
     fitted = WhatIfModel(label_source=name, scale_max=10000.0).fit(training)
     predictions = target.copy().sort_values(["season", "player_id"], kind="stable")
     predictions["pred_value"] = fitted.predict(predictions)
-    fit = {"label_source": name, "train_seasons": list(train_seasons), "n_train": int(len(training)), "scale_max": 10000.0}
+    fit = {"label_source": name, "train_seasons": list(train_seasons), "n_train": len(training), "scale_max": 10000.0}
     return fit, predictions, fold_results
 
 
