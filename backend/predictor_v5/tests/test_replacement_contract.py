@@ -373,3 +373,303 @@ def test_cross_references_reject_changes_and_symlink_escape(tmp_path):
     (tmp_path / "source").symlink_to(tmp_path.parent, target_is_directory=True)
     with pytest.raises(ValueError):
         check()
+
+
+def cross_fixture():
+    manifest = manifest_fixture()
+    identities = {
+        "ktc_sql": {"path": "recipes/ktc.sql", "sha256": "1" * 64},
+        "extractor": {"path": "recipes/extractor.py", "sha256": "2" * 64},
+        "mapping_code": {"path": "recipes/mapping.py", "sha256": "3" * 64},
+        "mapping_data": {"path": "mappings/mapping.csv", "sha256": "4" * 64},
+        "mfl_sql": {"path": "recipes/mfl.sql", "sha256": "5" * 64},
+        "build": {"path": "recipes/build.py", "sha256": "6" * 64},
+    }
+    for key in ("extractor", "mapping_code", "mapping_data"):
+        manifest["recipes"]["ktc"][key] = copy.deepcopy(identities[key])
+    manifest["recipes"]["ktc"]["sql"] = copy.deepcopy(identities["ktc_sql"])
+    manifest["recipes"]["mfl"]["sql"] = copy.deepcopy(identities["mfl_sql"])
+    manifest["recipes"]["mfl"]["build"] = copy.deepcopy(identities["build"])
+    manifest["source_identities"] = sorted(
+        [
+            copy.deepcopy(identities[k])
+            for k in ("ktc_sql", "extractor", "mapping_code", "mfl_sql", "build")
+        ],
+        key=lambda i: i["path"],
+    )
+    manifest["training"]["archive"] = {
+        "path": "training/archive.zip",
+        "sha256": "7" * 64,
+    }
+    manifest["training"]["mfl_labels"] = {
+        "path": "training/labels.csv",
+        "sha256": "8" * 64,
+    }
+    digest = lambda v: hashlib.sha256(
+        (
+            json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            + "\n"
+        ).encode()
+    ).hexdigest()
+    manifest_hash = digest(manifest)
+    attestation = attestation_fixture()
+    attestation["replacement_manifest_sha256"] = manifest_hash
+    identity = {"path": "review.json", "sha256": digest(attestation)}
+    registry = registry_fixture()
+    registry["entries"][0].update(
+        manifest_sha256=manifest_hash, joint_review=copy.deepcopy(identity)
+    )
+    registration = registration_fixture()
+    registration["manifest_sha256"] = manifest_hash
+    registration["holdout_attestation"].update(
+        registry_key="2026:" + manifest_hash, joint_review=copy.deepcopy(identity)
+    )
+    for name, keys in (
+        ("ktc", ("sql", "extractor", "mapping_code", "mapping_data")),
+        ("mfl", ("sql", "build")),
+    ):
+        for key in keys:
+            registration[name][key] = copy.deepcopy(manifest["recipes"][name][key])
+    for name, keys in (
+        ("ktc", ("raw_end", "target_csv", "target_stats", "target_sidecar")),
+        ("mfl", ("target_csv", "target_stats", "target_sidecar")),
+    ):
+        for n, key in enumerate(keys):
+            registration[name][key] = {
+                "path": f"outcomes/{name}-{key}",
+                "sha256": str(n + 1) * 64,
+            }
+    return manifest, registry, registration, attestation, identity, manifest_hash
+
+
+def call_references(values, root):
+    from predictor_v5.replacement_contract import validate_references
+
+    manifest, registry, registration, attestation, identity, digest = values
+    return validate_references(
+        manifest,
+        registry,
+        registration,
+        attestation,
+        manifest_sha256=digest,
+        attestation_identity=identity,
+        root=root,
+    )
+
+
+@pytest.mark.parametrize("path", ["bad\x00name", "a/\x00b"])
+def test_nul_paths_rejected_without_filesystem_resolution(path):
+    from predictor_v5.replacement_contract import validate_identity, validate_manifest
+
+    with pytest.raises(ValueError):
+        validate_identity({"path": path, "sha256": "a" * 64})
+    manifest = manifest_fixture()
+    manifest["training"]["ktc_member"] = path
+    with pytest.raises(ValueError):
+        validate_manifest(manifest)
+
+
+def test_archive_member_nul_rejected_by_manifest():
+    from predictor_v5.replacement_contract import validate_manifest
+
+    manifest = manifest_fixture()
+    manifest["training"]["ktc_member"] = "archive/\x00member"
+    with pytest.raises(ValueError):
+        validate_manifest(manifest)
+
+
+def test_symlink_loop_resolution_is_value_error(tmp_path):
+    values = cross_fixture()
+    (tmp_path / "recipes").symlink_to("recipes")
+    with pytest.raises(ValueError):
+        call_references(values, tmp_path)
+
+
+def test_archive_member_not_resolved_in_checkout(tmp_path):
+    values = cross_fixture()
+    (tmp_path / "data").symlink_to(tmp_path.parent, target_is_directory=True)
+    assert call_references(values, tmp_path) == values[1]["entries"][0]
+
+
+def object_locations(value, prefix=()):
+    if isinstance(value, dict):
+        yield prefix
+        for key, item in value.items():
+            yield from object_locations(item, (*prefix, key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from object_locations(item, (*prefix, index))
+
+
+def at(value, path):
+    for key in path:
+        value = value[key]
+    return value
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "manifest",
+        "attestation",
+        "registration",
+        "sealed",
+        "untouched",
+        "reused",
+        "used",
+    ],
+)
+def test_each_nested_object_rejects_missing_and_extra_keys(kind):
+    from predictor_v5.replacement_contract import (
+        validate_joint_attestation,
+        validate_manifest,
+        validate_registration,
+        validate_registry,
+    )
+
+    fixtures = {
+        "manifest": (cross_fixture()[0], validate_manifest),
+        "attestation": (attestation_fixture(), validate_joint_attestation),
+        "registration": (cross_fixture()[2], validate_registration),
+        **{
+            state: (registry_fixture(state), validate_registry)
+            for state in ("sealed", "untouched", "reused", "used")
+        },
+    }
+    value, validate = fixtures[kind]
+    validate(value)
+    for location in object_locations(value):
+        original = at(value, location)
+        for key in original:
+            changed = copy.deepcopy(value)
+            del at(changed, location)[key]
+            with pytest.raises(ValueError):
+                validate(changed)
+        changed = copy.deepcopy(value)
+        at(changed, location)["unexpected"] = "x"
+        with pytest.raises(ValueError):
+            validate(changed)
+
+
+@pytest.mark.parametrize("status", ["sealed", "used", "reused"])
+def test_cross_references_reject_ineligible_valid_states(tmp_path, status):
+    values = list(cross_fixture())
+    entry = registry_fixture(status)["entries"][0]
+    entry["manifest_sha256"] = values[5]
+    if status != "sealed":
+        entry["joint_review"] = copy.deepcopy(values[4])
+    values[1]["entries"] = [entry]
+    with pytest.raises(ValueError):
+        call_references(values, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "component,path,replacement",
+    [
+        (5, (), "f" * 64),
+        (1, ("entries", 0, "manifest_sha256"), "f" * 64),
+        (2, ("manifest_sha256",), "f" * 64),
+        (3, ("replacement_manifest_sha256",), "f" * 64),
+        (4, ("sha256",), "f" * 64),
+        (4, ("path",), "elsewhere.json"),
+        (1, ("entries", 0, "joint_review", "sha256"), "f" * 64),
+        (1, ("entries", 0, "joint_review", "path"), "elsewhere.json"),
+        (2, ("holdout_attestation", "joint_review", "sha256"), "f" * 64),
+        (2, ("holdout_attestation", "joint_review", "path"), "elsewhere.json"),
+        (1, ("entries", 0, "evidence_reference"), "elsewhere.json"),
+        (2, ("holdout_attestation", "evidence_reference"), "elsewhere.json"),
+        (2, ("holdout_attestation", "reviewer"), "different reviewer"),
+        (2, ("holdout_attestation", "evidence_commit"), "f" * 40),
+        (2, ("holdout_attestation", "reviewed_at"), "2026-01-03T00:00:00+00:00"),
+        (1, ("entries", 0, "transition_source"), "untouched"),
+        (2, ("holdout_attestation", "transition_source"), "untouched"),
+    ],
+)
+def test_cross_reference_mutations_are_rejected(tmp_path, component, path, replacement):
+    values = list(cross_fixture())
+    if path:
+        at(values[component], path[:-1])[path[-1]] = replacement
+    else:
+        values[component] = replacement
+    with pytest.raises(ValueError):
+        call_references(values, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "name,key",
+    [
+        ("ktc", "sql"),
+        ("ktc", "extractor"),
+        ("ktc", "mapping_code"),
+        ("ktc", "mapping_data"),
+        ("mfl", "sql"),
+        ("mfl", "build"),
+    ],
+)
+@pytest.mark.parametrize(
+    "field,replacement", [("path", "other/file"), ("sha256", "f" * 64)]
+)
+def test_each_recipe_identity_binds_path_and_hash(
+    tmp_path, name, key, field, replacement
+):
+    values = cross_fixture()
+    values[2][name][key][field] = replacement
+    with pytest.raises(ValueError):
+        call_references(values, tmp_path)
+
+
+def test_cross_reference_never_opens_registered_outcomes(tmp_path, monkeypatch):
+    import builtins
+    from pathlib import Path
+
+    values = cross_fixture()
+
+    def forbid(*args, **kwargs):
+        raise AssertionError("validation must not open files")
+
+    monkeypatch.setattr(Path, "open", forbid)
+    monkeypatch.setattr(Path, "read_bytes", forbid)
+    monkeypatch.setattr(builtins, "open", forbid)
+    assert call_references(values, tmp_path) == values[1]["entries"][0]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "attestation_manifest",
+        "attestation_evidence",
+        "joint_path",
+        "registration_manifest",
+    ],
+)
+def test_independent_reference_mismatches_after_rebinding(tmp_path, mutation):
+    values = list(cross_fixture())
+    _, registry, registration, attestation, identity, _ = values
+    if mutation == "registration_manifest":
+        registration["manifest_sha256"] = "f" * 64
+        registration["holdout_attestation"]["registry_key"] = "2026:" + "f" * 64
+    elif mutation == "joint_path":
+        identity["path"] = "elsewhere.json"
+        registry["entries"][0]["joint_review"]["path"] = "elsewhere.json"
+        registration["holdout_attestation"]["joint_review"]["path"] = "elsewhere.json"
+    else:
+        if mutation == "attestation_manifest":
+            attestation["replacement_manifest_sha256"] = "f" * 64
+        else:
+            attestation["evidence_reference"] = "elsewhere.json"
+        digest = hashlib.sha256(
+            (
+                json.dumps(
+                    attestation,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            ).encode()
+        ).hexdigest()
+        identity["sha256"] = digest
+        registry["entries"][0]["joint_review"]["sha256"] = digest
+        registration["holdout_attestation"]["joint_review"]["sha256"] = digest
+    with pytest.raises(ValueError):
+        call_references(values, tmp_path)

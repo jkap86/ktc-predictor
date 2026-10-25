@@ -56,6 +56,7 @@ def _path(value):
         not isinstance(value, str)
         or not value
         or "\\" in value
+        or "\x00" in value
         or any(part in ("", ".", "..") for part in value.split("/"))
     ):
         raise ValueError("invalid path")
@@ -487,7 +488,14 @@ def validate_references(
         for key in keys:
             if registration[name][key] != manifest["recipes"][name][key]:
                 raise ValueError("recipe mismatch")
-    root = root.resolve()
+
+    def resolve(path):
+        try:
+            return path.resolve()
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ValueError("cannot resolve path") from exc
+
+    root = resolve(root)
 
     def paths(value):
         if isinstance(value, dict):
@@ -497,10 +505,9 @@ def validate_references(
                     "registry_path",
                     "input_registration_path",
                     "evidence_reference",
-                    "ktc_member",
                 ):
                     _path(item)
-                    if not (root / item).resolve().is_relative_to(root):
+                    if not resolve(root / item).is_relative_to(root):
                         raise ValueError("path escapes root")
                 else:
                     paths(item)
