@@ -456,72 +456,37 @@ configuration or promotion.
 
 ### Source review and pre-outcome sealing
 
-Current work supplies the generator, runbook and synthetic tests only. It
-does not register real 2026 inputs, inspect outcomes, run either protocol,
-or authorize deployment. The existing confirmation's eight bound sources,
-manifest and registry remain protected by PR #6 baseline
+The final sealed replacement manifest and registry are present and verified,
+alongside the existing sealed confirmation manifest and registry. Both
+protocols are sealed, but neither has a real 2026 input registration,
+season-end outcome bundle, claim, report, promotion, registry transition, or
+result.
+This documentation update does not register inputs, inspect outcomes, run
+either protocol, or authorize execution, deployment, or promotion. The
+existing confirmation's eight bound sources, manifest and registry remain
+protected by PR #6 baseline
 `1157678526d3408850780c7ec7808a730d8c2dbc`; its manifest SHA-256 is
 `c376651de489d0ae5c6478c001d565bb635d6968b46df4a16e99875d9da7430e`.
 
-The previous replacement seal at `8800b7c2937aa22d48a57789f5c97005d60f2f30`
-was superseded by the final-review fix wave. Its two replacement JSON files
-were explicitly removed; Git history preserves the earlier evidence. They
-must not be restored as a valid seal over the changed source. A newly reviewed
-source-anchor commit and its new artifact-only child are required before
-registration or evaluation. No new replacement artifacts are supplied in
-this Phase A fix.
+The replacement seal is the final reviewed seal for the current source. Do
+not regenerate or replace it, restore superseded seal files, or change any
+sealed hash. A later registration and evaluation must use these existing
+sealed artifacts.
 
-An independent reviewer must approve the committed source anchor, including
-the seal generator and its tests, before actual sealing. The anchor must be
-the exact full committed HEAD SHA and the tracked worktree/index must be
-clean. The generator checks required regular-file identities against Git
-blobs and working bytes, training archive member, verified MFL v1 provenance,
-frozen starts and the actual canonical mapping snapshot. Untracked review notes are permitted;
-either existing output (including a dangling symlink) prevents sealing.
-Neither artifact contains future target hashes.
-
-After source approval, from `backend`, supply the approved anchor and explicit
-reviewed UTC timestamp (canonical seconds with `+00:00`):
-
-```bash
-python -m predictor_v5.replacement_seal \
-  --source-anchor <reviewed-full-commit-sha> \
-  --sealed-at <reviewed-YYYY-MM-DDTHH:MM:SS+00:00>
-```
-
-The CLI has no path, data, model or gate overrides. `build_manifest(root,
-source_anchor)` is a deterministic **untimestamped template**, not a final
-valid manifest. `write_seal` adds the supplied `sealed_at`, validates the
-complete manifest, and passes it to `build_registry`, which requires an
-identical timestamp. Time is never inferred from Git or the wall clock.
-The registry starts with one `sealed` entry keyed by the SHA-256 of the final
-canonical manifest bytes. The output files are:
+The sealed files are:
 
 - `data/ktc_replacement_2026_manifest.json`
 - `data/ktc_replacement_2026_holdout_registry.json`
 
-Inspect both and commit **only those two new JSON files**, with the approved
-source anchor as the commit's sole parent. Run
-`python -m pytest predictor_v5/tests/test_replacement_seal.py -v` and check
-`git diff --name-status HEAD^ HEAD`: exactly those two additions are allowed.
-Then run the dedicated strict Phase B handoff check from `backend`:
+Use the historical-seal verification for this merged or later checkout:
+`assert_historical_seal`, not the dedicated artifact-child handoff check
+`assert_seal_handoff`. Do not regenerate a seal, alter either file, or create
+a replacement pair after outcomes are available.
 
-```bash
-python -c 'from predictor_v5.tests.test_replacement_seal import ROOT, assert_seal_handoff; assert_seal_handoff(ROOT)'
-```
-
-This handoff check requires current HEAD to be the artifact-only child. The
-normal suite instead identifies the historical seal and verifies its exact
-sole parent, two-artifact diff, committed/working bytes, and source hashes.
-Unrelated later commits and merges are allowed; uncommitted substitute pairs
-or changed sealed source bytes still refuse.
-Before generation, only the real artifact assertion skips; all synthetic
-generator and protected-baseline checks must pass. Do not amend source into
-the artifact commit. If checks fail, stop for independent review.
-Publication never replaces a file; caught failures remove only files the
-call created. Two file publications cannot form one filesystem transaction:
-a process crash may leave a partial seal. Preserve that evidence and stop
-for review; do not overwrite it or silently resume generation.
+Do not rerun the seal generator or the artifact-child handoff as part of a
+later operator run. Any process or filesystem failure during evaluation must
+be preserved for independent review; do not overwrite evidence or silently
+resume generation.
 
 The frozen start CSV has SHA-256
 `6366b85300c4f9532f0866c602c6d262baaccf6c3a84b9252a6d2e8d46c541bb`,
@@ -561,9 +526,11 @@ window, and independent review must check completeness.
 
 ### Later independent review, registration and one-shot execution
 
-Before either protocol opens outcomes, an independent joint review must name
-both already sealed manifest hashes, their fixed recipes, reviewer, evidence
-commit/reference and review timestamp. It must attest that the recipes were
+Only after the complete 2026 season-end input bundles exist and have been
+independently reviewed—and before creating registrations, transitioning either
+registry, or opening any outcome—create the authoritative joint attestation.
+It must name both already sealed manifest hashes, their fixed recipes, reviewer,
+evidence commit/reference and review timestamp, and attest that the recipes were
 committed before outcomes influenced either protocol and the evidence remains
 untouched. That is review/Git evidence, not proof of non-observation. If either
 protocol exposed outcomes without this review, do not claim an untouched
@@ -578,11 +545,24 @@ The replacement registry and registration hash the immutable joint-review
 artifact; confirmation's later review/registration use its existing
 `evidence_reference` fields to identify the same artifact. Preserve the
 sealed confirmation schemas and recipe. Sharing MFL bytes does not waive
-independent registration and validation. None of these real registration or
-outcome steps is authorized by the current source/seal work.
+independent registration and validation. The two registrations must use
+distinct physical regular outcome files for every outcome slot across both
+protocols: do not use aliases, symlinks, or hard links, even when the evidence
+bytes are identical. None of these real registration or outcome steps is
+authorized by this documentation update; they require the independent review
+and separate authorization described above.
 
-Only after that later review and registration, the fixed evaluation command
-is `python -m predictor_v5.ktc_replacement_2026` (no overrides). Metadata,
+Only after that later review and registration, run the protocols serially in
+this exact order from `backend`:
+
+```bash
+python -m predictor_v5.ktc_replacement_2026
+python -m predictor_v5 confirm-2026
+```
+
+Run replacement first: its preflight refuses to proceed when a confirmation
+report already exists. Never run the commands concurrently. The replacement
+command accepts no overrides. Metadata,
 code/training identity, training coverage, joint review and both protocol
 registrations are checked before any outcome read. Successful preflight
 durably creates the manifest-keyed `.claim.json` under
@@ -609,6 +589,13 @@ a decision, not regenerating this result. Postclaim integrity refusals exit 2;
 unexpected fit/I/O failures exit 1. Valid but insufficient cohorts produce a
 retain-KTC report and exit 0. No result changes `season.py`, API, frontend,
 deployment, or the confirmation registry automatically.
+
+Confirmation has no durable claim file. Its registry does not record a
+`used` claim, and a failure after fitting or outcome consumption may leave no
+confirmation report. Preserve all files and logs after any such failure and do
+not retry automatically; obtain independent review first. In particular, an
+exit 2 from confirmation does not prove that no outcomes were opened. Keep an
+external durable execution/exposure log for the confirmation command.
 
 ## Season tool (2026)
 
