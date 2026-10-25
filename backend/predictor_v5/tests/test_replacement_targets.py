@@ -242,9 +242,11 @@ def mfl_case(tmp_path):
         ]
     )
 
-    def run(frame=None, side_change=None):
+    def run(frame=None, side_change=None, raw=None, frozen_trades=5):
         frame = pd.DataFrame([row]) if frame is None else frame
-        ids["target_csv"] = put("target", frame.to_csv(index=False).encode())
+        starts.loc[0, "bc_trades"] = frozen_trades
+        csv_bytes = frame.to_csv(index=False).encode() if raw is None else raw
+        ids["target_csv"] = put("target", csv_bytes)
         side = {
             "schema_version": 1,
             "season": 2026,
@@ -263,6 +265,56 @@ def mfl_case(tmp_path):
         return load_mfl_target({"mfl": ids}, starts, stats, tmp_path)
 
     return row, run
+
+
+@pytest.mark.parametrize(
+    "column", ["start_trades_window", "end_trades_window", "games"]
+)
+def test_mfl_rejects_integer_outside_signed_64_bit(mfl_case, column):
+    row, run = mfl_case
+    row[column] = "18446744073709551615"
+    with pytest.raises(ValueError):
+        run(
+            pd.DataFrame([row]),
+            frozen_trades=-1 if column == "start_trades_window" else 5,
+        )
+
+
+def test_mfl_integer_output_is_signed_and_nonnegative(mfl_case):
+    _, run = mfl_case
+    result = run()
+    for col, expected in (
+        ("season", 2026),
+        ("games", 10),
+        ("start_trades_window", 5),
+        ("end_trades_window", 6),
+    ):
+        assert str(result[col].dtype) == "int64"
+        assert result[col].iloc[0] == expected
+
+
+@pytest.mark.parametrize("variation", ["leading", "trailing", "short"])
+def test_mfl_rejects_incorrect_physical_csv_row_width(mfl_case, variation):
+    row, run = mfl_case
+    csv_data = pd.DataFrame([row]).to_csv(index=False)
+    header, record = csv_data.splitlines()
+    if variation == "leading":
+        record = "unexpected," + record
+    elif variation == "trailing":
+        record += ",unexpected"
+    else:
+        record = record.rsplit(",", 1)[0]
+    with pytest.raises(ValueError):
+        run(raw=(header + "\n" + record + "\n").encode())
+
+
+def test_mfl_csv_quoted_fields_are_parsed_as_single_field(mfl_case):
+    row, run = mfl_case
+    row["player_id"] = "p,quoted"
+    # The quoted ID passes the width check, then fails the real stats join.
+    csv_data = pd.DataFrame([row]).to_csv(index=False)
+    with pytest.raises(ValueError, match="stats mismatch"):
+        run(raw=csv_data.encode())
 
 
 @pytest.mark.parametrize(

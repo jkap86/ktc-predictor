@@ -1,5 +1,6 @@
 """Validate the independently registered MFL target and its statistics."""
 
+import csv
 import io
 import json
 import math
@@ -149,10 +150,14 @@ def load_mfl_target(
         raise ValueError("invalid MFL sidecar")
     archive = _stats_bytes(data["target_stats"])
     try:
+        text = data["target_csv"].decode("utf-8")
+        records = csv.reader(io.StringIO(text, newline=""), strict=True)
+        if any(len(record) != len(TARGET_COLUMNS) for record in records):
+            raise ValueError("invalid target CSV record width")
         target = pd.read_csv(
             io.BytesIO(data["target_csv"]), dtype=str, keep_default_na=False
         )
-    except (ValueError, pd.errors.ParserError) as exc:
+    except (ValueError, UnicodeError, csv.Error, pd.errors.ParserError) as exc:
         raise ValueError("invalid target CSV") from exc
     if (
         list(target.columns) != TARGET_COLUMNS
@@ -163,7 +168,10 @@ def load_mfl_target(
     ):
         raise ValueError("invalid target schema or identity")
     for col in ("games", "start_trades_window", "end_trades_window"):
-        if not target[col].str.fullmatch(r"[0-9]+").all():
+        if (
+            not target[col].str.fullmatch(r"[0-9]+").all()
+            or target[col].map(lambda value: int(value) > np.iinfo(np.int64).max).any()
+        ):
             raise ValueError("invalid integer")
     optional = ["end_value_next_board", "end_evidence_next_board"]
     numeric = [
