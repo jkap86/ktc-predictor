@@ -377,24 +377,64 @@ def test_protected_baseline_bytes_and_git_identity():
     )
 
 
+@pytest.mark.parametrize("mutation", ["working_pair", "later_head"])
+def test_seal_handoff_rejects_uncommitted_pair_or_wrong_head(
+    committed, monkeypatch, mutation
+):
+    root, anchor = committed
+    seal = module()
+    seal.write_seal(root, anchor, SEALED_AT)
+    git(root, "add", MANIFEST, REGISTRY)
+    git(root, "commit", "-qm", "Synthetic artifact-only seal")
+    seal_commit = git(root, "rev-parse", "HEAD").decode().strip()
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", root)
+    # A real committed pair must pass before testing either invalid handoff.
+    test_source_anchor_and_artifact_only_seal()
+    if mutation == "working_pair":
+        manifest = json.loads((root / MANIFEST).read_bytes())
+        manifest["sealed_at"] = "2026-10-25T13:00:00+00:00"
+        registry = seal.build_registry(manifest, manifest["sealed_at"])
+        (root / MANIFEST).write_bytes(canonical_bytes(manifest))
+        (root / REGISTRY).write_bytes(canonical_bytes(registry))
+        assert git(root, "rev-parse", "HEAD").decode().strip() == seal_commit
+        assert sorted(git(root, "diff", "--name-only").decode().splitlines()) == sorted(
+            [MANIFEST, REGISTRY]
+        )
+    else:
+        git(root, "commit", "--allow-empty", "-qm", "Not the intended seal commit")
+        assert git(root, "rev-parse", "HEAD").decode().strip() != seal_commit
+    with pytest.raises(AssertionError):
+        test_source_anchor_and_artifact_only_seal()
+
+
 def test_source_anchor_and_artifact_only_seal():
     present = [os.path.lexists(ROOT / p) for p in (MANIFEST, REGISTRY)]
     if not any(present):
         pytest.skip("Real seal intentionally absent before independent source review")
     assert all(present), "partial seal"
-    manifest = json.loads((ROOT / MANIFEST).read_bytes())
-    registry = json.loads((ROOT / REGISTRY).read_bytes())
-    validate_manifest(manifest)
-    validate_registry(registry)
-    assert canonical_bytes(manifest) == (ROOT / MANIFEST).read_bytes()
-    assert canonical_bytes(registry) == (ROOT / REGISTRY).read_bytes()
-    assert registry == module().build_registry(manifest, manifest["sealed_at"])
-    anchor = manifest["sealing_commit"]
     commit = (
         git(ROOT, "log", "--diff-filter=A", "--format=%H", "--", MANIFEST)
         .decode()
         .strip()
     )
+    # Phase B handoff must verify the just-created artifact commit, not find
+    # an older seal somewhere in the current branch's history.
+    assert commit == git(ROOT, "rev-parse", "HEAD").decode().strip()
+    committed_manifest = git(ROOT, "show", commit + ":" + MANIFEST)
+    committed_registry = git(ROOT, "show", commit + ":" + REGISTRY)
+    assert committed_manifest == (ROOT / MANIFEST).read_bytes()
+    assert committed_registry == (ROOT / REGISTRY).read_bytes()
+    manifest = json.loads(committed_manifest)
+    registry = json.loads(committed_registry)
+    validate_manifest(manifest)
+    validate_registry(registry)
+    assert canonical_bytes(manifest) == committed_manifest
+    assert canonical_bytes(registry) == committed_registry
+    assert registry == module().build_registry(manifest, manifest["sealed_at"])
+    assert registry["entries"][0]["manifest_sha256"] == hashlib.sha256(
+        committed_manifest
+    ).hexdigest()
+    anchor = manifest["sealing_commit"]
     assert git(ROOT, "rev-list", "--parents", "-n", "1", commit).decode().split() == [
         commit,
         anchor,
