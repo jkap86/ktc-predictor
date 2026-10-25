@@ -484,9 +484,11 @@ Use the historical-seal verification for this merged or later checkout:
 a replacement pair after outcomes are available.
 
 Do not rerun the seal generator or the artifact-child handoff as part of a
-later operator run. Any process or filesystem failure during evaluation must
-be preserved for independent review; do not overwrite evidence or silently
-resume generation.
+later operator run. Preserve any process or filesystem failure during an
+evaluation for independent review; do not overwrite evidence or silently
+resume or retry an evaluation. Follow the one-shot claim and confirmation
+no-claim rules, and use a separately reviewed new protocol if recovery is
+needed.
 
 The frozen start CSV has SHA-256
 `6366b85300c4f9532f0866c602c6d262baaccf6c3a84b9252a6d2e8d46c541bb`,
@@ -592,10 +594,13 @@ deployment, or the confirmation registry automatically.
 
 Confirmation has no durable claim file. Its registry does not record a
 `used` claim, and a failure after fitting or outcome consumption may leave no
-confirmation report. Preserve all files and logs after any such failure and do
-not retry automatically; obtain independent review first. In particular, an
-exit 2 from confirmation does not prove that no outcomes were opened. Keep an
-external durable execution/exposure log for the confirmation command.
+confirmation report. After any failure where outcome reading or fitting may
+have begun, this protocol MUST NOT be retried. Preserve all files and logs,
+escalate for independent review, and use a separately reviewed new protocol
+or reseal if needed. A retry is allowed only for an independently proven
+pre-outcome, pre-fit failure; an exit 2 from confirmation alone does not prove
+that no outcomes were opened. Keep an external durable execution/exposure log
+for the confirmation command.
 
 ## Season tool (2026)
 
