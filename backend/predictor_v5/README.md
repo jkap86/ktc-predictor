@@ -595,12 +595,13 @@ deployment, or the confirmation registry automatically.
 Confirmation has no durable claim file. Its registry does not record a
 `used` claim, and a failure after fitting or outcome consumption may leave no
 confirmation report. After any failure where outcome reading or fitting may
-have begun, this protocol MUST NOT be retried. Preserve all files and logs,
-escalate for independent review, and use a separately reviewed new protocol
-or reseal if needed. A retry is allowed only for an independently proven
-pre-outcome, pre-fit failure; an exit 2 from confirmation alone does not prove
-that no outcomes were opened. Keep an external durable execution/exposure log
-for the confirmation command.
+have begun, this protocol and holdout MUST NOT be retried. Preserve all files
+and logs and escalate for independent review. Recovery requires a separately
+approved future holdout and new protocol, or another independently authorized
+path that does not rehabilitate or reuse this consumed holdout. A retry is
+allowed only for an independently proven pre-outcome, pre-fit failure; an exit
+2 from confirmation alone does not prove that no outcomes were opened. Keep an
+external durable execution/exposure log for the confirmation command.
 
 ## Season tool (2026)
 
