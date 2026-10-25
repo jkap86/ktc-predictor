@@ -423,6 +423,134 @@ drift is not grounds for a rewrite, so `start_values_2026.csv` remains
 Verification: all 131 predictor tests passed, including marked scratch-DB
 SQL tests; Ruff passed. The optional-PyArrow warning remains non-fatal.
 
+## Independent 2026 MFL-versus-KTC replacement protocol
+
+`predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
+KTC is the incumbent; verified `baseline-hl28-v1` MFL labels are the candidate.
+Both models train on exactly 2021–2025 and score the same liquid matched
+2026 player cohort, each against its own market outcomes and no-change
+baseline. Start is 2026-09-09 and end is 2027-01-10, America/New_York;
+KTC end observations must lie in the inclusive 2026-12-28–2027-01-10 window.
+Positive KTC values must be below 9999; positive MFL values require at least
+five trades at both endpoints. There is no imputation or source substitution.
+
+The gate uses full-precision MFL-minus-KTC normalized skill: at least -0.01
+overall, at least -0.05 in each position, and at least 30 matched players in
+each of QB/RB/TE/WR. Equality passes. Missing/invalid scoring evidence retains
+KTC. A pass recommends MFL primary only for eligible players, with KTC fallback
+when MFL evidence is missing or insufficient. Every result has
+`promotion_authorized: false`. Any promotion requires a later, separately
+reviewed manual runtime change; removing KTC fallback requires separate
+coverage evidence. Results do not establish performance for excluded players.
+
+Bootstrap output is the **paired raw MFL-minus-KTC MAE difference**, with
+10,000 resamples, seed 20261024 and percentile interval [2.5, 97.5]. It mixes
+the sources' distinct raw scales and is a diagnostic, not normalized skill
+or a promotion gate. Rank diagnostics use independent descending average
+ranks, Spearman correlation and raw mean absolute rank error. Bootstrap,
+rank, residual, and coverage diagnostics are non-gating and must not choose
+configuration or promotion.
+
+### Source review and pre-outcome sealing
+
+Current work supplies the generator, runbook and synthetic tests only. It
+does not register real 2026 inputs, inspect outcomes, run either protocol,
+or authorize deployment. The existing confirmation's eight bound sources,
+manifest and registry remain protected by PR #6 baseline
+`1157678526d3408850780c7ec7808a730d8c2dbc`; its manifest SHA-256 is
+`c376651de489d0ae5c6478c001d565bb635d6968b46df4a16e99875d9da7430e`.
+
+An independent reviewer must approve the committed source anchor, including
+the seal generator and its tests, before actual sealing. The anchor must be
+the exact full committed HEAD SHA and the tracked worktree/index must be
+clean. The generator checks required regular-file identities against Git
+blobs and working bytes, training archive member, verified MFL v1 provenance,
+frozen starts and mapping descriptor. Untracked review notes are permitted;
+either existing output (including a dangling symlink) prevents sealing.
+Neither artifact contains future target hashes.
+
+After source approval, from `backend`, supply the approved anchor and explicit
+reviewed UTC timestamp (canonical seconds with `+00:00`):
+
+```bash
+python -m predictor_v5.replacement_seal \
+  --source-anchor <reviewed-full-commit-sha> \
+  --sealed-at <reviewed-YYYY-MM-DDTHH:MM:SS+00:00>
+```
+
+The CLI has no path, data, model or gate overrides. `build_manifest(root,
+source_anchor)` is a deterministic **untimestamped template**, not a final
+valid manifest. `write_seal` adds the supplied `sealed_at`, validates the
+complete manifest, and passes it to `build_registry`, which requires an
+identical timestamp. Time is never inferred from Git or the wall clock.
+The registry starts with one `sealed` entry keyed by the SHA-256 of the final
+canonical manifest bytes. The output files are:
+
+- `data/ktc_replacement_2026_manifest.json`
+- `data/ktc_replacement_2026_holdout_registry.json`
+
+Inspect both and commit **only those two new JSON files**, with the approved
+source anchor as the commit's sole parent. Run
+`python -m pytest predictor_v5/tests/test_replacement_seal.py -v` and check
+`git diff --name-status HEAD^ HEAD`: exactly those two additions are allowed.
+Before generation, only the real artifact assertion skips; all synthetic
+generator and protected-baseline checks must pass. Do not amend source into
+the artifact commit. If checks fail, stop for independent review.
+Publication never replaces a file; caught failures remove only files the
+call created. Two file publications cannot form one filesystem transaction:
+a process crash may leave a partial seal. Preserve that evidence and stop
+for review; do not overwrite it or silently resume generation.
+
+The frozen start CSV has SHA-256
+`6366b85300c4f9532f0866c602c6d262baaccf6c3a84b9252a6d2e8d46c541bb`,
+Git blob `ead24b508102ca2a1071d07f3f665e9ea920aa96`, introduced at `c415177`.
+These identities freeze the existing bytes. **Raw start provenance is not
+independently verified**: they do not prove its historical export or mapping.
+This exception never extends to future KTC end observations.
+
+### Later independent review, registration and one-shot execution
+
+Before either protocol opens outcomes, an independent joint review must name
+both already sealed manifest hashes, their fixed recipes, reviewer, evidence
+commit/reference and review timestamp. It must attest that the recipes were
+committed before outcomes influenced either protocol and the evidence remains
+untouched. That is review/Git evidence, not proof of non-observation. If either
+protocol exposed outcomes without this review, do not claim an untouched
+comparison. The replacement registry's reviewed paths are `sealed -> untouched
+-> used` or `sealed -> reused`; `sealed`, `reused`, and `used` cannot evaluate.
+
+Later, independently register the KTC raw end export, normalized target CSV,
+2026-only stats ZIP and canonical provenance sidecar, and the MFL target CSV,
+stats and registered sidecar in `data/ktc_replacement_2026_inputs.json`.
+Bind their byte hashes and sealed SQL/extractor/mapping/build identities.
+The replacement registry and registration hash the immutable joint-review
+artifact; confirmation's later review/registration use its existing
+`evidence_reference` fields to identify the same artifact. Preserve the
+sealed confirmation schemas and recipe. Sharing MFL bytes does not waive
+independent registration and validation. None of these real registration or
+outcome steps is authorized by the current source/seal work.
+
+Only after that later review and registration, the fixed evaluation command
+is `python -m predictor_v5.ktc_replacement_2026` (no overrides). Metadata,
+code/training identity, training coverage, joint review and both protocol
+registrations are checked before any outcome read. Successful preflight
+durably creates the manifest-keyed `.claim.json` under
+`artifacts/replacements/` before hashing or opening outcomes; all inputs are
+then validated before fitting. A canonical, no-replace report is written
+under `artifacts/replacements/2026-<manifest-sha256>.json`.
+
+A preclaim refusal (exit 2) reads no outcomes and permits correction and
+review before retry. **Once a claim exists, never delete the claim or retry**,
+including after a crash, exit 1/2, input-integrity error, or missing report.
+The claim consumes the holdout even while the later manual registry update
+is pending. Preserve claim, report (if present) and evidence; independently
+review the failure and transition the registry to `used` with their identities.
+Recovery requires a separately approved future holdout and new protocol for
+a decision, not regenerating this result. Postclaim integrity refusals exit 2;
+unexpected fit/I/O failures exit 1. Valid but insufficient cohorts produce a
+retain-KTC report and exit 0. No result changes `season.py`, API, frontend,
+deployment, or the confirmation registry automatically.
+
 ## Season tool (2026)
 
 Type a player's projected season points and get their predicted
