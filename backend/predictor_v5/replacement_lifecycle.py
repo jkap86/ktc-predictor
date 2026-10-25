@@ -861,8 +861,23 @@ def _validated_report_bytes(value) -> bytes:
     return value
 
 
+def _unlink_owned_report_entry(
+    bound: _PreflightContext, name: str, report_identity: tuple[int, int],
+) -> bool:
+    """Remove a report name only while it still identifies our created inode."""
+    try:
+        info = os.stat(name, dir_fd=bound._parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    if _inode(info) != report_identity:
+        return False
+    os.unlink(name, dir_fd=bound._parent_fd)
+    return True
+
+
 def _cleanup_report_publication(
     bound: _PreflightContext, temp_name: str | None, published: bool,
+    report_identity: tuple[int, int] | None,
 ) -> None:
     error = None
     names = ([bound._output_name] if published else []) + (
@@ -870,7 +885,8 @@ def _cleanup_report_publication(
     )
     for name in names:
         try:
-            os.unlink(name, dir_fd=bound._parent_fd)
+            if report_identity is not None:
+                _unlink_owned_report_entry(bound, name, report_identity)
         except FileNotFoundError:
             pass
         except OSError as exc:
@@ -884,15 +900,18 @@ def _cleanup_report_publication(
 
 
 def _publish_report(bound: _PreflightContext, raw: bytes) -> Path:
-    temp_name = f".{bound._output_name}.tmp.{secrets.token_hex(12)}"
+    proposed_name = f".{bound._output_name}.tmp.{secrets.token_hex(12)}"
+    temp_name = None
+    report_identity = None
     published = False
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(temp_name, flags, 0o600, dir_fd=bound._parent_fd)
+        descriptor = os.open(proposed_name, flags, 0o600, dir_fd=bound._parent_fd)
+        temp_name = proposed_name
         try:
+            report_identity = _inode(os.fstat(descriptor))
             os.fchmod(descriptor, 0o600)
             _write_all(descriptor, raw)
-            report_identity = _inode(os.fstat(descriptor))
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
@@ -905,7 +924,8 @@ def _publish_report(bound: _PreflightContext, raw: bytes) -> Path:
         except FileExistsError as exc:
             raise ValueError("replacement report already exists") from exc
         published = True
-        os.unlink(temp_name, dir_fd=bound._parent_fd)
+        if not _unlink_owned_report_entry(bound, temp_name, report_identity):
+            raise ValueError("temporary report identity changed during publication")
         temp_name = None
         os.fsync(bound._parent_fd)
         current_parent = _open_directory(bound._root_fd, bound._parent_relative)
@@ -921,7 +941,7 @@ def _publish_report(bound: _PreflightContext, raw: bytes) -> Path:
             os.close(current_parent)
         return bound["output_path"]
     except Exception:
-        _cleanup_report_publication(bound, temp_name, published)
+        _cleanup_report_publication(bound, temp_name, published, report_identity)
         raise
 
 

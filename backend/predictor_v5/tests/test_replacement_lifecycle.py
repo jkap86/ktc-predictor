@@ -1026,6 +1026,97 @@ def test_report_publish_collision_preserves_existing_entry(tmp_path, monkeypatch
     assert not list(context["output_path"].parent.glob("*.tmp.*"))
 
 
+def test_report_temp_collision_preserves_unowned_entry(tmp_path, monkeypatch):
+    """Break caught: failed exclusive creation deletes another writer's temp."""
+    context = _context(tmp_path)
+    monkeypatch.setattr(lifecycle.secrets, "token_hex", lambda _size: "collision")
+    temp = context["output_path"].with_name(
+        f".{context._output_name}.tmp.collision"
+    )
+    temp.write_bytes(b"another writer")
+    original_fsync = lifecycle.os.fsync
+    parent_syncs = []
+
+    def recording_fsync(descriptor):
+        if descriptor == context._parent_fd:
+            parent_syncs.append(descriptor)
+        return original_fsync(descriptor)
+
+    monkeypatch.setattr(lifecycle.os, "fsync", recording_fsync)
+    with pytest.raises(FileExistsError):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda _bound: "outcomes",
+            fit=lambda _bound, _outcomes: "fitted",
+            write_report=lambda _fitted: canonical_bytes({"complete": True}),
+        )
+    assert temp.read_bytes() == b"another writer"
+    assert len(parent_syncs) == 2  # Durable claim, then failure cleanup.
+    assert not context["output_path"].exists()
+    assert context["claim_path"].exists()
+    assert context.closed
+    with pytest.raises(ValueError, match="claim already exists"):
+        lifecycle.claim(_context(tmp_path))
+
+
+@pytest.mark.parametrize("entry", ["final", "temp"])
+@pytest.mark.parametrize("replacement", ["file", "symlink", "missing"])
+def test_report_cleanup_preserves_changed_entry(
+    tmp_path, monkeypatch, entry, replacement
+):
+    """Break caught: publication failure cleanup deletes a substituted inode."""
+    context = _context(tmp_path)
+    original_link = lifecycle.os.link
+    original_fsync = lifecycle.os.fsync
+    parent_syncs = []
+    changed_path = None
+    other = tmp_path / "other-writer"
+    other.write_bytes(b"another writer")
+
+    def replacing_link(source, destination, **kwargs):
+        nonlocal changed_path
+        original_link(source, destination, **kwargs)
+        changed_path = context["output_path"].with_name(
+            destination if entry == "final" else source
+        )
+        changed_path.unlink()
+        if replacement == "file":
+            other.rename(changed_path)
+        elif replacement == "symlink":
+            changed_path.symlink_to(other)
+
+    def failing_fsync(descriptor):
+        if descriptor == context._parent_fd:
+            parent_syncs.append(descriptor)
+            if entry == "final" and len(parent_syncs) == 2:
+                raise OSError("forced post-publication failure")
+        return original_fsync(descriptor)
+
+    monkeypatch.setattr(lifecycle.os, "link", replacing_link)
+    monkeypatch.setattr(lifecycle.os, "fsync", failing_fsync)
+    with pytest.raises((OSError, ValueError)):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda _bound: "outcomes",
+            fit=lambda _bound, _outcomes: "fitted",
+            write_report=lambda _fitted: canonical_bytes({"complete": True}),
+        )
+    if replacement == "missing":
+        assert not changed_path.exists()
+    else:
+        assert changed_path.read_bytes() == b"another writer"
+        assert changed_path.is_symlink() == (replacement == "symlink")
+    assert len(parent_syncs) == (3 if entry == "final" else 2)
+    if entry == "temp":
+        assert not context["output_path"].exists()
+    else:
+        assert not list(context["output_path"].parent.glob("*.tmp.*"))
+    assert context["claim_path"].exists()
+    assert context.closed
+    with pytest.raises(ValueError, match="claim already exists|report already exists"):
+        lifecycle.claim(_context(tmp_path))
+
+
 @pytest.mark.parametrize("failure", ["temp_write", "link", "cleanup"])
 def test_report_publication_failures_remove_final_and_temp(
     tmp_path, monkeypatch, failure
