@@ -711,17 +711,19 @@ def test_claim_first_stage_runner_orders_real_callbacks(tmp_path):
         events.append("fit")
         return "fit"
 
-    def report(bound, fitted):
-        assert bound["claim_path"].exists()
+    report_bytes = canonical_bytes({"result": "done"})
+
+    def report(fitted):
         assert fitted == "fit"
         events.append("report")
-        bound["output_path"].write_bytes(b"complete")
-        return "done"
+        return report_bytes
 
     assert lifecycle.run_claimed_stages(
         context, validate_outcomes=validate, fit=fit, write_report=report
-    ) == "done"
+    ) == context["output_path"]
     assert events == ["validate", "fit", "report"]
+    assert context["output_path"].read_bytes() == report_bytes
+    assert stat.S_IMODE(context["output_path"].stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize("mutation", ["hash", "cross_reference", "training", "starts", "rebase"])
@@ -873,10 +875,8 @@ def test_claimed_stage_failures_retain_claim_and_no_report(tmp_path, stage):
             raise RuntimeError(stage)
         return "fitted"
 
-    def report(_bound, fitted):
+    def report(fitted):
         assert fitted == "fitted"
-        if stage == "report":
-            _bound["output_path"].write_bytes(b"partial")
         raise RuntimeError(stage)
 
     with pytest.raises(RuntimeError, match=stage):
@@ -903,7 +903,7 @@ def test_report_durability_failure_removes_output_and_retains_claim(
     def recording_open(path, flags, *args, **kwargs):
         nonlocal report_fd
         descriptor = original_open(path, flags, *args, **kwargs)
-        if path == context._output_name:
+        if isinstance(path, str) and ".tmp." in path:
             report_fd = descriptor
         return descriptor
 
@@ -917,8 +917,8 @@ def test_report_durability_failure_removes_output_and_retains_claim(
             raise OSError(failure)
         return original_fsync(descriptor)
 
-    def report(bound, _fitted):
-        bound["output_path"].write_bytes(b"complete-but-not-durable")
+    def report(_fitted):
+        return canonical_bytes({"complete": True})
 
     monkeypatch.setattr(lifecycle.os, "open", recording_open)
     monkeypatch.setattr(lifecycle.os, "fsync", fail_once)
@@ -932,6 +932,204 @@ def test_report_durability_failure_removes_output_and_retains_claim(
     assert context.closed
     assert context["claim_path"].exists()
     assert not context["output_path"].exists()
+
+
+def test_report_renderer_has_no_path_authority_during_parent_swap(tmp_path):
+    """Break caught: renderer writes a canonical partial after parent replacement."""
+    context = _context(tmp_path)
+    parent = context["output_path"].parent
+    moved = parent.with_name("replacements-moved")
+    seen = []
+
+    def render(fitted):
+        seen.append(fitted)
+        parent.rename(moved)
+        parent.mkdir()
+        return canonical_bytes({"complete": True})
+
+    with pytest.raises(ValueError, match="parent|canonical"):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda _bound: "outcomes",
+            fit=lambda _bound, _outcomes: "fitted",
+            write_report=render,
+        )
+    assert seen == ["fitted"]
+    assert not context["output_path"].exists()
+    assert not (moved / context._output_name).exists()
+    assert (moved / context._claim_name).exists()
+
+
+@pytest.mark.parametrize("value", [b'{"z":1, "a":2}\n', bytearray(b"{}\n"), None])
+def test_report_renderer_requires_exact_canonical_immutable_bytes(tmp_path, value):
+    """Break caught: ambiguous or mutable report output reaches publication."""
+    context = _context(tmp_path)
+    with pytest.raises(ValueError, match="canonical report bytes"):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda _bound: "outcomes",
+            fit=lambda _bound, _outcomes: "fitted",
+            write_report=lambda _fitted: value,
+        )
+    assert not context["output_path"].exists()
+
+
+def test_report_temp_write_retries_eintr_and_short_writes(tmp_path, monkeypatch):
+    """Break caught: report publication truncates an interrupted short write."""
+    context = _context(tmp_path)
+    raw = canonical_bytes({"complete": True, "value": "x" * 100})
+    original_write = lifecycle.os.write
+    calls = 0
+
+    def interrupted_short(descriptor, value):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise InterruptedError
+        return original_write(descriptor, value[:7])
+
+    monkeypatch.setattr(lifecycle.os, "write", interrupted_short)
+    lifecycle.run_claimed_stages(
+        context,
+        validate_outcomes=lambda _bound: "outcomes",
+        fit=lambda _bound, _outcomes: "fitted",
+        write_report=lambda _fitted: raw,
+    )
+    assert context["output_path"].read_bytes() == raw
+    assert calls > 2
+
+
+def test_report_publish_collision_preserves_existing_entry(tmp_path, monkeypatch):
+    """Break caught: no-replace publication overwrites a racing final report."""
+    context = _context(tmp_path)
+    original_link = lifecycle.os.link
+
+    def collide(source, destination, **kwargs):
+        descriptor = os.open(
+            destination,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+            dir_fd=context._parent_fd,
+        )
+        os.close(descriptor)
+        return original_link(source, destination, **kwargs)
+
+    monkeypatch.setattr(lifecycle.os, "link", collide)
+    with pytest.raises(ValueError, match="report already exists"):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda _bound: "outcomes",
+            fit=lambda _bound, _outcomes: "fitted",
+            write_report=lambda _fitted: canonical_bytes({"complete": True}),
+        )
+    assert context["output_path"].read_bytes() == b""
+    assert not list(context["output_path"].parent.glob("*.tmp.*"))
+
+
+@pytest.mark.parametrize("failure", ["temp_write", "link", "cleanup"])
+def test_report_publication_failures_remove_final_and_temp(
+    tmp_path, monkeypatch, failure
+):
+    """Break caught: publication failures leave a final or temporary entry."""
+    context = _context(tmp_path)
+    original_open = lifecycle.os.open
+    original_write = lifecycle.os.write
+    original_link = lifecycle.os.link
+    original_unlink = lifecycle.os.unlink
+    temp_fd = None
+    failed = False
+
+    def recording_open(path, flags, *args, **kwargs):
+        nonlocal temp_fd
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if isinstance(path, str) and ".tmp." in path:
+            temp_fd = descriptor
+        return descriptor
+
+    def fail_write(descriptor, value):
+        if failure == "temp_write" and descriptor == temp_fd:
+            raise OSError(failure)
+        return original_write(descriptor, value)
+
+    def fail_link(*args, **kwargs):
+        if failure == "link":
+            raise OSError(failure)
+        return original_link(*args, **kwargs)
+
+    def fail_cleanup(path, *args, **kwargs):
+        nonlocal failed
+        if failure == "cleanup" and ".tmp." in path and not failed:
+            failed = True
+            raise OSError(failure)
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(lifecycle.os, "open", recording_open)
+    monkeypatch.setattr(lifecycle.os, "write", fail_write)
+    monkeypatch.setattr(lifecycle.os, "link", fail_link)
+    monkeypatch.setattr(lifecycle.os, "unlink", fail_cleanup)
+    with pytest.raises(OSError, match=failure):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda _bound: "outcomes",
+            fit=lambda _bound, _outcomes: "fitted",
+            write_report=lambda _fitted: canonical_bytes({"complete": True}),
+        )
+    assert not context["output_path"].exists()
+    assert not list(context["output_path"].parent.glob("*.tmp.*"))
+    assert context["claim_path"].exists()
+
+
+@pytest.mark.parametrize("timing", ["write", "publish"])
+def test_report_parent_swap_during_publication_leaves_no_final(
+    tmp_path, monkeypatch, timing
+):
+    """Break caught: namespace replacement redirects report publication."""
+    context = _context(tmp_path)
+    parent = context["output_path"].parent
+    moved = parent.with_name("replacements-moved")
+    original_open = lifecycle.os.open
+    original_write = lifecycle.os.write
+    original_link = lifecycle.os.link
+    temp_fd = None
+    swapped = False
+
+    def recording_open(path, flags, *args, **kwargs):
+        nonlocal temp_fd
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if isinstance(path, str) and ".tmp." in path:
+            temp_fd = descriptor
+        return descriptor
+
+    def swap():
+        nonlocal swapped
+        if not swapped:
+            swapped = True
+            parent.rename(moved)
+            parent.mkdir()
+
+    def swapping_write(descriptor, value):
+        if timing == "write" and descriptor == temp_fd:
+            swap()
+        return original_write(descriptor, value)
+
+    def swapping_link(*args, **kwargs):
+        if timing == "publish":
+            swap()
+        return original_link(*args, **kwargs)
+
+    monkeypatch.setattr(lifecycle.os, "open", recording_open)
+    monkeypatch.setattr(lifecycle.os, "write", swapping_write)
+    monkeypatch.setattr(lifecycle.os, "link", swapping_link)
+    with pytest.raises(ValueError, match="parent|canonical"):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda _bound: "outcomes",
+            fit=lambda _bound, _outcomes: "fitted",
+            write_report=lambda _fitted: canonical_bytes({"complete": True}),
+        )
+    assert not context["output_path"].exists()
+    assert not (moved / context._output_name).exists()
+    assert (moved / context._claim_name).exists()
 
 
 def test_stage_runner_never_removes_a_preexisting_report(tmp_path):

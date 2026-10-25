@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pickle
+import secrets
 import stat
 import tempfile
 from dataclasses import dataclass
@@ -848,52 +849,99 @@ def claim(context: dict) -> Path:
             context.close()
 
 
-def _remove_partial_report(bound: _PreflightContext) -> None:
+def _validated_report_bytes(value) -> bytes:
+    if type(value) is not bytes:
+        raise ValueError("renderer must return immutable canonical report bytes")
     try:
-        os.stat(bound._output_name, dir_fd=bound._parent_fd, follow_symlinks=False)
-    except FileNotFoundError:
-        return
-    os.unlink(bound._output_name, dir_fd=bound._parent_fd)
-    os.fsync(bound._parent_fd)
+        decoded = json.loads(value.decode("utf-8"), object_pairs_hook=_pairs)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("renderer must return immutable canonical report bytes") from exc
+    if not isinstance(decoded, dict) or canonical_bytes(decoded) != value:
+        raise ValueError("renderer must return immutable canonical report bytes")
+    return value
 
 
-def _sync_report(bound: _PreflightContext) -> None:
-    descriptor = os.open(
-        bound._output_name, _FILE_FLAGS, dir_fd=bound._parent_fd
+def _cleanup_report_publication(
+    bound: _PreflightContext, temp_name: str | None, published: bool,
+) -> None:
+    error = None
+    names = ([bound._output_name] if published else []) + (
+        [temp_name] if temp_name is not None else []
     )
+    for name in names:
+        try:
+            os.unlink(name, dir_fd=bound._parent_fd)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            error = error or exc
     try:
-        info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise ValueError("replacement report is not a single-link regular file")
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-    os.fsync(bound._parent_fd)
+        os.fsync(bound._parent_fd)
+    except OSError as exc:
+        error = error or exc
+    if error is not None:
+        raise error
+
+
+def _publish_report(bound: _PreflightContext, raw: bytes) -> Path:
+    temp_name = f".{bound._output_name}.tmp.{secrets.token_hex(12)}"
+    published = False
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(temp_name, flags, 0o600, dir_fd=bound._parent_fd)
+        try:
+            os.fchmod(descriptor, 0o600)
+            _write_all(descriptor, raw)
+            report_identity = _inode(os.fstat(descriptor))
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        try:
+            os.link(
+                temp_name, bound._output_name,
+                src_dir_fd=bound._parent_fd, dst_dir_fd=bound._parent_fd,
+                follow_symlinks=False,
+            )
+        except FileExistsError as exc:
+            raise ValueError("replacement report already exists") from exc
+        published = True
+        os.unlink(temp_name, dir_fd=bound._parent_fd)
+        temp_name = None
+        os.fsync(bound._parent_fd)
+        current_parent = _open_directory(bound._root_fd, bound._parent_relative)
+        try:
+            if _inode(os.fstat(current_parent)) != bound._parent_identity:
+                raise ValueError("canonical report parent changed during publication")
+            info = os.stat(
+                bound._output_name, dir_fd=current_parent, follow_symlinks=False
+            )
+            if not stat.S_ISREG(info.st_mode) or _inode(info) != report_identity:
+                raise ValueError("canonical report identity changed during publication")
+        finally:
+            os.close(current_parent)
+        return bound["output_path"]
+    except Exception:
+        _cleanup_report_publication(bound, temp_name, published)
+        raise
 
 
 def run_claimed_stages(
     context: dict, *, validate_outcomes, fit, write_report,
 ):
-    """Prove the durable claim precedes outcome validation, fit, and report."""
-    claimed = False
+    """Claim first, then render canonical bytes and publish them internally.
+
+    ``write_report`` is a renderer: it receives only the fitted result and must
+    return exact immutable canonical JSON bytes. It never receives the lifecycle
+    context, an output path, or publication authority.
+    """
     try:
         bound = _validate_context(context)
         _create_claim(bound)
-        claimed = True
         outcomes = validate_outcomes(bound)
         fitted = fit(bound, outcomes)
         _absent_at(bound._parent_fd, bound._output_name, "replacement report")
-        try:
-            result = write_report(bound, fitted)
-            _sync_report(bound)
-        except Exception:
-            _remove_partial_report(bound)
-            raise
-        return result
-    except Exception:
-        if claimed:
-            _remove_partial_report(bound)
-        raise
+        raw = _validated_report_bytes(write_report(fitted))
+        return _publish_report(bound, raw)
     finally:
         if type(context) is _PreflightContext:
             context.close()
