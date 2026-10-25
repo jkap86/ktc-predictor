@@ -3,186 +3,265 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import pickle
 import stat
+import tempfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+
+import pandas as pd
 
 from predictor_v5 import confirmation
 from predictor_v5.replacement_cohort import prepare_training
 from predictor_v5.replacement_contract import (
     canonical_bytes,
-    load_canonical,
+    validate_joint_attestation,
+    validate_manifest,
     validate_references,
+    validate_registration,
+    validate_registry,
 )
 from predictor_v5.replacement_starts import load_starts
 
-REPLACEMENT_MANIFEST_PATH = Path(
-    "backend/predictor_v5/data/ktc_replacement_2026_manifest.json"
-)
-CONFIRMATION_MANIFEST_PATH = Path(
-    "backend/predictor_v5/data/model_2026_confirmation_manifest.json"
-)
+REPLACEMENT_MANIFEST_PATH = "backend/predictor_v5/data/ktc_replacement_2026_manifest.json"
+CONFIRMATION_MANIFEST_PATH = "backend/predictor_v5/data/model_2026_confirmation_manifest.json"
 CONFIRMATION_MANIFEST_SHA256 = (
     "c376651de489d0ae5c6478c001d565bb635d6968b46df4a16e99875d9da7430e"
 )
+LABEL_MANIFEST_PATH = "backend/predictor_v5/data/label_manifest.json"
 
 _MANIFEST_FIELDS = {
-    "schema_version",
-    "protocol",
-    "sealing_commit",
-    "sealed_at",
-    "registry_path",
-    "input_registration_path",
-    "output_template",
-    "claim_template",
-    "source_identities",
-    "training",
-    "starts",
-    "model",
-    "cutoffs",
-    "filters",
-    "recipes",
-    "gate",
-    "diagnostics",
+    "schema_version", "protocol", "sealing_commit", "sealed_at", "registry_path",
+    "input_registration_path", "output_template", "claim_template",
+    "source_identities", "training", "starts", "model", "cutoffs", "filters",
+    "recipes", "gate", "diagnostics",
 }
 _REGISTRY_FIELDS = {"schema_version", "attestation", "entries"}
 _REGISTRATION_FIELDS = {
-    "schema_version",
-    "season",
-    "manifest_sha256",
-    "ktc",
-    "mfl",
+    "schema_version", "season", "manifest_sha256", "ktc", "mfl",
     "holdout_attestation",
 }
 _JOINT_FIELDS = {
-    "schema_version",
-    "season",
-    "replacement_manifest_sha256",
-    "confirmation_manifest_sha256",
-    "reviewer",
-    "evidence_commit",
-    "evidence_reference",
-    "reviewed_at",
-    "recipes_committed_before_outcomes",
+    "schema_version", "season", "replacement_manifest_sha256",
+    "confirmation_manifest_sha256", "reviewer", "evidence_commit",
+    "evidence_reference", "reviewed_at", "recipes_committed_before_outcomes",
     "evidence_untouched",
 }
-_CONTEXT_FIELDS = {
-    "manifest",
-    "manifest_sha256",
-    "registry",
-    "registry_sha256",
-    "registration",
-    "registration_sha256",
-    "joint_review",
-    "joint_review_sha256",
-    "confirmation_manifest",
-    "confirmation_manifest_sha256",
-    "confirmation_registry",
-    "confirmation_registry_sha256",
-    "confirmation_registration",
-    "confirmation_registration_sha256",
-    "training_frames",
-    "starts",
-    "output_path",
-    "claim_path",
+_CONFIRMATION_MANIFEST_FIELDS = {
+    "schema_version", "protocol", "sealing_commit", "sealed_at", "baseline",
+    "candidate", "training_data", "market_model_version", "train_seasons",
+    "positions", "label_filter", "model", "source_identities", "target_recipe",
+    "gate", "walk_forward", "bootstrap", "registry_path",
+    "input_registration_path", "output_template",
 }
+_CONFIRMATION_REGISTRATION_FIELDS = {
+    "schema_version", "season", "manifest_sha256", "target_csv",
+    "target_sidecar", "target_stats", "provenance", "target_contract", "recipe",
+    "holdout_attestation",
+}
+_CONTEXT_FIELDS = {
+    "manifest", "manifest_sha256", "registry", "registry_sha256", "registration",
+    "registration_sha256", "joint_review", "joint_review_sha256",
+    "confirmation_manifest", "confirmation_manifest_sha256",
+    "confirmation_registry", "confirmation_registry_sha256",
+    "confirmation_registration", "confirmation_registration_sha256",
+    "training_frames", "starts", "output_path", "claim_path",
+}
+_CAPABILITY = object()
+_DIR_FLAGS = (
+    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+)
+_FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
 
 
-def _root(root: Path) -> Path:
-    value = Path(root)
-    try:
-        if value.is_symlink():
-            raise ValueError("repository root must not be a symlink")
-        resolved = value.resolve(strict=True)
-    except (OSError, RuntimeError) as exc:
-        raise ValueError("invalid repository root") from exc
-    if not resolved.is_dir():
-        raise ValueError("repository root must be a directory")
-    return resolved
+@dataclass(frozen=True)
+class _Captured:
+    path: str
+    raw: bytes
+    device: int
+    inode: int
+
+    @property
+    def identity(self) -> tuple[int, int]:
+        return self.device, self.inode
 
 
-def _relative(value: str) -> Path:
+class _PreflightContext(dict):
+    """Dict-compatible capability backed by pinned repository/output dirfds."""
+
+    def __init__(
+        self, values: dict, *, token: object, root_fd: int, parent_fd: int,
+        root_path: Path, output_name: str, claim_name: str,
+    ) -> None:
+        super().__init__(values)
+        self._token = token
+        self._root_fd = root_fd
+        self._parent_fd = parent_fd
+        self._root_path = root_path
+        self._parent_relative = "/".join(
+            Path(values["output_path"]).relative_to(root_path).parts[:-1]
+        )
+        self._output_name = output_name
+        self._claim_name = claim_name
+        self._parent_identity = _inode(os.fstat(parent_fd))
+        self._objects_digest = _objects_digest(values)
+        self._training_digest = _frames_digest(values["training_frames"])
+        self._starts_digest = _frame_digest(values["starts"])
+        self._output_path = values["output_path"]
+        self._claim_path = values["claim_path"]
+
+
+def _relative(value: str) -> tuple[str, ...]:
     if (
-        not isinstance(value, str)
-        or not value
-        or value.startswith("/")
-        or "\\" in value
-        or "\x00" in value
-        or any(part in ("", ".", "..") for part in value.split("/"))
+        not isinstance(value, str) or not value or value.startswith("/")
+        or "\\" in value or "\x00" in value
     ):
         raise ValueError("unsafe repository path")
-    return Path(*value.split("/"))
+    parts = tuple(value.split("/"))
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError("unsafe repository path")
+    return parts
 
 
-def _beneath(root: Path, value: str, *, allow_missing_leaf: bool = False) -> Path:
-    relative = _relative(value)
-    current = root
-    parts = relative.parts
-    for index, part in enumerate(parts):
-        current = current / part
-        final = index == len(parts) - 1
+def _absolute_root(root: Path) -> tuple[Path, int]:
+    path = Path(root)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if any(part == ".." for part in path.parts):
+        raise ValueError("unsafe repository root")
+    current = os.open("/", _DIR_FLAGS)
+    try:
+        for part in path.parts[1:]:
+            next_fd = os.open(part, _DIR_FLAGS, dir_fd=current)
+            os.close(current)
+            current = next_fd
+        if not stat.S_ISDIR(os.fstat(current).st_mode):
+            raise ValueError("repository root is not a directory")
+        return path, current
+    except Exception:
+        os.close(current)
+        raise
+
+
+def _open_parent(root_fd: int, value: str) -> tuple[int, str]:
+    parts = _relative(value)
+    current = os.dup(root_fd)
+    try:
+        for part in parts[:-1]:
+            next_fd = os.open(part, _DIR_FLAGS, dir_fd=current)
+            os.close(current)
+            current = next_fd
+        return current, parts[-1]
+    except Exception:
+        os.close(current)
+        raise
+
+
+def _open_directory(root_fd: int, value: str) -> int:
+    parts = _relative(value)
+    current = os.dup(root_fd)
+    try:
+        for part in parts:
+            next_fd = os.open(part, _DIR_FLAGS, dir_fd=current)
+            os.close(current)
+            current = next_fd
+        return current
+    except Exception:
+        os.close(current)
+        raise
+
+
+def _inode(value: os.stat_result) -> tuple[int, int]:
+    return value.st_dev, value.st_ino
+
+
+def _stat_relative(root_fd: int, value: str, *, required: bool = True):
+    parent_fd, name = _open_parent(root_fd, value)
+    try:
         try:
-            mode = current.lstat().st_mode
+            result = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
         except FileNotFoundError:
-            if final and allow_missing_leaf:
-                return current
-            raise ValueError("repository path does not exist") from None
-        except OSError as exc:
-            raise ValueError("cannot inspect repository path") from exc
-        if stat.S_ISLNK(mode):
-            raise ValueError("repository path contains a symlink")
-        if not final and not stat.S_ISDIR(mode):
-            raise ValueError("repository path parent is not a directory")
-    return current
+            if required:
+                raise ValueError("repository path does not exist") from None
+            return None
+        if stat.S_ISLNK(result.st_mode) or not stat.S_ISREG(result.st_mode):
+            raise ValueError("repository path is not a regular no-follow file")
+        return result
+    finally:
+        os.close(parent_fd)
 
 
-def _metadata_file(root: Path, identity: dict) -> Path:
-    path = _beneath(root, identity["path"])
+def _read_descriptor(descriptor: int) -> bytes:
+    chunks = []
+    while True:
+        try:
+            chunk = os.read(descriptor, 1024 * 1024)
+        except InterruptedError:
+            continue
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+
+
+def _capture(root_fd: int, value: str, outcome_inodes=frozenset()) -> _Captured:
+    parent_fd, name = _open_parent(root_fd, value)
     try:
-        mode = path.lstat().st_mode
-    except OSError as exc:
-        raise ValueError("cannot stat registered outcome") from exc
-    if not stat.S_ISREG(mode):
-        raise ValueError("registered outcome is not a regular file")
-    return path
-
-
-def _artifact_file(root: Path, value: str) -> Path:
-    path = _beneath(root, value)
-    if not stat.S_ISREG(path.lstat().st_mode):
-        raise ValueError("protocol artifact is not a regular file")
-    return path
-
-
-def _identity_file(root: Path, identity: dict) -> Path:
-    path = _artifact_file(root, identity["path"])
-    digest = hashlib.sha256()
+        descriptor = os.open(name, _FILE_FLAGS, dir_fd=parent_fd)
+    finally:
+        os.close(parent_fd)
     try:
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-    except OSError as exc:
-        raise ValueError("cannot read sealed pre-outcome input") from exc
-    if digest.hexdigest() != identity["sha256"]:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("repository path is not a regular file")
+        if outcome_inodes and before.st_nlink != 1:
+            raise ValueError("registered outcome aliases a readable input")
+        if _inode(before) in outcome_inodes:
+            raise ValueError("registered outcome aliases a readable input")
+        raw = _read_descriptor(descriptor)
+        after = os.fstat(descriptor)
+        if _inode(before) != _inode(after) or before.st_size != after.st_size:
+            raise ValueError("repository file changed while captured")
+        return _Captured(value, raw, before.st_dev, before.st_ino)
+    finally:
+        os.close(descriptor)
+
+
+def _pairs(items):
+    result = {}
+    for key, value in items:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+
+def _decode(
+    raw: bytes, required: set[str], canonicalizer=canonical_bytes,
+) -> tuple[dict, str]:
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid canonical JSON") from exc
+    if (
+        not isinstance(value, dict) or set(value) != required
+        or canonicalizer(value) != raw
+    ):
+        raise ValueError("invalid canonical JSON")
+    return value, hashlib.sha256(raw).hexdigest()
+
+
+def _verify_identity(captured: _Captured, identity: dict) -> None:
+    digest = hashlib.sha256(captured.raw).hexdigest()
+    if captured.path != identity["path"] or digest != identity["sha256"]:
         raise ValueError("sealed pre-outcome identity mismatch")
-    return path
-
-
-def _absent(path: Path, label: str) -> None:
-    try:
-        path.lstat()
-    except FileNotFoundError:
-        return
-    except OSError as exc:
-        raise ValueError(f"cannot inspect {label}") from exc
-    raise ValueError(f"{label} already exists")
 
 
 def _matching_entry(registry: dict, digest: str, label: str) -> dict:
     entries = [
-        entry
-        for entry in registry["entries"]
+        entry for entry in registry["entries"]
         if entry["season"] == 2026 and entry["manifest_sha256"] == digest
     ]
     if len(entries) != 1 or entries[0]["status"] != "untouched":
@@ -190,192 +269,297 @@ def _matching_entry(registry: dict, digest: str, label: str) -> dict:
     return entries[0]
 
 
-def _load_confirmation(root: Path, joint: dict, joint_sha: str) -> dict:
-    manifest_path = _artifact_file(root, str(CONFIRMATION_MANIFEST_PATH))
-    manifest, manifest_sha = confirmation.load_canonical_json(
-        manifest_path, lambda _value: None
-    )
-    if manifest_sha != CONFIRMATION_MANIFEST_SHA256:
-        raise ValueError("protected confirmation manifest mismatch")
-    if manifest_sha != joint["confirmation_manifest_sha256"]:
-        raise ValueError("joint review confirmation manifest mismatch")
+def _absent_at(parent_fd: int, name: str, label: str) -> None:
+    try:
+        os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ValueError(f"cannot inspect {label}") from exc
+    raise ValueError(f"{label} already exists")
 
-    registry_path = _artifact_file(root, manifest["registry_path"])
-    registry, registry_sha = confirmation.load_canonical_json(
-        registry_path, confirmation.validate_registry
+
+def _outcome_identities(registration: dict) -> list[dict]:
+    return [
+        registration[source][key]
+        for source, keys in {
+            "ktc": ("raw_end", "target_csv", "target_stats", "target_sidecar"),
+            "mfl": ("target_csv", "target_stats", "target_sidecar"),
+        }.items()
+        for key in keys
+    ]
+
+
+def _confirmation_outcomes(registration: dict) -> list[dict]:
+    return [registration[key] for key in ("target_csv", "target_sidecar", "target_stats")]
+
+
+def _sidecar_path(value: str) -> str:
+    path = Path(value)
+    return (path.parent / (path.stem + ".provenance.json")).as_posix()
+
+
+def _materialize(root: Path, captures: dict[str, _Captured]) -> None:
+    for value, captured in captures.items():
+        destination = root / value
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(captured.raw)
+
+
+def _frame_digest(frame: pd.DataFrame) -> str:
+    return hashlib.sha256(pickle.dumps(frame, protocol=5)).hexdigest()
+
+
+def _frames_digest(frames: dict) -> tuple[tuple[str, str], ...]:
+    if not isinstance(frames, dict):
+        raise ValueError("invalid training frames")  # noqa: TRY004 - protocol refusal
+    return tuple((key, _frame_digest(frames[key])) for key in sorted(frames))
+
+
+def _objects_digest(values: dict) -> str:
+    keys = (
+        "manifest", "manifest_sha256", "registry", "registry_sha256",
+        "registration", "registration_sha256", "joint_review",
+        "joint_review_sha256", "confirmation_manifest",
+        "confirmation_manifest_sha256", "confirmation_registry",
+        "confirmation_registry_sha256", "confirmation_registration",
+        "confirmation_registration_sha256",
     )
+    return hashlib.sha256(
+        canonical_bytes({key: values[key] for key in keys})
+    ).hexdigest()
+
+
+def _snapshot_validation(
+    captures: dict[str, _Captured], manifest: dict, registry: dict,
+    registration: dict, joint: dict, manifest_sha: str, review_identity: dict,
+    confirmation_manifest: dict,
+) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
+    with tempfile.TemporaryDirectory(prefix="ktc-replacement-preflight-") as directory:
+        snapshot = Path(directory)
+        _materialize(snapshot, captures)
+        validate_references(
+            manifest, registry, registration, joint,
+            manifest_sha256=manifest_sha,
+            attestation_identity=review_identity,
+            root=snapshot,
+        )
+        original_identity = confirmation.label_export.label_identity
+
+        def snapshot_identity(path, manifest_path=None):
+            return original_identity(path, manifest_path=snapshot / LABEL_MANIFEST_PATH)
+
+        confirmation.label_export.label_identity = snapshot_identity
+        try:
+            confirmation.validate_manifest(confirmation_manifest, snapshot)
+        finally:
+            confirmation.label_export.label_identity = original_identity
+        training = prepare_training(snapshot, manifest)
+        starts_path = snapshot / manifest["starts"]["identity"]["path"]
+        starts = load_starts(starts_path, snapshot)
+        return training, starts
+
+
+def _review_confirmation(
+    manifest: dict, manifest_sha: str, registry: dict, registration: dict,
+    joint: dict,
+) -> None:
     entry = _matching_entry(registry, manifest_sha, "confirmation registry")
     if any(entry[key] != manifest[key] for key in ("sealing_commit", "sealed_at")):
         raise ValueError("confirmation registry seal mismatch")
-
-    registration_path = _artifact_file(root, manifest["input_registration_path"])
-    registration, registration_sha = confirmation.load_canonical_json(
-        registration_path, confirmation.validate_input_registration
-    )
+    review = registration["holdout_attestation"]
     if registration["manifest_sha256"] != manifest_sha:
         raise ValueError("confirmation registration manifest mismatch")
-    review = registration["holdout_attestation"]
-    if review["registry_key"] != "2026:" + manifest_sha:
-        raise ValueError("confirmation registration key mismatch")
     for key in (
-        "status",
-        "reviewer",
-        "evidence_commit",
-        "evidence_reference",
-        "reviewed_at",
-        "transition_source",
+        "status", "reviewer", "evidence_commit", "evidence_reference",
+        "reviewed_at", "transition_source",
     ):
         if review[key] != entry[key]:
             raise ValueError("confirmation review metadata mismatch")
     for key in ("reviewer", "evidence_commit", "evidence_reference", "reviewed_at"):
         if review[key] != joint[key]:
             raise ValueError("joint confirmation review metadata mismatch")
-    if review["evidence_reference"] != joint["evidence_reference"]:
-        raise ValueError("confirmation joint review path mismatch")
-
-    output_value = manifest["output_template"].replace(
-        "<manifest-sha256>", manifest_sha
-    )
-    output_path = _beneath(root, output_value, allow_missing_leaf=True)
-    _absent(output_path, "confirmation output")
-
-    outcome_paths = {
-        registration[key]["path"]
-        for key in ("target_csv", "target_sidecar", "target_stats")
-    }
-    preoutcome_paths = {
-        manifest["baseline"]["path"],
-        manifest["candidate"]["path"],
-        manifest["training_data"]["path"],
-        manifest["target_recipe"]["sql"]["path"],
-        manifest["target_recipe"]["build"]["path"],
-        *manifest["source_identities"],
-    }
-    if outcome_paths & preoutcome_paths:
-        raise ValueError("confirmation outcome aliases a pre-outcome input")
-    confirmation.validate_manifest(manifest, root)
-    for key in ("target_csv", "target_sidecar", "target_stats"):
-        _metadata_file(root, registration[key])
-    _identity_file(root, manifest["training_data"])
-    return {
-        "manifest": manifest,
-        "manifest_sha256": manifest_sha,
-        "registry": registry,
-        "registry_sha256": registry_sha,
-        "registration": registration,
-        "registration_sha256": registration_sha,
-        "joint_review_sha256": joint_sha,
-    }
 
 
 def preflight(root: Path) -> dict:
     """Validate every pre-claim invariant without opening registered outcomes."""
+    root_path, root_fd = _absolute_root(root)
+    parent_fd = None
     try:
-        return _preflight(root)
-    except (KeyError, TypeError, IndexError) as exc:
-        raise ValueError("invalid lifecycle metadata") from exc
+        manifest_capture = _capture(root_fd, REPLACEMENT_MANIFEST_PATH)
+        manifest, manifest_sha = _decode(manifest_capture.raw, _MANIFEST_FIELDS)
+        validate_manifest(manifest)
+        output_value = manifest["output_template"].replace(
+            "<manifest-sha256>", manifest_sha
+        )
+        claim_value = manifest["claim_template"].replace(
+            "<manifest-sha256>", manifest_sha
+        )
+        output_parts, claim_parts = _relative(output_value), _relative(claim_value)
+        if output_parts[:-1] != claim_parts[:-1]:
+            raise ValueError("claim and output parents differ")
+        parent_fd = _open_directory(root_fd, "/".join(output_parts[:-1]))
+        _absent_at(parent_fd, output_parts[-1], "replacement report")
+        _absent_at(parent_fd, claim_parts[-1], "replacement claim")
 
+        registry_capture = _capture(root_fd, manifest["registry_path"])
+        registry, registry_sha = _decode(registry_capture.raw, _REGISTRY_FIELDS)
+        validate_registry(registry)
+        registration_capture = _capture(root_fd, manifest["input_registration_path"])
+        registration, registration_sha = _decode(
+            registration_capture.raw, _REGISTRATION_FIELDS
+        )
+        validate_registration(registration)
+        review_identity = registration["holdout_attestation"]["joint_review"]
+        joint_capture = _capture(root_fd, review_identity["path"])
+        joint, joint_sha = _decode(joint_capture.raw, _JOINT_FIELDS)
+        validate_joint_attestation(joint)
+        if joint_sha != review_identity["sha256"]:
+            raise ValueError("joint review hash mismatch")
 
-def _preflight(root: Path) -> dict:
-    root = _root(root)
-    manifest_path = _artifact_file(root, str(REPLACEMENT_MANIFEST_PATH))
-    manifest, manifest_sha = load_canonical(manifest_path, _MANIFEST_FIELDS)
+        confirmation_manifest_capture = _capture(root_fd, CONFIRMATION_MANIFEST_PATH)
+        confirmation_manifest, confirmation_manifest_sha = _decode(
+            confirmation_manifest_capture.raw, _CONFIRMATION_MANIFEST_FIELDS,
+            confirmation.canonical_json_bytes,
+        )
+        if confirmation_manifest_sha != CONFIRMATION_MANIFEST_SHA256:
+            raise ValueError("protected confirmation manifest mismatch")
+        if confirmation_manifest_sha != joint["confirmation_manifest_sha256"]:
+            raise ValueError("joint review confirmation manifest mismatch")
+        confirmation_registry_capture = _capture(
+            root_fd, confirmation_manifest["registry_path"]
+        )
+        confirmation_registry, confirmation_registry_sha = _decode(
+            confirmation_registry_capture.raw, _REGISTRY_FIELDS,
+            confirmation.canonical_json_bytes,
+        )
+        confirmation.validate_registry(confirmation_registry)
+        confirmation_registration_capture = _capture(
+            root_fd, confirmation_manifest["input_registration_path"]
+        )
+        confirmation_registration, confirmation_registration_sha = _decode(
+            confirmation_registration_capture.raw,
+            _CONFIRMATION_REGISTRATION_FIELDS,
+            confirmation.canonical_json_bytes,
+        )
+        confirmation.validate_input_registration(confirmation_registration)
+        _review_confirmation(
+            confirmation_manifest, confirmation_manifest_sha,
+            confirmation_registry, confirmation_registration, joint,
+        )
 
-    output_value = manifest["output_template"].replace(
-        "<manifest-sha256>", manifest_sha
-    )
-    claim_value = manifest["claim_template"].replace(
-        "<manifest-sha256>", manifest_sha
-    )
-    output_path = _beneath(root, output_value, allow_missing_leaf=True)
-    claim_path = _beneath(root, claim_value, allow_missing_leaf=True)
-    if output_path.parent != claim_path.parent:
-        raise ValueError("claim and output parents differ")
-    _absent(output_path, "replacement report")
-    _absent(claim_path, "replacement claim")
+        confirmation_output = confirmation_manifest["output_template"].replace(
+            "<manifest-sha256>", confirmation_manifest_sha
+        )
+        confirmation_output_parts = _relative(confirmation_output)
+        confirmation_parent = _open_directory(
+            root_fd, "/".join(confirmation_output_parts[:-1])
+        )
+        try:
+            _absent_at(
+                confirmation_parent, confirmation_output_parts[-1],
+                "confirmation output",
+            )
+        finally:
+            os.close(confirmation_parent)
 
-    registry_path = _artifact_file(root, manifest["registry_path"])
-    registry, registry_sha = load_canonical(registry_path, _REGISTRY_FIELDS)
-    registration_path = _artifact_file(root, manifest["input_registration_path"])
-    registration, registration_sha = load_canonical(
-        registration_path, _REGISTRATION_FIELDS
-    )
+        outcome_entries = _outcome_identities(registration) + _confirmation_outcomes(
+            confirmation_registration
+        )
+        outcome_paths = {identity["path"] for identity in outcome_entries}
+        if len(outcome_paths) != len(outcome_entries):
+            raise ValueError("registered outcome aliases another outcome path")
+        outcome_stats = [
+            _stat_relative(root_fd, identity["path"]) for identity in outcome_entries
+        ]
+        if any(info.st_nlink != 1 for info in outcome_stats):
+            raise ValueError("registered outcome has a physical alias")
+        outcome_inodes = {_inode(info) for info in outcome_stats}
+        metadata_captures = {
+            item.path: item
+            for item in (
+                manifest_capture, registry_capture, registration_capture,
+                joint_capture, confirmation_manifest_capture,
+                confirmation_registry_capture, confirmation_registration_capture,
+            )
+        }
+        for captured in metadata_captures.values():
+            if captured.identity in outcome_inodes:
+                raise ValueError(
+                    "registered outcome aliases already-read registration metadata"
+                )
 
-    review_identity = registration["holdout_attestation"].get("joint_review")
-    if not isinstance(review_identity, dict) or set(review_identity) != {"path", "sha256"}:
-        raise ValueError("missing joint review identity")
-    joint_path = _artifact_file(root, review_identity["path"])
-    joint, joint_sha = load_canonical(joint_path, _JOINT_FIELDS)
-    if joint_sha != review_identity["sha256"]:
-        raise ValueError("joint review hash mismatch")
-    validate_references(
-        manifest,
-        registry,
-        registration,
-        joint,
-        manifest_sha256=manifest_sha,
-        attestation_identity=review_identity,
-        root=root,
-    )
-
-    confirmation_context = _load_confirmation(root, joint, joint_sha)
-
-    outcome_keys = {
-        "ktc": ("raw_end", "target_csv", "target_stats", "target_sidecar"),
-        "mfl": ("target_csv", "target_stats", "target_sidecar"),
-    }
-    for source, keys in outcome_keys.items():
-        for key in keys:
-            _metadata_file(root, registration[source][key])
-
-    identities = list(manifest["source_identities"])
-    identities.extend(
-        [
-            manifest["training"]["archive"],
-            manifest["training"]["mfl_labels"],
-            manifest["starts"]["identity"],
+        replacement_identities = [
+            *manifest["source_identities"], manifest["training"]["archive"],
+            manifest["training"]["mfl_labels"], manifest["starts"]["identity"],
             manifest["recipes"]["ktc"]["mapping_data"],
         ]
-    )
-    registered_outcome_paths = {
-        registration[source][key]["path"]
-        for source, keys in outcome_keys.items()
-        for key in keys
-    }
-    if registered_outcome_paths & {identity["path"] for identity in identities}:
-        raise ValueError("replacement outcome aliases a pre-outcome input")
-    checked = set()
-    for identity in identities:
-        pair = (identity["path"], identity["sha256"])
-        if pair not in checked:
-            _identity_file(root, identity)
-            checked.add(pair)
+        confirmation_paths = {
+            confirmation_manifest["baseline"]["path"],
+            confirmation_manifest["candidate"]["path"],
+            confirmation_manifest["training_data"]["path"],
+            confirmation_manifest["target_recipe"]["sql"]["path"],
+            confirmation_manifest["target_recipe"]["build"]["path"],
+            *confirmation_manifest["source_identities"],
+        }
+        readable_paths = {
+            *(identity["path"] for identity in replacement_identities),
+            *confirmation_paths, LABEL_MANIFEST_PATH, ".git",
+        }
+        for label_path in (
+            confirmation_manifest["baseline"]["path"],
+            confirmation_manifest["candidate"]["path"],
+        ):
+            sidecar = _sidecar_path(label_path)
+            if _stat_relative(root_fd, sidecar, required=False) is not None:
+                readable_paths.add(sidecar)
+        if outcome_paths & readable_paths:
+            raise ValueError("registered outcome aliases a readable input path")
 
-    training_frames = prepare_training(root, manifest)
-    starts = load_starts(root / manifest["starts"]["identity"]["path"], root)
-
-    return {
-        "manifest": manifest,
-        "manifest_sha256": manifest_sha,
-        "registry": registry,
-        "registry_sha256": registry_sha,
-        "registration": registration,
-        "registration_sha256": registration_sha,
-        "joint_review": joint,
-        "joint_review_sha256": joint_sha,
-        "confirmation_manifest": confirmation_context["manifest"],
-        "confirmation_manifest_sha256": confirmation_context["manifest_sha256"],
-        "confirmation_registry": confirmation_context["registry"],
-        "confirmation_registry_sha256": confirmation_context["registry_sha256"],
-        "confirmation_registration": confirmation_context["registration"],
-        "confirmation_registration_sha256": confirmation_context[
-            "registration_sha256"
-        ],
-        "training_frames": training_frames,
-        "starts": starts,
-        "output_path": output_path,
-        "claim_path": claim_path,
-    }
+        captures = dict(metadata_captures)
+        for value in sorted(readable_paths):
+            captures[value] = _capture(root_fd, value, outcome_inodes)
+        for identity in replacement_identities:
+            _verify_identity(captures[identity["path"]], identity)
+        _verify_identity(
+            captures[confirmation_manifest["training_data"]["path"]],
+            confirmation_manifest["training_data"],
+        )
+        training_frames, starts = _snapshot_validation(
+            captures, manifest, registry, registration, joint, manifest_sha,
+            review_identity, confirmation_manifest,
+        )
+        values = {
+            "manifest": manifest, "manifest_sha256": manifest_sha,
+            "registry": registry, "registry_sha256": registry_sha,
+            "registration": registration,
+            "registration_sha256": registration_sha,
+            "joint_review": joint, "joint_review_sha256": joint_sha,
+            "confirmation_manifest": confirmation_manifest,
+            "confirmation_manifest_sha256": confirmation_manifest_sha,
+            "confirmation_registry": confirmation_registry,
+            "confirmation_registry_sha256": confirmation_registry_sha,
+            "confirmation_registration": confirmation_registration,
+            "confirmation_registration_sha256": confirmation_registration_sha,
+            "training_frames": training_frames, "starts": starts,
+            "output_path": root_path / output_value,
+            "claim_path": root_path / claim_value,
+        }
+        context = _PreflightContext(
+            values, token=_CAPABILITY, root_fd=root_fd, parent_fd=parent_fd,
+            root_path=root_path, output_name=output_parts[-1],
+            claim_name=claim_parts[-1],
+        )
+        root_fd = -1
+        parent_fd = None
+        return context
+    except (KeyError, TypeError, IndexError) as exc:
+        raise ValueError("invalid lifecycle metadata") from exc
+    finally:
+        if parent_fd is not None:
+            os.close(parent_fd)
+        if root_fd >= 0:
+            os.close(root_fd)
 
 
 def _claim_timestamp() -> str:
@@ -393,70 +577,36 @@ def _validated_claim_timestamp() -> str:
     return value
 
 
-def _validate_context(context: dict) -> None:
-    if not isinstance(context, dict) or set(context) != _CONTEXT_FIELDS:
-        raise ValueError("invalid preflight context")
-    objects = (
-        ("manifest", "manifest_sha256"),
-        ("registry", "registry_sha256"),
-        ("registration", "registration_sha256"),
-        ("joint_review", "joint_review_sha256"),
-        ("confirmation_manifest", "confirmation_manifest_sha256"),
-        ("confirmation_registry", "confirmation_registry_sha256"),
-        ("confirmation_registration", "confirmation_registration_sha256"),
-    )
-    for object_key, digest_key in objects:
-        value = context[object_key]
-        digest = context[digest_key]
-        if (
-            not isinstance(value, dict)
-            or not isinstance(digest, str)
-            or len(digest) != 64
-            or any(character not in "0123456789abcdef" for character in digest)
-            or hashlib.sha256(canonical_bytes(value)).hexdigest() != digest
-        ):
-            raise ValueError("preflight context hash mismatch")
+def _validate_context(context: dict) -> _PreflightContext:
     if (
-        not isinstance(context["training_frames"], dict)
-        or set(context["training_frames"]) != {"ktc", "mfl"}
-        or not hasattr(context["starts"], "columns")
+        type(context) is not _PreflightContext
+        or context._token is not _CAPABILITY
+        or set(context) != _CONTEXT_FIELDS
     ):
-        raise ValueError("invalid preflight data context")
-    manifest = context["manifest"]
-    if manifest.get("protocol") != "ktc-replacement-2026":
-        raise ValueError("invalid preflight manifest")
-    expected_output = manifest.get("output_template", "").replace(
-        "<manifest-sha256>", context["manifest_sha256"]
-    )
-    expected_claim = manifest.get("claim_template", "").replace(
-        "<manifest-sha256>", context["manifest_sha256"]
-    )
-    for key, expected in (("output_path", expected_output), ("claim_path", expected_claim)):
-        path = context[key]
-        expected_parts = Path(expected).parts
-        if (
-            not isinstance(path, Path)
-            or not path.is_absolute()
-            or not expected
-            or path.parts[-len(expected_parts) :] != expected_parts
-        ):
-            raise ValueError("preflight context path mismatch")
+        raise ValueError("invalid preflight capability")
+    if _inode(os.fstat(context._parent_fd)) != context._parent_identity:
+        raise ValueError("preflight parent capability changed")
+    current_parent = _open_directory(context._root_fd, context._parent_relative)
+    try:
+        if _inode(os.fstat(current_parent)) != context._parent_identity:
+            raise ValueError("preflight parent path changed")
+    finally:
+        os.close(current_parent)
+    if _objects_digest(context) != context._objects_digest:
+        raise ValueError("preflight artifact context changed")
+    if _frames_digest(context["training_frames"]) != context._training_digest:
+        raise ValueError("preflight training frames changed")
+    if _frame_digest(context["starts"]) != context._starts_digest:
+        raise ValueError("preflight starts changed")
+    if (
+        context["output_path"] != context._output_path
+        or context["claim_path"] != context._claim_path
+    ):
+        raise ValueError("preflight paths changed")
+    return context
 
 
-def _validate_absolute_parents(path: Path) -> None:
-    for parent in path.parents:
-        if parent == parent.parent:
-            continue
-        try:
-            mode = parent.lstat().st_mode
-        except OSError as exc:
-            raise ValueError("claim parent is unavailable") from exc
-        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-            raise ValueError("claim parent is unsafe")
-
-
-def _claim_payload(context: dict) -> dict:
-    _validate_context(context)
+def _claim_payload(context: _PreflightContext) -> dict:
     return {
         "claimed_at": _validated_claim_timestamp(),
         "confirmation_manifest_sha256": context["confirmation_manifest_sha256"],
@@ -469,8 +619,7 @@ def _claim_payload(context: dict) -> dict:
         "protocol": "ktc-replacement-2026",
         "registration_sha256": context["registration_sha256"],
         "registry_sha256": context["registry_sha256"],
-        "schema_version": 1,
-        "season": 2026,
+        "schema_version": 1, "season": 2026,
     }
 
 
@@ -486,43 +635,35 @@ def _write_all(descriptor: int, raw: bytes) -> None:
         remaining = remaining[written:]
 
 
-def _sync_parent(path: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    descriptor = os.open(path, flags)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
 def claim(context: dict) -> Path:
     """Irrevocably and durably claim this holdout before outcome-byte access."""
-    payload = _claim_payload(context)
-    claim_path = Path(context["claim_path"])
-    output_path = Path(context["output_path"])
-    if not claim_path.is_absolute() or not output_path.is_absolute():
-        raise ValueError("claim paths must come from preflight")
-    if claim_path.parent != output_path.parent:
-        raise ValueError("claim and output parents differ")
-    _validate_absolute_parents(claim_path)
-    try:
-        parent_mode = claim_path.parent.lstat().st_mode
-    except OSError as exc:
-        raise ValueError("claim parent is unavailable") from exc
-    if stat.S_ISLNK(parent_mode) or not stat.S_ISDIR(parent_mode):
-        raise ValueError("claim parent is unsafe")
-    _absent(output_path, "replacement report")
-    _absent(claim_path, "replacement claim")
-
+    bound = _validate_context(context)
+    payload = _claim_payload(bound)
+    _absent_at(bound._parent_fd, bound._output_name, "replacement report")
+    _absent_at(bound._parent_fd, bound._claim_name, "replacement claim")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(claim_path, flags, 0o600)
+        descriptor = os.open(
+            bound._claim_name, flags, 0o600, dir_fd=bound._parent_fd
+        )
     except FileExistsError as exc:
         raise ValueError("replacement claim already exists") from exc
     try:
+        os.fchmod(descriptor, 0o600)
         _write_all(descriptor, canonical_bytes(payload))
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
-    _sync_parent(claim_path.parent)
-    return claim_path
+    os.fsync(bound._parent_fd)
+    return bound["claim_path"]
+
+
+def run_claimed_stages(
+    context: dict, *, validate_outcomes, fit, write_report,
+):
+    """Prove the durable claim precedes outcome validation, fit, and report."""
+    bound = _validate_context(context)
+    claim(bound)
+    outcomes = validate_outcomes(bound)
+    fitted = fit(bound, outcomes)
+    return write_report(bound, fitted)

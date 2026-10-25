@@ -4,6 +4,8 @@ import hashlib
 import json
 import multiprocessing
 import os
+import shutil
+import stat
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +13,21 @@ import pytest
 
 from predictor_v5 import replacement_lifecycle as lifecycle
 from predictor_v5.replacement_contract import canonical_bytes
+from predictor_v5.tests.test_replacement_cohort import (
+    TARGET_COLUMNS,
+    mfl_rows,
+    players,
+    season,
+    write_archive,
+)
+from predictor_v5.tests.test_replacement_contract import (
+    attestation_fixture,
+    cross_fixture,
+    registration_fixture,
+    registry_fixture,
+)
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _context(tmp_path):
@@ -36,7 +53,7 @@ def _context(tmp_path):
         for name, value in objects.items()
     }
     manifest_sha = digests["manifest_sha256"]
-    return {
+    values = {
         **objects,
         **digests,
         "training_frames": {"ktc": frame, "mfl": frame.copy()},
@@ -44,6 +61,20 @@ def _context(tmp_path):
         "output_path": parent / ("2026-" + manifest_sha + ".json"),
         "claim_path": parent / ("2026-" + manifest_sha + ".claim.json"),
     }
+    root_fd_path = tmp_path.resolve()
+    root_path, root_fd = lifecycle._absolute_root(root_fd_path)
+    parent_fd = lifecycle._open_directory(
+        root_fd, "backend/predictor_v5/artifacts/replacements"
+    )
+    return lifecycle._PreflightContext(
+        values,
+        token=lifecycle._CAPABILITY,
+        root_fd=root_fd,
+        parent_fd=parent_fd,
+        root_path=root_path,
+        output_name=values["output_path"].name,
+        claim_name=values["claim_path"].name,
+    )
 
 
 def _race_claim(context, gate, queue):
@@ -56,200 +87,370 @@ def _race_claim(context, gate, queue):
         queue.put(("ok", str(path)))
 
 
-def _preflight_fixture(tmp_path, monkeypatch):
-    data = tmp_path / "backend/predictor_v5/data"
-    outputs = tmp_path / "backend/predictor_v5/artifacts/replacements"
-    data.mkdir(parents=True)
-    outputs.mkdir(parents=True)
-    paths = {
-        "manifest": data / "ktc_replacement_2026_manifest.json",
-        "registry": data / "replacement_registry.json",
-        "registration": data / "replacement_inputs.json",
-        "joint": data / "joint.json",
-        "source": data / "source.py",
-        "archive": data / "training.zip",
-        "labels": data / "labels.csv",
-        "starts": data / "start_values_2026.csv",
-        "mapping": data / "mapping.json",
+def _write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(canonical_bytes(value))
+
+
+def _copy(root, relative):
+    destination = root / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / relative, destination)
+
+
+def _identity(root, relative):
+    return {
+        "path": relative,
+        "sha256": hashlib.sha256((root / relative).read_bytes()).hexdigest(),
     }
-    for name, path in paths.items():
-        path.write_bytes((name + "\n").encode())
-    outcome_paths = []
-    for name in (
-        "raw.csv",
-        "ktc.csv",
-        "ktc-stats.zip",
-        "ktc-sidecar.json",
-        "mfl.csv",
-        "mfl-stats.zip",
-        "mfl-sidecar.json",
+
+
+def _real_preflight_fixture(tmp_path, training_case=None):
+    for directory in (
+        "backend/predictor_v5/artifacts/replacements",
+        "backend/predictor_v5/artifacts/confirmations",
     ):
-        path = data / name
-        path.write_bytes(b"OUTCOME MUST NOT BE READ")
-        outcome_paths.append(path)
-
-    def identity(name):
-        path = paths[name]
-        return {
-            "path": path.relative_to(tmp_path).as_posix(),
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        }
-
-    manifest_hash = "a" * 64
-    joint_hash = "b" * 64
-    manifest = {
-        "registry_path": paths["registry"].relative_to(tmp_path).as_posix(),
-        "input_registration_path": paths["registration"].relative_to(
-            tmp_path
-        ).as_posix(),
-        "output_template": "backend/predictor_v5/artifacts/replacements/2026-<manifest-sha256>.json",
-        "claim_template": "backend/predictor_v5/artifacts/replacements/2026-<manifest-sha256>.claim.json",
-        "source_identities": [identity("source")],
-        "training": {
-            "archive": identity("archive"),
-            "mfl_labels": identity("labels"),
-        },
-        "starts": {"identity": identity("starts")},
-        "recipes": {"ktc": {"mapping_data": identity("mapping")}},
-    }
-    review_identity = {
-        "path": paths["joint"].relative_to(tmp_path).as_posix(),
-        "sha256": joint_hash,
-    }
-    registration = {
-        "holdout_attestation": {"joint_review": review_identity},
-        "ktc": dict(
-            zip(
-                ("raw_end", "target_csv", "target_stats", "target_sidecar"),
-                [
-                    {
-                        "path": path.relative_to(tmp_path).as_posix(),
-                        "sha256": "0" * 64,
-                    }
-                    for path in outcome_paths[:4]
-                ],
-            )
-        ),
-        "mfl": dict(
-            zip(
-                ("target_csv", "target_stats", "target_sidecar"),
-                [
-                    {
-                        "path": path.relative_to(tmp_path).as_posix(),
-                        "sha256": "0" * 64,
-                    }
-                    for path in outcome_paths[4:]
-                ],
-            )
-        ),
-    }
-    joint = {"confirmation_manifest_sha256": "c" * 64}
-    registry = {"entries": []}
-
-    def load(path, _fields):
-        name = Path(path).name
-        if name == paths["manifest"].name:
-            return manifest, manifest_hash
-        if name == paths["registry"].name:
-            return registry, "d" * 64
-        if name == paths["registration"].name:
-            return registration, "e" * 64
-        if name == paths["joint"].name:
-            return joint, joint_hash
-        raise AssertionError(name)
-
-    monkeypatch.setattr(lifecycle, "load_canonical", load)
-    monkeypatch.setattr(lifecycle, "validate_references", lambda *a, **k: {})
-    monkeypatch.setattr(
-        lifecycle,
-        "_load_confirmation",
-        lambda *a: {
-            "manifest": {},
-            "manifest_sha256": "c" * 64,
-            "registry": {},
-            "registry_sha256": "f" * 64,
-            "registration": {},
-            "registration_sha256": "9" * 64,
-        },
+        (tmp_path / directory).mkdir(parents=True)
+    confirmation_manifest = json.loads(
+        (ROOT / lifecycle.CONFIRMATION_MANIFEST_PATH).read_text()
     )
-    frames = {
-        "ktc": pd.DataFrame({"player_id": ["1"]}),
-        "mfl": pd.DataFrame({"player_id": ["1"]}),
+    protected = {
+        lifecycle.CONFIRMATION_MANIFEST_PATH,
+        lifecycle.LABEL_MANIFEST_PATH,
+        confirmation_manifest["baseline"]["path"],
+        confirmation_manifest["candidate"]["path"],
+        confirmation_manifest["training_data"]["path"],
+        confirmation_manifest["target_recipe"]["sql"]["path"],
+        confirmation_manifest["target_recipe"]["build"]["path"],
+        *confirmation_manifest["source_identities"],
+        "backend/predictor_v5/data/start_values_2026.csv",
     }
-    starts = pd.DataFrame({"player_id": ["1"], "season": [2026]})
-    monkeypatch.setattr(lifecycle, "prepare_training", lambda *a: frames)
-    monkeypatch.setattr(lifecycle, "load_starts", lambda *a: starts)
-    return manifest, paths, set(outcome_paths), frames, starts
+    for label in ("baseline", "candidate"):
+        path = Path(confirmation_manifest[label]["path"])
+        sidecar = (path.parent / (path.stem + ".provenance.json")).as_posix()
+        if (ROOT / sidecar).exists():
+            protected.add(sidecar)
+    for relative in protected:
+        _copy(tmp_path, relative)
+    shutil.copy2(ROOT / ".git", tmp_path / ".git")
 
-
-def test_preflight_never_opens_outcomes(tmp_path, monkeypatch):
-    """Break caught: a refusal or successful preflight consumes outcome bytes."""
-    manifest, paths, outcomes, frames, starts = _preflight_fixture(
-        tmp_path, monkeypatch
+    manifest, _, _, _, _, _ = cross_fixture()
+    manifest["registry_path"] = "backend/predictor_v5/data/replacement-registry.json"
+    manifest["input_registration_path"] = "backend/predictor_v5/data/replacement-inputs.json"
+    recipe_paths = {
+        "ktc_sql": "fixture/ktc.sql",
+        "extractor": "fixture/extractor.py",
+        "mapping_code": "fixture/mapping.py",
+        "mapping_data": "fixture/mapping.json",
+        "mfl_sql": "fixture/mfl.sql",
+        "build": "fixture/build.py",
+    }
+    for name, relative in recipe_paths.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(name + "\n")
+    identities = {name: _identity(tmp_path, path) for name, path in recipe_paths.items()}
+    manifest["recipes"]["ktc"].update(
+        sql=identities["ktc_sql"], extractor=identities["extractor"],
+        mapping_code=identities["mapping_code"], mapping_data=identities["mapping_data"],
     )
-    opened_outcomes = []
-    original_open = Path.open
+    manifest["recipes"]["mfl"].update(
+        sql=identities["mfl_sql"], build=identities["build"]
+    )
+    manifest["source_identities"] = sorted(
+        [identities[key] for key in ("ktc_sql", "extractor", "mapping_code", "mfl_sql", "build")],
+        key=lambda value: value["path"],
+    )
+    archive = tmp_path / "fixture/training.zip"
+    labels = tmp_path / "fixture/labels.csv"
+    rows = players()
+    if training_case == "missing":
+        rows = [row for row in rows if row["position"] != "TE"]
+    elif training_case == "leakage":
+        rows[0]["seasons"].append(season(2026))
+    write_archive(archive, rows)
+    pd.DataFrame(mfl_rows(rows), columns=TARGET_COLUMNS).to_csv(labels, index=False)
+    manifest["training"].update(
+        archive=_identity(tmp_path, "fixture/training.zip"),
+        mfl_labels=_identity(tmp_path, "fixture/labels.csv"),
+        ktc_member="training-data.json",
+    )
+    manifest_path = tmp_path / lifecycle.REPLACEMENT_MANIFEST_PATH
+    _write_json(manifest_path, manifest)
+    manifest_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
 
-    def guarded_open(path, *args, **kwargs):
-        if Path(path) in outcomes:
-            opened_outcomes.append(Path(path))
-            raise AssertionError("outcome bytes opened before claim")
-        return original_open(path, *args, **kwargs)
+    joint = attestation_fixture()
+    joint.update(
+        replacement_manifest_sha256=manifest_sha,
+        confirmation_manifest_sha256=lifecycle.CONFIRMATION_MANIFEST_SHA256,
+        evidence_reference="backend/predictor_v5/data/joint-review.json",
+        reviewed_at="2026-10-25T00:00:00+00:00",
+    )
+    joint_path = tmp_path / joint["evidence_reference"]
+    _write_json(joint_path, joint)
+    joint_identity = _identity(tmp_path, joint["evidence_reference"])
 
-    monkeypatch.setattr(Path, "open", guarded_open)
+    registry = registry_fixture()
+    registry["entries"][0].update(
+        manifest_sha256=manifest_sha,
+        sealing_commit=manifest["sealing_commit"],
+        sealed_at=manifest["sealed_at"],
+        reviewer=joint["reviewer"], evidence_commit=joint["evidence_commit"],
+        evidence_reference=joint["evidence_reference"], reviewed_at=joint["reviewed_at"],
+        joint_review=joint_identity,
+    )
+    registration = registration_fixture()
+    registration["manifest_sha256"] = manifest_sha
+    registration["holdout_attestation"].update(
+        registry_key="2026:" + manifest_sha, reviewer=joint["reviewer"],
+        evidence_commit=joint["evidence_commit"],
+        evidence_reference=joint["evidence_reference"], reviewed_at=joint["reviewed_at"],
+        joint_review=joint_identity,
+    )
+    for source, keys in (
+        ("ktc", ("sql", "extractor", "mapping_code", "mapping_data")),
+        ("mfl", ("sql", "build")),
+    ):
+        for key in keys:
+            registration[source][key] = manifest["recipes"][source][key]
+    outcomes = []
+    for source, keys in (
+        ("ktc", ("raw_end", "target_csv", "target_stats", "target_sidecar")),
+        ("mfl", ("target_csv", "target_stats", "target_sidecar")),
+    ):
+        for key in keys:
+            relative = f"outcomes/replacement-{source}-{key}"
+            path = tmp_path / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"registered outcome; never read")
+            registration[source][key] = {"path": relative, "sha256": "a" * 64}
+            outcomes.append(path)
+    _write_json(tmp_path / manifest["registry_path"], registry)
+    _write_json(tmp_path / manifest["input_registration_path"], registration)
+
+    confirmation_review = {
+        "reviewer": joint["reviewer"], "evidence_commit": joint["evidence_commit"],
+        "evidence_reference": joint["evidence_reference"],
+        "reviewed_at": joint["reviewed_at"], "transition_source": "sealed",
+    }
+    confirmation_registry = {
+        "schema_version": 2,
+        "attestation": "review and Git evidence; not proof of non-observation",
+        "entries": [{
+            "season": 2026, "manifest_sha256": lifecycle.CONFIRMATION_MANIFEST_SHA256,
+            "status": "untouched", "sealing_commit": confirmation_manifest["sealing_commit"],
+            "sealed_at": confirmation_manifest["sealed_at"], **confirmation_review,
+        }],
+    }
+    confirmation_registration = {
+        "schema_version": 2, "season": 2026,
+        "manifest_sha256": lifecycle.CONFIRMATION_MANIFEST_SHA256,
+        "target_csv": None, "target_sidecar": None, "target_stats": None,
+        "provenance": {"model_version": "baseline-hl28-v1", "verified": True, "identity": "fixture"},
+        "target_contract": {
+            "raw_market_columns": [
+                "player_id", "season", "start_value", "end_value", "start_evidence",
+                "end_evidence", "start_trades_window", "end_trades_window",
+                "end_value_next_board", "end_evidence_next_board",
+            ],
+            "joined_model_columns": ["player_id", "season", "position", "age", "points", "start_value", "end_value"],
+            "label_filter": {"positive_values": True, "min_trades": 5},
+        },
+        "recipe": {
+            "sql_path": confirmation_manifest["target_recipe"]["sql"]["path"],
+            "sql_sha256": confirmation_manifest["target_recipe"]["sql"]["sha256"],
+            "build_path": confirmation_manifest["target_recipe"]["build"]["path"],
+            "build_sha256": confirmation_manifest["target_recipe"]["build"]["sha256"],
+        },
+        "holdout_attestation": {
+            "registry_key": "2026:" + lifecycle.CONFIRMATION_MANIFEST_SHA256,
+            "status": "untouched", **confirmation_review,
+        },
+    }
+    for key in ("target_csv", "target_sidecar", "target_stats"):
+        relative = f"outcomes/confirmation-{key}"
+        path = tmp_path / relative
+        path.write_bytes(b"registered confirmation outcome; never read")
+        confirmation_registration[key] = {"path": relative, "sha256": "b" * 64}
+        outcomes.append(path)
+    _write_json(tmp_path / confirmation_manifest["registry_path"], confirmation_registry)
+    _write_json(tmp_path / confirmation_manifest["input_registration_path"], confirmation_registration)
+    return {
+        "root": tmp_path, "manifest": manifest, "manifest_sha": manifest_sha,
+        "registry": registry, "registration": registration, "joint": joint,
+        "confirmation_manifest": confirmation_manifest,
+        "confirmation_registry": confirmation_registry,
+        "confirmation_registration": confirmation_registration,
+        "outcomes": outcomes,
+    }
+
+
+def test_preflight_real_validators_never_read_outcome_inodes(tmp_path, monkeypatch):
+    """Break caught: real canonical/training/starts validation reads outcomes."""
+    fixture = _real_preflight_fixture(tmp_path)
+    outcome_inodes = {(path.stat().st_dev, path.stat().st_ino) for path in fixture["outcomes"]}
+    original_read = lifecycle.os.read
+
+    def guarded_read(descriptor, amount):
+        info = os.fstat(descriptor)
+        assert (info.st_dev, info.st_ino) not in outcome_inodes
+        return original_read(descriptor, amount)
+
+    monkeypatch.setattr(lifecycle.os, "read", guarded_read)
     context = lifecycle.preflight(tmp_path)
-    assert opened_outcomes == []
-    assert context["training_frames"] is frames
-    assert context["starts"] is starts
-    assert not context["claim_path"].exists()
-    assert not context["output_path"].exists()
-
-    paths["source"].write_bytes(b"changed\n")
-    with pytest.raises(ValueError, match="identity mismatch"):
-        lifecycle.preflight(tmp_path)
-    assert opened_outcomes == []
+    assert type(context) is lifecycle._PreflightContext
+    assert set(context["training_frames"]) == {"ktc", "mfl"}
     assert not context["claim_path"].exists()
 
-    paths["source"].write_bytes(b"source\n")
-    original_identity = manifest["source_identities"][0]
-    outcome = next(iter(outcomes))
-    manifest["source_identities"][0] = {
-        "path": outcome.relative_to(tmp_path).as_posix(),
-        "sha256": hashlib.sha256(b"OUTCOME MUST NOT BE READ").hexdigest(),
-    }
-    with pytest.raises(ValueError, match="aliases"):
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "fixture/ktc.sql",
+        "fixture/training.zip",
+        "fixture/labels.csv",
+        "backend/predictor_v5/data/start_values_2026.csv",
+        "fixture/mapping.json",
+        lifecycle.REPLACEMENT_MANIFEST_PATH,
+        "backend/predictor_v5/data/replacement-registry.json",
+        "backend/predictor_v5/data/replacement-inputs.json",
+        "backend/predictor_v5/data/joint-review.json",
+        "backend/predictor_v5/data/backchannel_labels_2019_2025.csv",
+        "backend/data/training-data.zip",
+        "backend/predictor_v5/confirmation.py",
+        "backend/predictor_v5/sql/backchannel_labels.sql",
+        lifecycle.CONFIRMATION_MANIFEST_PATH,
+        "backend/predictor_v5/data/model_2026_holdout_registry.json",
+        "backend/predictor_v5/data/model_2026_confirmation_inputs.json",
+    ],
+)
+def test_preflight_rejects_physical_outcome_aliases(tmp_path, alias):
+    """Break caught: distinct registered paths hardlink to later readable bytes."""
+    fixture = _real_preflight_fixture(tmp_path)
+    outcome = fixture["outcomes"][0]
+    outcome.unlink()
+    os.link(tmp_path / alias, outcome)
+    with pytest.raises(ValueError, match="alias"):
         lifecycle.preflight(tmp_path)
-    assert opened_outcomes == []
-    manifest["source_identities"][0] = original_identity
 
-    report = tmp_path / manifest["output_template"].replace(
-        "<manifest-sha256>", "a" * 64
-    )
-    report.write_bytes(b"existing")
-    with pytest.raises(ValueError, match="report already exists"):
+
+def _rewrite(path, value):
+    _write_json(path, value)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "joint",
+        "registration",
+        "existing_claim",
+        "existing_report",
+        "training_missing",
+        "training_leakage",
+        "confirmation_output",
+        "confirmation_reused",
+    ],
+)
+def test_preclaim_refusals_stop_pipeline_without_outcome_read(
+    tmp_path, monkeypatch, failure
+):
+    """Break caught: a named preclaim refusal reaches outcomes, fit, or output."""
+    training_case = failure.removeprefix("training_") if failure.startswith("training_") else None
+    fixture = _real_preflight_fixture(tmp_path, training_case=training_case)
+    if failure == "joint":
+        fixture["joint"]["evidence_untouched"] = False
+        _rewrite(tmp_path / fixture["joint"]["evidence_reference"], fixture["joint"])
+    elif failure == "registration":
+        fixture["registration"]["holdout_attestation"]["status"] = "reused"
+        _rewrite(
+            tmp_path / fixture["manifest"]["input_registration_path"],
+            fixture["registration"],
+        )
+    elif failure in {"existing_claim", "existing_report"}:
+        suffix = ".claim.json" if failure == "existing_claim" else ".json"
+        path = (
+            tmp_path
+            / "backend/predictor_v5/artifacts/replacements"
+            / f"2026-{fixture['manifest_sha']}{suffix}"
+        )
+        path.write_text("existing")
+    elif failure == "confirmation_output":
+        path = tmp_path / fixture["confirmation_manifest"]["output_template"].replace(
+            "<manifest-sha256>", lifecycle.CONFIRMATION_MANIFEST_SHA256
+        )
+        path.write_text("exposed")
+    elif failure == "confirmation_reused":
+        fixture["confirmation_registry"]["entries"][0]["status"] = "reused"
+        _rewrite(
+            tmp_path / fixture["confirmation_manifest"]["registry_path"],
+            fixture["confirmation_registry"],
+        )
+
+    outcome_inodes = {(path.stat().st_dev, path.stat().st_ino) for path in fixture["outcomes"]}
+    original_read = lifecycle.os.read
+    calls = []
+
+    def guarded_read(descriptor, amount):
+        info = os.fstat(descriptor)
+        assert (info.st_dev, info.st_ino) not in outcome_inodes
+        return original_read(descriptor, amount)
+
+    def callback(name):
+        def record(*_args):
+            calls.append(name)
+
+        return record
+
+    monkeypatch.setattr(lifecycle.os, "read", guarded_read)
+    monkeypatch.setattr(lifecycle, "claim", callback("claim"))
+    with pytest.raises((ValueError, OSError)):
+        context = lifecycle.preflight(tmp_path)
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=callback("outcomes"),
+            fit=callback("fit"),
+            write_report=callback("report"),
+        )
+    assert calls == []
+    claims = list(tmp_path.rglob("*.claim.json"))
+    assert len(claims) == (1 if failure == "existing_claim" else 0)
+    reports = [
+        path
+        for path in (
+            tmp_path / "backend/predictor_v5/artifacts/replacements"
+        ).glob("*.json")
+        if not path.name.endswith(".claim.json")
+    ]
+    assert len(reports) == (1 if failure == "existing_report" else 0)
+
+
+def test_preflight_nofollow_open_rejects_check_open_swap(tmp_path, monkeypatch):
+    """Break caught: source becomes an outcome symlink between metadata and open."""
+    fixture = _real_preflight_fixture(tmp_path)
+    source = tmp_path / "fixture/ktc.sql"
+    outcome = fixture["outcomes"][0]
+    outcome_inode = (outcome.stat().st_dev, outcome.stat().st_ino)
+    original_open = lifecycle.os.open
+    original_read = lifecycle.os.read
+    swapped = False
+
+    def swapping_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == "ktc.sql" and not swapped:
+            swapped = True
+            source.unlink()
+            source.symlink_to(outcome)
+        return original_open(path, flags, *args, **kwargs)
+
+    def guarded_read(descriptor, amount):
+        info = os.fstat(descriptor)
+        assert (info.st_dev, info.st_ino) != outcome_inode
+        return original_read(descriptor, amount)
+
+    monkeypatch.setattr(lifecycle.os, "open", swapping_open)
+    monkeypatch.setattr(lifecycle.os, "read", guarded_read)
+    with pytest.raises(OSError):
         lifecycle.preflight(tmp_path)
-    assert opened_outcomes == []
-
-
-def test_preflight_training_failure_is_retryable(tmp_path, monkeypatch):
-    """Break caught: missing training coverage writes a claim or reads outcomes."""
-    _, _, outcomes, _, _ = _preflight_fixture(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        lifecycle,
-        "prepare_training",
-        lambda *a: (_ for _ in ()).throw(ValueError("training coverage missing")),
-    )
-    original_open = Path.open
-
-    def guarded_open(path, *args, **kwargs):
-        if Path(path) in outcomes:
-            raise AssertionError("outcome bytes opened before claim")
-        return original_open(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", guarded_open)
-    with pytest.raises(ValueError, match="coverage"):
-        lifecycle.preflight(tmp_path)
-    assert list(tmp_path.rglob("*.claim.json")) == []
 
 
 def test_concurrent_claim_is_unique_and_exact(tmp_path, monkeypatch):
@@ -307,12 +508,10 @@ def test_claim_fsyncs_file_then_directory(tmp_path, monkeypatch):
     original_fsync = os.fsync
     original_open = os.open
 
-    def recording_open(path, flags, *args):
-        descriptor = original_open(path, flags, *args)
-        if Path(path) == context["claim_path"]:
+    def recording_open(path, flags, *args, **kwargs):
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if path == context._claim_name:
             events.append(("open-file", descriptor))
-        elif Path(path) == context["claim_path"].parent:
-            events.append(("open-directory", descriptor))
         return descriptor
 
     def recording_fsync(descriptor):
@@ -325,11 +524,10 @@ def test_claim_fsyncs_file_then_directory(tmp_path, monkeypatch):
     assert [event[0] for event in events] == [
         "open-file",
         "fsync",
-        "open-directory",
         "fsync",
     ]
     assert events[0][1] == events[1][1]
-    assert events[2][1] == events[3][1]
+    assert events[2][1] == context._parent_fd
 
 
 def test_claim_retries_interrupted_and_partial_writes(tmp_path, monkeypatch):
@@ -401,3 +599,212 @@ def test_existing_report_always_refuses_claim(tmp_path):
     with pytest.raises(ValueError, match="report already exists"):
         lifecycle.claim(context)
     assert not context["claim_path"].exists()
+
+
+def test_claim_rejects_hash_consistent_plain_context(tmp_path):
+    """Break caught: callers mint a claim without obtaining preflight capability."""
+    context = dict(_context(tmp_path))
+    with pytest.raises(ValueError, match="capability"):
+        lifecycle.claim(context)
+    assert not context["claim_path"].exists()
+
+
+def test_claim_mode_is_exact_under_restrictive_umask(tmp_path):
+    """Break caught: umask leaves the durable claim owner-unreadable."""
+    context = _context(tmp_path)
+    previous = os.umask(0o777)
+    try:
+        lifecycle.claim(context)
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(context["claim_path"].stat().st_mode) == 0o600
+
+
+def test_claim_first_stage_runner_orders_real_callbacks(tmp_path):
+    """Break caught: Task 8 validation or fitting runs before durable claim."""
+    context = _context(tmp_path)
+    events = []
+
+    def validate(bound):
+        assert bound["claim_path"].exists()
+        events.append("validate")
+        return "outcomes"
+
+    def fit(bound, outcomes):
+        assert bound["claim_path"].exists()
+        assert outcomes == "outcomes"
+        events.append("fit")
+        return "fit"
+
+    def report(bound, fitted):
+        assert bound["claim_path"].exists()
+        assert fitted == "fit"
+        events.append("report")
+        return "done"
+
+    assert lifecycle.run_claimed_stages(
+        context, validate_outcomes=validate, fit=fit, write_report=report
+    ) == "done"
+    assert events == ["validate", "fit", "report"]
+
+
+@pytest.mark.parametrize("mutation", ["hash", "cross_reference", "training", "starts", "rebase"])
+def test_claim_rejects_mutated_preflight_capability(tmp_path, mutation):
+    """Break caught: a valid capability is edited after preflight and still claims."""
+    context = _context(tmp_path)
+    if mutation == "hash":
+        context["manifest_sha256"] = "0" * 64
+    elif mutation == "cross_reference":
+        context["registration"]["kind"] = "changed"
+    elif mutation == "training":
+        context["training_frames"]["ktc"].loc[0, "season"] = 2026
+    elif mutation == "starts":
+        context["starts"].loc[0, "season"] = 2025
+    else:
+        other = tmp_path / "other/backend/predictor_v5/artifacts/replacements"
+        other.mkdir(parents=True)
+        context["claim_path"] = other / context["claim_path"].name
+        context["output_path"] = other / context["output_path"].name
+    with pytest.raises(ValueError, match="changed"):
+        lifecycle.claim(context)
+
+
+def test_claim_rejects_replaced_parent_but_uses_pinned_descriptor(tmp_path):
+    """Break caught: claim follows a replacement output parent by pathname."""
+    context = _context(tmp_path)
+    parent = context["claim_path"].parent
+    moved = parent.with_name("replacements-moved")
+    parent.rename(moved)
+    parent.mkdir()
+    with pytest.raises(ValueError, match="parent path changed"):
+        lifecycle.claim(context)
+    assert not (parent / context._claim_name).exists()
+    assert not (moved / context._claim_name).exists()
+
+
+def test_claim_creation_and_directory_fsync_stay_on_pinned_parent(
+    tmp_path, monkeypatch
+):
+    """Break caught: a pathname swap redirects create or directory durability."""
+    context = _context(tmp_path)
+    parent = context["claim_path"].parent
+    moved = parent.with_name("replacements-moved")
+    original_fsync = lifecycle.os.fsync
+    claim_fd = None
+    parent_fsyncs = []
+
+    def swapping_fsync(descriptor):
+        nonlocal claim_fd
+        info = os.fstat(descriptor)
+        if stat.S_ISREG(info.st_mode):
+            claim_fd = descriptor
+            result = original_fsync(descriptor)
+            parent.rename(moved)
+            parent.mkdir()
+            return result
+        parent_fsyncs.append(descriptor)
+        return original_fsync(descriptor)
+
+    monkeypatch.setattr(lifecycle.os, "fsync", swapping_fsync)
+    lifecycle.claim(context)
+    assert claim_fd is not None
+    assert parent_fsyncs == [context._parent_fd]
+    assert (moved / context._claim_name).exists()
+    assert not (parent / context._claim_name).exists()
+
+
+@pytest.mark.parametrize(
+    "failure", ["partial_write", "fchmod", "file_fsync", "close", "directory_fsync"]
+)
+def test_postcreate_io_failures_retain_claim(tmp_path, monkeypatch, failure):
+    """Break caught: an IO failure after exclusive create re-enables retry."""
+    context = _context(tmp_path)
+    original_write = lifecycle.os.write
+    original_fchmod = lifecycle.os.fchmod
+    original_fsync = lifecycle.os.fsync
+    original_close = lifecycle.os.close
+    claim_fd = None
+    original_open = lifecycle.os.open
+
+    def recording_open(path, flags, *args, **kwargs):
+        nonlocal claim_fd
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if path == context._claim_name:
+            claim_fd = descriptor
+        return descriptor
+
+    monkeypatch.setattr(lifecycle.os, "open", recording_open)
+    if failure == "partial_write":
+        calls = 0
+
+        def fail_write(descriptor, raw):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return original_write(descriptor, raw[:7])
+            raise OSError("partial write failure")
+
+        monkeypatch.setattr(lifecycle.os, "write", fail_write)
+    elif failure == "fchmod":
+        monkeypatch.setattr(
+            lifecycle.os, "fchmod", lambda _fd, _mode: (_ for _ in ()).throw(OSError("fchmod"))
+        )
+    elif failure in {"file_fsync", "directory_fsync"}:
+
+        def fail_fsync(descriptor):
+            if (failure == "file_fsync" and descriptor == claim_fd) or (
+                failure == "directory_fsync" and descriptor == context._parent_fd
+            ):
+                raise OSError(failure)
+            return original_fsync(descriptor)
+
+        monkeypatch.setattr(lifecycle.os, "fsync", fail_fsync)
+    else:
+
+        def fail_close(descriptor):
+            if descriptor == claim_fd:
+                original_close(descriptor)
+                raise OSError("close")
+            return original_close(descriptor)
+
+        monkeypatch.setattr(lifecycle.os, "close", fail_close)
+
+    with pytest.raises(OSError):
+        lifecycle.claim(context)
+    assert context["claim_path"].exists()
+    monkeypatch.setattr(lifecycle.os, "write", original_write)
+    monkeypatch.setattr(lifecycle.os, "fchmod", original_fchmod)
+    monkeypatch.setattr(lifecycle.os, "fsync", original_fsync)
+    monkeypatch.setattr(lifecycle.os, "close", original_close)
+    with pytest.raises(ValueError, match="claim already exists"):
+        lifecycle.claim(context)
+
+
+@pytest.mark.parametrize("stage", ["validation", "fit", "report"])
+def test_claimed_stage_failures_retain_claim_and_no_report(tmp_path, stage):
+    """Break caught: a real callback failure rolls back the durable claim."""
+    context = _context(tmp_path)
+
+    def validate(_bound):
+        if stage == "validation":
+            raise RuntimeError(stage)
+        return "outcomes"
+
+    def fit(_bound, outcomes):
+        assert outcomes == "outcomes"
+        if stage == "fit":
+            raise RuntimeError(stage)
+        return "fitted"
+
+    def report(_bound, fitted):
+        assert fitted == "fitted"
+        raise RuntimeError(stage)
+
+    with pytest.raises(RuntimeError, match=stage):
+        lifecycle.run_claimed_stages(
+            context, validate_outcomes=validate, fit=fit, write_report=report
+        )
+    assert context["claim_path"].exists()
+    assert not context["output_path"].exists()
+    with pytest.raises(ValueError, match="claim already exists"):
+        lifecycle.claim(context)
