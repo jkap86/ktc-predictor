@@ -109,6 +109,170 @@ def bundle(tmp_path):
     return {"ktc": ids}, starts, stats, side
 
 
+def replace_side(tmp_path, registration, side):
+    data = (json.dumps(side, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    (tmp_path / "side.json").write_bytes(data)
+    registration["ktc"]["target_sidecar"]["sha256"] = hashlib.sha256(data).hexdigest()
+
+
+def replace_archive(tmp_path, registration, side, envelope):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("training-data.json", json.dumps(envelope))
+    data = archive.getvalue()
+    (tmp_path / "stats.zip").write_bytes(data)
+    registration["ktc"]["target_stats"]["sha256"] = hashlib.sha256(data).hexdigest()
+    side["identities"]["target_stats"] = registration["ktc"]["target_stats"]
+    replace_side(tmp_path, registration, side)
+
+
+@pytest.mark.parametrize(
+    "field,bad",
+    [
+        ("player_id", 1),
+        ("player_id", ""),
+        ("position", "K"),
+        ("age", True),
+        ("age", float("inf")),
+        ("age", "25"),
+        ("games_played", True),
+        ("games_played", -1),
+        ("games_played", 1.5),
+        ("fantasy_points", True),
+        ("fantasy_points", float("nan")),
+        ("fantasy_points", "1"),
+        ("year", True),
+        ("year", 2025),
+    ],
+)
+def test_invalid_unmatched_archive_facts_rejected(tmp_path, field, bad):
+    registration, starts, stats, side = bundle(tmp_path)
+    player = {
+        "player_id": "q",
+        "position": "RB",
+        "seasons": [{"year": 2026, "age": 25, "games_played": 1, "fantasy_points": 1}],
+    }
+    (player if field in ("player_id", "position") else player["seasons"][0])[field] = (
+        bad
+    )
+    valid = {
+        "player_id": "p",
+        "position": "QB",
+        "seasons": [
+            {"year": 2026, "age": 25, "games_played": 17, "fantasy_points": 300}
+        ],
+    }
+    replace_archive(tmp_path, registration, side, {"players": [valid, player]})
+    with pytest.raises(ValueError):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "envelope",
+    [
+        None,
+        {},
+        {"players": {}},
+        {"players": [None]},
+        {"players": [{"player_id": "q", "position": "RB", "seasons": None}]},
+    ],
+)
+def test_malformed_archive_envelope_rejected(tmp_path, envelope):
+    registration, starts, stats, side = bundle(tmp_path)
+    replace_archive(tmp_path, registration, side, envelope)
+    with pytest.raises(ValueError):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+def test_duplicate_unmatched_archive_player_rejected(tmp_path):
+    registration, starts, stats, side = bundle(tmp_path)
+    q = {"player_id": "q", "position": "RB", "seasons": [{"year": 2026, "age": 25}]}
+    replace_archive(tmp_path, registration, side, {"players": [q, q]})
+    with pytest.raises(ValueError):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+@pytest.mark.parametrize("facts", [{}, {"games_played": None, "fantasy_points": None}])
+def test_missing_or_null_games_and_points_default_to_zero(tmp_path, facts):
+    registration, starts, stats, side = bundle(tmp_path)
+    raw = (tmp_path / "target.csv").read_bytes().replace(b",17,300\n", b",0,0\n")
+    (tmp_path / "target.csv").write_bytes(raw)
+    registration["ktc"]["target_csv"]["sha256"] = hashlib.sha256(raw).hexdigest()
+    side["identities"]["target_csv"] = registration["ktc"]["target_csv"]
+    stats.loc[0, ["games", "points"]] = 0
+    season = {"year": 2026, "age": 25, **facts}
+    replace_archive(
+        tmp_path,
+        registration,
+        side,
+        {"players": [{"player_id": "p", "position": "QB", "seasons": [season]}]},
+    )
+    target = load_ktc_target(registration, starts, stats, tmp_path)
+    assert target.loc[0, "games"] == 0 and target.loc[0, "points"] == 0
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("raw_players", True),
+        ("raw_players", 1.0),
+        ("target_players", True),
+        ("target_players", 1.0),
+    ],
+)
+def test_coverage_counts_require_integers(tmp_path, field, value):
+    registration, starts, stats, side = bundle(tmp_path)
+    side["coverage"][field] = value
+    replace_side(tmp_path, registration, side)
+    with pytest.raises(ValueError):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+@pytest.mark.parametrize("value", [2026.0, True])
+def test_missing_key_season_requires_integer(tmp_path, value):
+    registration, starts, stats, side = bundle(tmp_path)
+    starts = starts.iloc[0:0]
+    side["coverage"]["missing_start_keys"] = [[value, "p"]]
+    replace_side(tmp_path, registration, side)
+    with pytest.raises(ValueError):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+def test_empty_bundle_loads(tmp_path):
+    registration, starts, stats, side = bundle(tmp_path)
+    for key, name, data in [
+        ("raw_end", "raw.csv", b"format,ktc_id,sleeper_id,date,sf_value\n"),
+        (
+            "target_csv",
+            "target.csv",
+            b"player_id,season,start_value,end_value,position,age,games,points\n",
+        ),
+    ]:
+        (tmp_path / name).write_bytes(data)
+        registration["ktc"][key]["sha256"] = hashlib.sha256(data).hexdigest()
+        side["identities"][key] = registration["ktc"][key]
+    side["observation_dates"] = []
+    side["coverage"] = {
+        "raw_players": 0,
+        "target_players": 0,
+        "missing_start_keys": [],
+        "excluded_raw_players": [],
+    }
+    replace_archive(tmp_path, registration, side, {"players": []})
+    result = load_ktc_target(registration, starts.iloc[0:0], stats.iloc[0:0], tmp_path)
+    assert result.empty
+    assert list(result.columns) == [
+        "player_id",
+        "season",
+        "start_value",
+        "end_value",
+        "position",
+        "age",
+        "games",
+        "points",
+    ]
+
+
 def test_registered_bundle_matches_raw_and_stats(tmp_path):
     registration, starts, stats, _ = bundle(tmp_path)
     target = load_ktc_target(registration, starts, stats, tmp_path)

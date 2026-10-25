@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import math
 import zipfile
 from pathlib import Path
 
@@ -109,6 +110,95 @@ def _canonical(data):
         raise ValueError("invalid JSON") from exc
 
 
+def _archive_rows(data):
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        if z.namelist() != ["training-data.json"]:
+            raise ValueError("invalid stats archive members")
+        envelope = json.loads(z.read("training-data.json"))
+    if not isinstance(envelope, dict) or not isinstance(envelope.get("players"), list):
+        raise ValueError("invalid players envelope")  # noqa: TRY004
+    rows, seen = [], set()
+    for player in envelope["players"]:
+        if not isinstance(player, dict):
+            raise ValueError("invalid player")  # noqa: TRY004
+        player_id, position, seasons = (
+            player.get("player_id"),
+            player.get("position"),
+            player.get("seasons"),
+        )
+        if (
+            not isinstance(player_id, str)
+            or not player_id.strip()
+            or position not in ("QB", "RB", "TE", "WR")
+            or not isinstance(seasons, list)
+        ):
+            raise ValueError("invalid player facts")
+        for season in seasons:
+            if (
+                not isinstance(season, dict)
+                or type(season.get("year")) is not int
+                or season["year"] != 2026
+            ):
+                raise ValueError("invalid stats season")
+            key = (player_id, 2026)
+            if key in seen:
+                raise ValueError("duplicate archive player season")
+            seen.add(key)
+            age = season.get("age")
+            games = season.get("games_played")
+            points = season.get("fantasy_points")
+            games = 0 if games is None else games
+            points = 0 if points is None else points
+            if any(
+                type(v) not in (int, float) or not math.isfinite(v)
+                for v in (age, games, points)
+            ):
+                raise ValueError("invalid numeric stats")
+            if games < 0 or int(games) != games:
+                raise ValueError("invalid games")
+            rows.append(
+                {
+                    "player_id": player_id,
+                    "season": 2026,
+                    "position": position,
+                    "age": age,
+                    "games": int(games),
+                    "points": points,
+                }
+            )
+    return rows
+
+
+def _validate_coverage(value):
+    if not isinstance(value, dict) or set(value) != {
+        "raw_players",
+        "target_players",
+        "missing_start_keys",
+        "excluded_raw_players",
+    }:
+        raise ValueError("invalid coverage")
+    if any(
+        type(value[k]) is not int or value[k] < 0
+        for k in ("raw_players", "target_players")
+    ):
+        raise ValueError("invalid coverage count")
+    missing, excluded = value["missing_start_keys"], value["excluded_raw_players"]
+    if not isinstance(missing, list) or not isinstance(excluded, list):
+        raise ValueError("invalid coverage lists")  # noqa: TRY004
+    if any(
+        not isinstance(k, list)
+        or len(k) != 2
+        or type(k[0]) is not int
+        or k[0] != 2026
+        or not isinstance(k[1], str)
+        or not k[1].strip()
+        for k in missing
+    ):
+        raise ValueError("invalid missing key")
+    if any(not isinstance(k, str) or not k.strip() for k in excluded):
+        raise ValueError("invalid excluded player")
+
+
 def load_ktc_target(
     registration: dict, starts: pd.DataFrame, stats: pd.DataFrame, root: Path
 ) -> pd.DataFrame:
@@ -151,6 +241,7 @@ def load_ktc_target(
         "identities"
     ] != {k: ids[k] for k in keys - {"target_sidecar"}}:
         raise ValueError("sidecar identity mismatch")
+    _validate_coverage(side["coverage"])
     try:
         raw = pd.read_csv(io.BytesIO(data["raw_end"]), dtype=str, keep_default_na=False)
         target = pd.read_csv(
@@ -158,25 +249,7 @@ def load_ktc_target(
             dtype=str,
             keep_default_na=False,
         )
-        with zipfile.ZipFile(io.BytesIO(data["target_stats"])) as z:
-            if z.namelist() != ["training-data.json"]:
-                raise ValueError("invalid stats archive members")
-            players = json.loads(z.read("training-data.json"))["players"]
-        archive_rows = []
-        for p in players:
-            for s in p.get("seasons", []):
-                if type(s["year"]) is not int or s["year"] != 2026:
-                    raise ValueError("invalid stats season")
-                archive_rows.append(
-                    {
-                        "player_id": str(p["player_id"]),
-                        "season": s["year"],
-                        "position": p["position"],
-                        "age": s["age"],
-                        "games": s.get("games_played") or 0,
-                        "points": s.get("fantasy_points") or 0,
-                    }
-                )
+        archive_rows = _archive_rows(data["target_stats"])
     except (ValueError, KeyError, TypeError, zipfile.BadZipFile) as exc:
         raise ValueError("invalid registered data") from exc
     if list(target.columns) != TARGET_COLUMNS:
@@ -229,7 +302,7 @@ def load_ktc_target(
     ):
         raise ValueError("raw observations disagree")
     cols = ["player_id", "season", "position", "age", "games", "points"]
-    for frame in (stats, pd.DataFrame(archive_rows)):
+    for frame in (stats, pd.DataFrame(archive_rows, columns=cols)):
         if frame.duplicated(["player_id", "season"]).any():
             raise ValueError("duplicate stats")
         joined = target[cols].merge(
