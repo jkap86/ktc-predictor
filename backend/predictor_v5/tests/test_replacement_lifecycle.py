@@ -1,11 +1,13 @@
 """Behavioral tests for replacement preflight and one-shot claiming."""
 
+import gc
 import hashlib
 import json
 import multiprocessing
 import os
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 import pandas as pd
@@ -32,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def _context(tmp_path):
     parent = tmp_path / "backend/predictor_v5/artifacts/replacements"
-    parent.mkdir(parents=True)
+    parent.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame({"player_id": ["1"], "season": [2021]})
     starts = pd.DataFrame({"player_id": ["1"], "season": [2026]})
     objects = {
@@ -82,9 +84,9 @@ def _race_claim(context, gate, queue):
     try:
         path = lifecycle.claim(context)
     except Exception as exc:  # noqa: BLE001 - subprocess result boundary
-        queue.put(("error", type(exc).__name__))
+        queue.put(("error", type(exc).__name__, context.closed))
     else:
-        queue.put(("ok", str(path)))
+        queue.put(("ok", str(path), context.closed))
 
 
 def _write_json(path, value):
@@ -105,7 +107,7 @@ def _identity(root, relative):
     }
 
 
-def _real_preflight_fixture(tmp_path, training_case=None):
+def _real_preflight_fixture(tmp_path, training_case=None, git_style="file"):
     for directory in (
         "backend/predictor_v5/artifacts/replacements",
         "backend/predictor_v5/artifacts/confirmations",
@@ -132,7 +134,27 @@ def _real_preflight_fixture(tmp_path, training_case=None):
             protected.add(sidecar)
     for relative in protected:
         _copy(tmp_path, relative)
-    shutil.copy2(ROOT / ".git", tmp_path / ".git")
+    if git_style == "file":
+        shutil.copy2(ROOT / ".git", tmp_path / ".git")
+    else:
+        git_dir = tmp_path / ".git"
+        (git_dir / "objects/info").mkdir(parents=True)
+        (git_dir / "refs/heads").mkdir(parents=True)
+        common = Path(
+            subprocess.check_output(
+                ["git", "rev-parse", "--git-common-dir"], cwd=ROOT, text=True
+            ).strip()
+        )
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip()
+        (git_dir / "HEAD").write_text(head + "\n")
+        (git_dir / "config").write_text(
+            "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+        )
+        (git_dir / "objects/info/alternates").write_text(
+            str(common.resolve() / "objects") + "\n"
+        )
 
     manifest, _, _, _, _, _ = cross_fixture()
     manifest["registry_path"] = "backend/predictor_v5/data/replacement-registry.json"
@@ -285,9 +307,12 @@ def _real_preflight_fixture(tmp_path, training_case=None):
     }
 
 
-def test_preflight_real_validators_never_read_outcome_inodes(tmp_path, monkeypatch):
+@pytest.mark.parametrize("git_style", ["file", "directory"])
+def test_preflight_real_validators_never_read_outcome_inodes(
+    tmp_path, monkeypatch, git_style
+):
     """Break caught: real canonical/training/starts validation reads outcomes."""
-    fixture = _real_preflight_fixture(tmp_path)
+    fixture = _real_preflight_fixture(tmp_path, git_style=git_style)
     outcome_inodes = {(path.stat().st_dev, path.stat().st_ino) for path in fixture["outcomes"]}
     original_read = lifecycle.os.read
 
@@ -301,6 +326,51 @@ def test_preflight_real_validators_never_read_outcome_inodes(tmp_path, monkeypat
     assert type(context) is lifecycle._PreflightContext
     assert set(context["training_frames"]) == {"ktc", "mfl"}
     assert not context["claim_path"].exists()
+    context.close()
+
+
+def test_preflight_rejects_registration_alias_removed_at_discovery(
+    tmp_path, monkeypatch
+):
+    """Break caught: registration bytes are outcomes before paths are revealed."""
+    fixture = _real_preflight_fixture(tmp_path)
+    registration = tmp_path / fixture["manifest"]["input_registration_path"]
+    outcome = fixture["outcomes"][0]
+    outcome.unlink()
+    os.link(registration, outcome)
+    original = lifecycle._outcome_identities
+
+    def hide_alias(value):
+        outcome.unlink()
+        outcome.write_bytes(b"replacement outcome")
+        return original(value)
+
+    monkeypatch.setattr(lifecycle, "_outcome_identities", hide_alias)
+    with pytest.raises(ValueError, match="link|alias"):
+        lifecycle.preflight(tmp_path)
+
+
+def test_preflight_rejects_outcome_linked_after_source_fstat(tmp_path, monkeypatch):
+    """Break caught: an outcome becomes a source hardlink during its read."""
+    fixture = _real_preflight_fixture(tmp_path)
+    source = tmp_path / "fixture/ktc.sql"
+    outcome = fixture["outcomes"][0]
+    source_inode = (source.stat().st_dev, source.stat().st_ino)
+    original_read = lifecycle.os.read
+    swapped = False
+
+    def link_during_read(descriptor, amount):
+        nonlocal swapped
+        info = os.fstat(descriptor)
+        if not swapped and (info.st_dev, info.st_ino) == source_inode:
+            swapped = True
+            outcome.unlink()
+            os.link(source, outcome)
+        return original_read(descriptor, amount)
+
+    monkeypatch.setattr(lifecycle.os, "read", link_during_read)
+    with pytest.raises(ValueError, match="link|alias|outcome|changed"):
+        lifecycle.preflight(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -474,6 +544,7 @@ def test_concurrent_claim_is_unique_and_exact(tmp_path, monkeypatch):
     results = [queue.get(timeout=2) for _ in processes]
     assert [result[0] for result in results].count("ok") == 1
     assert [result[0] for result in results].count("error") == 1
+    assert all(result[2] for result in results)
 
     payload = json.loads(context["claim_path"].read_text())
     assert set(payload) == {
@@ -499,6 +570,7 @@ def test_concurrent_claim_is_unique_and_exact(tmp_path, monkeypatch):
         "confirmation_registration_sha256"
     ]
     assert context["claim_path"].read_bytes() == canonical_bytes(payload)
+    context.close()
 
 
 def test_claim_fsyncs_file_then_directory(tmp_path, monkeypatch):
@@ -520,6 +592,7 @@ def test_claim_fsyncs_file_then_directory(tmp_path, monkeypatch):
 
     monkeypatch.setattr(lifecycle.os, "open", recording_open)
     monkeypatch.setattr(lifecycle.os, "fsync", recording_fsync)
+    parent_fd = context._parent_fd
     lifecycle.claim(context)
     assert [event[0] for event in events] == [
         "open-file",
@@ -527,7 +600,7 @@ def test_claim_fsyncs_file_then_directory(tmp_path, monkeypatch):
         "fsync",
     ]
     assert events[0][1] == events[1][1]
-    assert events[2][1] == context._parent_fd
+    assert events[2][1] == parent_fd
 
 
 def test_claim_retries_interrupted_and_partial_writes(tmp_path, monkeypatch):
@@ -577,8 +650,9 @@ def test_crash_after_claim_consumes_without_report(tmp_path, stage):
         raise RuntimeError(stage)
     assert context["claim_path"].is_file()
     assert not context["output_path"].exists()
+    assert context.closed
     with pytest.raises(ValueError, match="claim already exists"):
-        lifecycle.claim(context)
+        lifecycle.claim(_context(tmp_path))
 
 
 def test_claim_fsync_failure_keeps_consumed_claim(tmp_path, monkeypatch):
@@ -588,8 +662,9 @@ def test_claim_fsync_failure_keeps_consumed_claim(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="sync"):
         lifecycle.claim(context)
     assert context["claim_path"].exists()
+    monkeypatch.undo()
     with pytest.raises(ValueError, match="claim already exists"):
-        lifecycle.claim(context)
+        lifecycle.claim(_context(tmp_path))
 
 
 def test_existing_report_always_refuses_claim(tmp_path):
@@ -640,6 +715,7 @@ def test_claim_first_stage_runner_orders_real_callbacks(tmp_path):
         assert bound["claim_path"].exists()
         assert fitted == "fit"
         events.append("report")
+        bound["output_path"].write_bytes(b"complete")
         return "done"
 
     assert lifecycle.run_claimed_stages(
@@ -685,32 +761,32 @@ def test_claim_rejects_replaced_parent_but_uses_pinned_descriptor(tmp_path):
 def test_claim_creation_and_directory_fsync_stay_on_pinned_parent(
     tmp_path, monkeypatch
 ):
-    """Break caught: a pathname swap redirects create or directory durability."""
-    context = _context(tmp_path)
+    """Break caught: a moved durable claim is hidden from the next preflight."""
+    _real_preflight_fixture(tmp_path)
+    context = lifecycle.preflight(tmp_path)
     parent = context["claim_path"].parent
     moved = parent.with_name("replacements-moved")
     original_fsync = lifecycle.os.fsync
-    claim_fd = None
-    parent_fsyncs = []
+    swapped = False
 
     def swapping_fsync(descriptor):
-        nonlocal claim_fd
+        nonlocal swapped
         info = os.fstat(descriptor)
-        if stat.S_ISREG(info.st_mode):
-            claim_fd = descriptor
-            result = original_fsync(descriptor)
+        result = original_fsync(descriptor)
+        if stat.S_ISREG(info.st_mode) and not swapped:
+            swapped = True
             parent.rename(moved)
             parent.mkdir()
-            return result
-        parent_fsyncs.append(descriptor)
-        return original_fsync(descriptor)
+        return result
 
     monkeypatch.setattr(lifecycle.os, "fsync", swapping_fsync)
-    lifecycle.claim(context)
-    assert claim_fd is not None
-    assert parent_fsyncs == [context._parent_fd]
+    with pytest.raises(ValueError, match="parent|canonical"):
+        lifecycle.claim(context)
     assert (moved / context._claim_name).exists()
     assert not (parent / context._claim_name).exists()
+    monkeypatch.setattr(lifecycle.os, "fsync", original_fsync)
+    with pytest.raises(ValueError, match="claim already exists"):
+        lifecycle.preflight(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -776,8 +852,9 @@ def test_postcreate_io_failures_retain_claim(tmp_path, monkeypatch, failure):
     monkeypatch.setattr(lifecycle.os, "fchmod", original_fchmod)
     monkeypatch.setattr(lifecycle.os, "fsync", original_fsync)
     monkeypatch.setattr(lifecycle.os, "close", original_close)
+    assert context.closed
     with pytest.raises(ValueError, match="claim already exists"):
-        lifecycle.claim(context)
+        lifecycle.claim(_context(tmp_path))
 
 
 @pytest.mark.parametrize("stage", ["validation", "fit", "report"])
@@ -798,6 +875,8 @@ def test_claimed_stage_failures_retain_claim_and_no_report(tmp_path, stage):
 
     def report(_bound, fitted):
         assert fitted == "fitted"
+        if stage == "report":
+            _bound["output_path"].write_bytes(b"partial")
         raise RuntimeError(stage)
 
     with pytest.raises(RuntimeError, match=stage):
@@ -806,5 +885,122 @@ def test_claimed_stage_failures_retain_claim_and_no_report(tmp_path, stage):
         )
     assert context["claim_path"].exists()
     assert not context["output_path"].exists()
-    with pytest.raises(ValueError, match="claim already exists"):
+    with pytest.raises(ValueError, match="capability|closed"):
         lifecycle.claim(context)
+
+
+@pytest.mark.parametrize("failure", ["report_file_fsync", "report_directory_fsync"])
+def test_report_durability_failure_removes_output_and_retains_claim(
+    tmp_path, monkeypatch, failure
+):
+    """Break caught: a failed report durability barrier leaves final bytes."""
+    context = _context(tmp_path)
+    original_open = lifecycle.os.open
+    original_fsync = lifecycle.os.fsync
+    report_fd = None
+    parent_calls = 0
+
+    def recording_open(path, flags, *args, **kwargs):
+        nonlocal report_fd
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if path == context._output_name:
+            report_fd = descriptor
+        return descriptor
+
+    def fail_once(descriptor):
+        nonlocal parent_calls
+        if descriptor == context._parent_fd:
+            parent_calls += 1
+            if failure == "report_directory_fsync" and parent_calls == 2:
+                raise OSError(failure)
+        if failure == "report_file_fsync" and descriptor == report_fd:
+            raise OSError(failure)
+        return original_fsync(descriptor)
+
+    def report(bound, _fitted):
+        bound["output_path"].write_bytes(b"complete-but-not-durable")
+
+    monkeypatch.setattr(lifecycle.os, "open", recording_open)
+    monkeypatch.setattr(lifecycle.os, "fsync", fail_once)
+    with pytest.raises(OSError, match=failure):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda _bound: "outcomes",
+            fit=lambda _bound, _outcomes: "fit",
+            write_report=report,
+        )
+    assert context.closed
+    assert context["claim_path"].exists()
+    assert not context["output_path"].exists()
+
+
+def test_stage_runner_never_removes_a_preexisting_report(tmp_path):
+    """Break caught: claim refusal cleanup deletes an authoritative report."""
+    context = _context(tmp_path)
+    context["output_path"].write_bytes(b"authoritative")
+    with pytest.raises(ValueError, match="report already exists"):
+        lifecycle.run_claimed_stages(
+            context,
+            validate_outcomes=lambda *_args: None,
+            fit=lambda *_args: None,
+            write_report=lambda *_args: None,
+        )
+    assert context["output_path"].read_bytes() == b"authoritative"
+    assert context.closed
+
+
+def test_context_closes_owned_descriptors_on_abandonment(tmp_path):
+    """Break caught: discarded successful capabilities leak two descriptors."""
+    baseline = len(os.listdir("/dev/fd"))
+    contexts = [_context(tmp_path / str(index)) for index in range(12)]
+    assert len(os.listdir("/dev/fd")) >= baseline + 24
+    contexts.clear()
+    gc.collect()
+    assert len(os.listdir("/dev/fd")) <= baseline + 2
+
+
+def test_context_manager_close_is_idempotent(tmp_path):
+    """Break caught: abandonment has no explicit deterministic ownership API."""
+    with _context(tmp_path) as context:
+        assert not context.closed
+    assert context.closed
+    context.close()
+    assert context.closed
+
+
+@pytest.mark.parametrize("operation", ["success", "claim_failure", "callback_failure"])
+def test_claim_paths_release_all_owned_descriptors(tmp_path, operation):
+    """Break caught: terminal lifecycle paths retain root or parent descriptors."""
+    baseline = len(os.listdir("/dev/fd"))
+    context = _context(tmp_path)
+    if operation == "success":
+        lifecycle.claim(context)
+    elif operation == "claim_failure":
+        context["output_path"].write_bytes(b"existing")
+        with pytest.raises(ValueError, match="report already exists"):
+            lifecycle.claim(context)
+    else:
+        with pytest.raises(RuntimeError, match="callback"):
+            lifecycle.run_claimed_stages(
+                context,
+                validate_outcomes=lambda _bound: (_ for _ in ()).throw(
+                    RuntimeError("callback")
+                ),
+                fit=lambda *_args: None,
+                write_report=lambda *_args: None,
+            )
+    assert context.closed
+    gc.collect()
+    assert len(os.listdir("/dev/fd")) <= baseline + 1
+
+
+def test_preflight_validation_failure_releases_descriptors(tmp_path):
+    """Break caught: rejected canonical metadata retains pinned descriptors."""
+    fixture = _real_preflight_fixture(tmp_path)
+    fixture["joint"]["evidence_untouched"] = False
+    _rewrite(tmp_path / fixture["joint"]["evidence_reference"], fixture["joint"])
+    baseline = len(os.listdir("/dev/fd"))
+    with pytest.raises(ValueError):
+        lifecycle.preflight(tmp_path)
+    gc.collect()
+    assert len(os.listdir("/dev/fd")) <= baseline + 1

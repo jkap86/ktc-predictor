@@ -77,16 +77,23 @@ _DIR_FLAGS = (
 _FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
 
 
-@dataclass(frozen=True)
+@dataclass
 class _Captured:
     path: str
     raw: bytes
     device: int
     inode: int
+    size: int
+    descriptor: int | None = None
 
     @property
     def identity(self) -> tuple[int, int]:
         return self.device, self.inode
+
+    def close(self) -> None:
+        if self.descriptor is not None:
+            os.close(self.descriptor)
+            self.descriptor = None
 
 
 class _PreflightContext(dict):
@@ -112,6 +119,31 @@ class _PreflightContext(dict):
         self._starts_digest = _frame_digest(values["starts"])
         self._output_path = values["output_path"]
         self._claim_path = values["claim_path"]
+        self.closed = False
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        for name in ("_parent_fd", "_root_fd"):
+            descriptor = getattr(self, name, -1)
+            setattr(self, name, -1)
+            if descriptor >= 0:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+
+    def __enter__(self):
+        if self.closed:
+            raise ValueError("preflight capability is closed")
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        self.close()
 
 
 def _relative(value: str) -> tuple[str, ...]:
@@ -206,7 +238,9 @@ def _read_descriptor(descriptor: int) -> bytes:
         chunks.append(chunk)
 
 
-def _capture(root_fd: int, value: str, outcome_inodes=frozenset()) -> _Captured:
+def _capture(
+    root_fd: int, value: str, outcome_inodes=frozenset(), *, keep_open=False,
+) -> _Captured:
     parent_fd, name = _open_parent(root_fd, value)
     try:
         descriptor = os.open(name, _FILE_FLAGS, dir_fd=parent_fd)
@@ -216,17 +250,44 @@ def _capture(root_fd: int, value: str, outcome_inodes=frozenset()) -> _Captured:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode):
             raise ValueError("repository path is not a regular file")
-        if outcome_inodes and before.st_nlink != 1:
-            raise ValueError("registered outcome aliases a readable input")
+        if before.st_nlink != 1:
+            raise ValueError("repository input has a physical link alias")
         if _inode(before) in outcome_inodes:
             raise ValueError("registered outcome aliases a readable input")
         raw = _read_descriptor(descriptor)
         after = os.fstat(descriptor)
-        if _inode(before) != _inode(after) or before.st_size != after.st_size:
+        if (
+            _inode(before) != _inode(after)
+            or before.st_size != after.st_size
+            or before.st_nlink != 1
+            or after.st_nlink != 1
+            or before.st_mtime_ns != after.st_mtime_ns
+            or before.st_ctime_ns != after.st_ctime_ns
+        ):
             raise ValueError("repository file changed while captured")
-        return _Captured(value, raw, before.st_dev, before.st_ino)
+        captured = _Captured(
+            value, raw, before.st_dev, before.st_ino, before.st_size,
+            descriptor if keep_open else None,
+        )
+        if keep_open:
+            descriptor = -1
+        return captured
     finally:
-        os.close(descriptor)
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _recheck_capture(captured: _Captured, outcome_inodes: set[tuple[int, int]]) -> None:
+    if captured.descriptor is None:
+        raise ValueError("metadata descriptor is unavailable")
+    info = os.fstat(captured.descriptor)
+    if (
+        _inode(info) != captured.identity
+        or info.st_size != captured.size
+        or info.st_nlink != 1
+        or captured.identity in outcome_inodes
+    ):
+        raise ValueError("metadata link or identity changed during discovery")
 
 
 def _pairs(items):
@@ -299,6 +360,76 @@ def _sidecar_path(value: str) -> str:
     return (path.parent / (path.stem + ".provenance.json")).as_posix()
 
 
+def _git_directory(root_fd: int, root_path: Path) -> tuple[Path, int]:
+    info = os.stat(".git", dir_fd=root_fd, follow_symlinks=False)
+    if stat.S_ISDIR(info.st_mode):
+        descriptor = os.open(".git", _DIR_FLAGS, dir_fd=root_fd)
+        return root_path / ".git", descriptor
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("unsafe Git administration path")
+    descriptor = os.open(".git", _FILE_FLAGS, dir_fd=root_fd)
+    try:
+        before = os.fstat(descriptor)
+        raw = _read_descriptor(descriptor)
+        after = os.fstat(descriptor)
+        if (
+            _inode(before) != _inode(after)
+            or before.st_size != after.st_size
+            or before.st_nlink != 1
+            or after.st_nlink != 1
+        ):
+            raise ValueError("Git administration file changed")
+    finally:
+        os.close(descriptor)
+    try:
+        text = raw.decode("utf-8").strip()
+    except UnicodeError as exc:
+        raise ValueError("invalid Git administration file") from exc
+    if not text.startswith("gitdir: "):
+        raise ValueError("invalid Git administration file")
+    value = Path(text.removeprefix("gitdir: "))
+    if not value.is_absolute():
+        value = root_path / value
+    value = Path(os.path.abspath(value))
+    git_path, descriptor = _absolute_root(value)
+    return git_path, descriptor
+
+
+def _validate_outcomes(
+    root_fd: int, expected: dict[str, tuple[tuple[int, int], int]],
+) -> None:
+    for path, (identity, size) in expected.items():
+        info = _stat_relative(root_fd, path)
+        if _inode(info) != identity or info.st_size != size or info.st_nlink != 1:
+            raise ValueError("registered outcome identity changed during preflight")
+
+
+def _claim_exists_beneath(root_fd: int, basename: str) -> bool:
+    pending = [os.dup(root_fd)]
+    seen = set()
+    try:
+        while pending:
+            descriptor = pending.pop()
+            identity = _inode(os.fstat(descriptor))
+            if identity in seen:
+                os.close(descriptor)
+                continue
+            seen.add(identity)
+            try:
+                for name in os.listdir(descriptor):
+                    info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                    if name == basename:
+                        return True
+                    if stat.S_ISDIR(info.st_mode):
+                        pending.append(os.open(name, _DIR_FLAGS, dir_fd=descriptor))
+            finally:
+                os.close(descriptor)
+        return False
+    finally:
+        for descriptor in pending:
+            os.close(descriptor)
+
+
 def _materialize(root: Path, captures: dict[str, _Captured]) -> None:
     for value, captured in captures.items():
         destination = root / value
@@ -333,11 +464,12 @@ def _objects_digest(values: dict) -> str:
 def _snapshot_validation(
     captures: dict[str, _Captured], manifest: dict, registry: dict,
     registration: dict, joint: dict, manifest_sha: str, review_identity: dict,
-    confirmation_manifest: dict,
+    confirmation_manifest: dict, git_directory: Path,
 ) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
     with tempfile.TemporaryDirectory(prefix="ktc-replacement-preflight-") as directory:
         snapshot = Path(directory)
         _materialize(snapshot, captures)
+        (snapshot / ".git").write_text(f"gitdir: {git_directory}\n")
         validate_references(
             manifest, registry, registration, joint,
             manifest_sha256=manifest_sha,
@@ -385,8 +517,13 @@ def preflight(root: Path) -> dict:
     """Validate every pre-claim invariant without opening registered outcomes."""
     root_path, root_fd = _absolute_root(root)
     parent_fd = None
+    git_fd = None
+    held_metadata = []
     try:
-        manifest_capture = _capture(root_fd, REPLACEMENT_MANIFEST_PATH)
+        manifest_capture = _capture(
+            root_fd, REPLACEMENT_MANIFEST_PATH, keep_open=True
+        )
+        held_metadata.append(manifest_capture)
         manifest, manifest_sha = _decode(manifest_capture.raw, _MANIFEST_FIELDS)
         validate_manifest(manifest)
         output_value = manifest["output_template"].replace(
@@ -398,26 +535,38 @@ def preflight(root: Path) -> dict:
         output_parts, claim_parts = _relative(output_value), _relative(claim_value)
         if output_parts[:-1] != claim_parts[:-1]:
             raise ValueError("claim and output parents differ")
+        if _claim_exists_beneath(root_fd, claim_parts[-1]):
+            raise ValueError("replacement claim already exists beneath repository root")
         parent_fd = _open_directory(root_fd, "/".join(output_parts[:-1]))
         _absent_at(parent_fd, output_parts[-1], "replacement report")
         _absent_at(parent_fd, claim_parts[-1], "replacement claim")
 
-        registry_capture = _capture(root_fd, manifest["registry_path"])
+        registry_capture = _capture(
+            root_fd, manifest["registry_path"], keep_open=True
+        )
+        held_metadata.append(registry_capture)
         registry, registry_sha = _decode(registry_capture.raw, _REGISTRY_FIELDS)
         validate_registry(registry)
-        registration_capture = _capture(root_fd, manifest["input_registration_path"])
+        registration_capture = _capture(
+            root_fd, manifest["input_registration_path"], keep_open=True
+        )
+        held_metadata.append(registration_capture)
         registration, registration_sha = _decode(
             registration_capture.raw, _REGISTRATION_FIELDS
         )
         validate_registration(registration)
         review_identity = registration["holdout_attestation"]["joint_review"]
-        joint_capture = _capture(root_fd, review_identity["path"])
+        joint_capture = _capture(root_fd, review_identity["path"], keep_open=True)
+        held_metadata.append(joint_capture)
         joint, joint_sha = _decode(joint_capture.raw, _JOINT_FIELDS)
         validate_joint_attestation(joint)
         if joint_sha != review_identity["sha256"]:
             raise ValueError("joint review hash mismatch")
 
-        confirmation_manifest_capture = _capture(root_fd, CONFIRMATION_MANIFEST_PATH)
+        confirmation_manifest_capture = _capture(
+            root_fd, CONFIRMATION_MANIFEST_PATH, keep_open=True
+        )
+        held_metadata.append(confirmation_manifest_capture)
         confirmation_manifest, confirmation_manifest_sha = _decode(
             confirmation_manifest_capture.raw, _CONFIRMATION_MANIFEST_FIELDS,
             confirmation.canonical_json_bytes,
@@ -427,16 +576,18 @@ def preflight(root: Path) -> dict:
         if confirmation_manifest_sha != joint["confirmation_manifest_sha256"]:
             raise ValueError("joint review confirmation manifest mismatch")
         confirmation_registry_capture = _capture(
-            root_fd, confirmation_manifest["registry_path"]
+            root_fd, confirmation_manifest["registry_path"], keep_open=True
         )
+        held_metadata.append(confirmation_registry_capture)
         confirmation_registry, confirmation_registry_sha = _decode(
             confirmation_registry_capture.raw, _REGISTRY_FIELDS,
             confirmation.canonical_json_bytes,
         )
         confirmation.validate_registry(confirmation_registry)
         confirmation_registration_capture = _capture(
-            root_fd, confirmation_manifest["input_registration_path"]
+            root_fd, confirmation_manifest["input_registration_path"], keep_open=True
         )
+        held_metadata.append(confirmation_registration_capture)
         confirmation_registration, confirmation_registration_sha = _decode(
             confirmation_registration_capture.raw,
             _CONFIRMATION_REGISTRATION_FIELDS,
@@ -475,6 +626,10 @@ def preflight(root: Path) -> dict:
         if any(info.st_nlink != 1 for info in outcome_stats):
             raise ValueError("registered outcome has a physical alias")
         outcome_inodes = {_inode(info) for info in outcome_stats}
+        outcome_expected = {
+            identity["path"]: (_inode(info), info.st_size)
+            for identity, info in zip(outcome_entries, outcome_stats, strict=True)
+        }
         metadata_captures = {
             item.path: item
             for item in (
@@ -484,10 +639,10 @@ def preflight(root: Path) -> dict:
             )
         }
         for captured in metadata_captures.values():
-            if captured.identity in outcome_inodes:
-                raise ValueError(
-                    "registered outcome aliases already-read registration metadata"
-                )
+            _recheck_capture(captured, outcome_inodes)
+        _validate_outcomes(root_fd, outcome_expected)
+        for captured in held_metadata:
+            captured.close()
 
         replacement_identities = [
             *manifest["source_identities"], manifest["training"]["archive"],
@@ -504,7 +659,7 @@ def preflight(root: Path) -> dict:
         }
         readable_paths = {
             *(identity["path"] for identity in replacement_identities),
-            *confirmation_paths, LABEL_MANIFEST_PATH, ".git",
+            *confirmation_paths, LABEL_MANIFEST_PATH,
         }
         for label_path in (
             confirmation_manifest["baseline"]["path"],
@@ -519,16 +674,21 @@ def preflight(root: Path) -> dict:
         captures = dict(metadata_captures)
         for value in sorted(readable_paths):
             captures[value] = _capture(root_fd, value, outcome_inodes)
+            _validate_outcomes(root_fd, outcome_expected)
         for identity in replacement_identities:
             _verify_identity(captures[identity["path"]], identity)
         _verify_identity(
             captures[confirmation_manifest["training_data"]["path"]],
             confirmation_manifest["training_data"],
         )
+        git_directory, git_fd = _git_directory(root_fd, root_path)
         training_frames, starts = _snapshot_validation(
             captures, manifest, registry, registration, joint, manifest_sha,
-            review_identity, confirmation_manifest,
+            review_identity, confirmation_manifest, git_directory,
         )
+        if not stat.S_ISDIR(os.fstat(git_fd).st_mode):
+            raise ValueError("Git administration directory changed")
+        _validate_outcomes(root_fd, outcome_expected)
         values = {
             "manifest": manifest, "manifest_sha256": manifest_sha,
             "registry": registry, "registry_sha256": registry_sha,
@@ -556,6 +716,11 @@ def preflight(root: Path) -> dict:
     except (KeyError, TypeError, IndexError) as exc:
         raise ValueError("invalid lifecycle metadata") from exc
     finally:
+        for captured in held_metadata:
+            if captured.descriptor is not None:
+                captured.close()
+        if git_fd is not None:
+            os.close(git_fd)
         if parent_fd is not None:
             os.close(parent_fd)
         if root_fd >= 0:
@@ -581,6 +746,7 @@ def _validate_context(context: dict) -> _PreflightContext:
     if (
         type(context) is not _PreflightContext
         or context._token is not _CAPABILITY
+        or context.closed
         or set(context) != _CONTEXT_FIELDS
     ):
         raise ValueError("invalid preflight capability")
@@ -635,9 +801,21 @@ def _write_all(descriptor: int, raw: bytes) -> None:
         remaining = remaining[written:]
 
 
-def claim(context: dict) -> Path:
-    """Irrevocably and durably claim this holdout before outcome-byte access."""
-    bound = _validate_context(context)
+def _canonical_claim_matches(bound: _PreflightContext, identity) -> None:
+    current_parent = _open_directory(bound._root_fd, bound._parent_relative)
+    try:
+        if _inode(os.fstat(current_parent)) != bound._parent_identity:
+            raise ValueError("canonical claim parent changed after creation")
+        info = os.stat(
+            bound._claim_name, dir_fd=current_parent, follow_symlinks=False
+        )
+        if not stat.S_ISREG(info.st_mode) or _inode(info) != identity:
+            raise ValueError("canonical claim identity changed after creation")
+    finally:
+        os.close(current_parent)
+
+
+def _create_claim(bound: _PreflightContext) -> Path:
     payload = _claim_payload(bound)
     _absent_at(bound._parent_fd, bound._output_name, "replacement report")
     _absent_at(bound._parent_fd, bound._claim_name, "replacement claim")
@@ -649,21 +827,73 @@ def claim(context: dict) -> Path:
     except FileExistsError as exc:
         raise ValueError("replacement claim already exists") from exc
     try:
+        created_identity = _inode(os.fstat(descriptor))
         os.fchmod(descriptor, 0o600)
         _write_all(descriptor, canonical_bytes(payload))
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
     os.fsync(bound._parent_fd)
+    _canonical_claim_matches(bound, created_identity)
     return bound["claim_path"]
+
+
+def claim(context: dict) -> Path:
+    """Irrevocably and durably claim this holdout before outcome-byte access."""
+    try:
+        bound = _validate_context(context)
+        return _create_claim(bound)
+    finally:
+        if type(context) is _PreflightContext:
+            context.close()
+
+
+def _remove_partial_report(bound: _PreflightContext) -> None:
+    try:
+        os.stat(bound._output_name, dir_fd=bound._parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    os.unlink(bound._output_name, dir_fd=bound._parent_fd)
+    os.fsync(bound._parent_fd)
+
+
+def _sync_report(bound: _PreflightContext) -> None:
+    descriptor = os.open(
+        bound._output_name, _FILE_FLAGS, dir_fd=bound._parent_fd
+    )
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError("replacement report is not a single-link regular file")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.fsync(bound._parent_fd)
 
 
 def run_claimed_stages(
     context: dict, *, validate_outcomes, fit, write_report,
 ):
     """Prove the durable claim precedes outcome validation, fit, and report."""
-    bound = _validate_context(context)
-    claim(bound)
-    outcomes = validate_outcomes(bound)
-    fitted = fit(bound, outcomes)
-    return write_report(bound, fitted)
+    claimed = False
+    try:
+        bound = _validate_context(context)
+        _create_claim(bound)
+        claimed = True
+        outcomes = validate_outcomes(bound)
+        fitted = fit(bound, outcomes)
+        _absent_at(bound._parent_fd, bound._output_name, "replacement report")
+        try:
+            result = write_report(bound, fitted)
+            _sync_report(bound)
+        except Exception:
+            _remove_partial_report(bound)
+            raise
+        return result
+    except Exception:
+        if claimed:
+            _remove_partial_report(bound)
+        raise
+    finally:
+        if type(context) is _PreflightContext:
+            context.close()
