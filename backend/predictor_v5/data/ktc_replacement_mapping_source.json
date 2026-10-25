@@ -1,1 +1,0 @@
-{"format":"dynasty","join_keys":["format","ktc_id"],"nonnull_source_id":true,"provider":"local-thelab","row_evidence":"registered-raw-end-export","schema_version":1,"source_id":"sleeper_id","source_table":"ktc_values","target_id":"player_id"}

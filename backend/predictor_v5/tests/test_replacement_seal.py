@@ -77,7 +77,7 @@ def committed(tmp_path):
         )
     )
     (tmp_path / PREFIX / "data/label_manifest.json").write_bytes(b'{"files":{}}\n')
-    for name in ("start_values_2026.csv", "ktc_replacement_mapping_source.json"):
+    for name in ("start_values_2026.csv", "ktc_replacement_mapping_snapshot.csv"):
         relative = PREFIX + "data/" + name
         (tmp_path / relative).write_bytes((ROOT / relative).read_bytes())
     archive = tmp_path / "backend/data/training-data.zip"
@@ -211,7 +211,7 @@ def test_invalid_anchor_or_identity_writes_neither(committed, mutation):
                 root / PREFIX / "data/backchannel_labels_2019_2025_mfl.provenance.json"
             ).write_bytes(b"{}")
         if mutation == "bad_mapping":
-            (root / PREFIX / "data/ktc_replacement_mapping_source.json").write_bytes(
+            (root / PREFIX / "data/ktc_replacement_mapping_snapshot.csv").write_bytes(
                 b"{}"
             )
         if mutation == "bad_archive":
@@ -264,6 +264,18 @@ def test_registry_rejects_timestamp_mismatch(committed):
     manifest = module().build_manifest(root, anchor) | {"sealed_at": SEALED_AT}
     with pytest.raises(ValueError):
         module().build_registry(manifest, "2026-10-25T13:00:00+00:00")
+
+
+def test_manifest_freezes_actual_mapping_population(committed):
+    root, anchor = committed
+    identity = module().build_manifest(root, anchor)["recipes"]["ktc"]["mapping_data"]
+    assert identity == {
+        "path": PREFIX + "data/ktc_replacement_mapping_snapshot.csv",
+        "sha256": "e4f4434801fcfab7ffa7c1d0d0ab8e74486329c39f0d44a649cb4757c1edc742",
+    }
+    from predictor_v5.replacement_ktc import mapping_snapshot
+
+    assert len(mapping_snapshot((root / identity["path"]).read_bytes())) == 532
 
 
 @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
@@ -389,7 +401,7 @@ def test_seal_handoff_rejects_uncommitted_pair_or_wrong_head(
     seal_commit = git(root, "rev-parse", "HEAD").decode().strip()
     monkeypatch.setattr(sys.modules[__name__], "ROOT", root)
     # A real committed pair must pass before testing either invalid handoff.
-    test_source_anchor_and_artifact_only_seal()
+    assert_seal_handoff(root)
     if mutation == "working_pair":
         manifest = json.loads((root / MANIFEST).read_bytes())
         manifest["sealed_at"] = "2026-10-25T13:00:00+00:00"
@@ -404,26 +416,78 @@ def test_seal_handoff_rejects_uncommitted_pair_or_wrong_head(
         git(root, "commit", "--allow-empty", "-qm", "Not the intended seal commit")
         assert git(root, "rev-parse", "HEAD").decode().strip() != seal_commit
     with pytest.raises(AssertionError):
-        test_source_anchor_and_artifact_only_seal()
+        assert_seal_handoff(root)
+    if mutation == "working_pair":
+        with pytest.raises(AssertionError):
+            assert_historical_seal(root)
 
 
-def test_source_anchor_and_artifact_only_seal():
-    present = [os.path.lexists(ROOT / p) for p in (MANIFEST, REGISTRY)]
-    if not any(present):
-        pytest.skip("Real seal intentionally absent before independent source review")
-    assert all(present), "partial seal"
+@pytest.mark.parametrize("later", ["commit", "merge"])
+def test_historical_seal_survives_later_history(committed, monkeypatch, later):
+    root, anchor = committed
+    seal = module()
+    seal.write_seal(root, anchor, SEALED_AT)
+    git(root, "add", MANIFEST, REGISTRY)
+    git(root, "commit", "-qm", "Synthetic artifact-only seal")
+    seal_commit = git(root, "rev-parse", "HEAD").decode().strip()
+    if later == "commit":
+        git(root, "commit", "--allow-empty", "-qm", "Later unrelated commit")
+    else:
+        original = git(root, "branch", "--show-current").decode().strip()
+        git(root, "checkout", "-qb", "other", anchor)
+        (root / "unrelated.txt").write_text("Other branch documentation\n")
+        git(root, "add", "unrelated.txt")
+        git(root, "commit", "-qm", "Other branch")
+        git(root, "checkout", "-q", original)
+        git(root, "merge", "--no-ff", "-qm", "Merge unrelated branch", "other")
+        assert len(git(root, "rev-list", "--parents", "-n", "1", "HEAD").split()) == 3
+    assert git(root, "rev-parse", "HEAD").decode().strip() != seal_commit
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", root)
+    test_source_anchor_and_artifact_only_seal()
+
+
+def test_historical_reseal_identifies_new_child_and_rejects_old_substitute(committed):
+    root, anchor = committed
+    seal = module()
+    seal.write_seal(root, anchor, SEALED_AT)
+    git(root, "add", MANIFEST, REGISTRY)
+    git(root, "commit", "-qm", "Original artifact-only seal")
+    old = [(root / path).read_bytes() for path in (MANIFEST, REGISTRY)]
+    git(root, "rm", MANIFEST, REGISTRY)
+    git(root, "commit", "-qm", "Supersede original seal for source review")
+    candidate = git(root, "rev-parse", "HEAD").decode().strip()
+    seal.write_seal(root, candidate, "2026-10-25T13:00:00+00:00")
+    git(root, "add", MANIFEST, REGISTRY)
+    git(root, "commit", "-qm", "New artifact-only seal")
+    expected = git(root, "rev-parse", "HEAD").decode().strip()
+    git(root, "commit", "--allow-empty", "-qm", "Later unrelated commit")
+    assert assert_historical_seal(root) == expected
+    for path, data in zip((MANIFEST, REGISTRY), old, strict=True):
+        (root / path).write_bytes(data)
+    with pytest.raises(AssertionError):
+        assert_historical_seal(root)
+
+
+def assert_seal_handoff(root):
+    """Dedicated Phase B check: the reviewed artifact child must still be HEAD."""
+    commit = assert_historical_seal(root)
+    assert commit == git(root, "rev-parse", "HEAD").decode().strip()
+
+
+def assert_historical_seal(root):
+    """Identify the current committed pair's seal, regardless of later history."""
+    assert all(os.path.lexists(root / p) for p in (MANIFEST, REGISTRY)), "partial seal"
     commit = (
-        git(ROOT, "log", "--diff-filter=A", "--format=%H", "--", MANIFEST)
+        git(root, "log", "-1", "--diff-filter=A", "--format=%H", "--", MANIFEST)
         .decode()
         .strip()
     )
-    # Phase B handoff must verify the just-created artifact commit, not find
-    # an older seal somewhere in the current branch's history.
-    assert commit == git(ROOT, "rev-parse", "HEAD").decode().strip()
-    committed_manifest = git(ROOT, "show", commit + ":" + MANIFEST)
-    committed_registry = git(ROOT, "show", commit + ":" + REGISTRY)
-    assert committed_manifest == (ROOT / MANIFEST).read_bytes()
-    assert committed_registry == (ROOT / REGISTRY).read_bytes()
+    assert commit, "no committed seal"
+    git(root, "merge-base", "--is-ancestor", commit, "HEAD")
+    committed_manifest = git(root, "show", commit + ":" + MANIFEST)
+    committed_registry = git(root, "show", commit + ":" + REGISTRY)
+    assert committed_manifest == git(root, "show", "HEAD:" + MANIFEST) == (root / MANIFEST).read_bytes()
+    assert committed_registry == git(root, "show", "HEAD:" + REGISTRY) == (root / REGISTRY).read_bytes()
     manifest = json.loads(committed_manifest)
     registry = json.loads(committed_registry)
     validate_manifest(manifest)
@@ -435,12 +499,12 @@ def test_source_anchor_and_artifact_only_seal():
         committed_manifest
     ).hexdigest()
     anchor = manifest["sealing_commit"]
-    assert git(ROOT, "rev-list", "--parents", "-n", "1", commit).decode().split() == [
+    assert git(root, "rev-list", "--parents", "-n", "1", commit).decode().split() == [
         commit,
         anchor,
     ]
     assert sorted(
-        git(ROOT, "diff-tree", "--no-commit-id", "--name-status", "-r", commit)
+        git(root, "diff-tree", "--no-commit-id", "--name-status", "-r", commit)
         .decode()
         .splitlines()
     ) == sorted(["A\t" + MANIFEST, "A\t" + REGISTRY])
@@ -450,7 +514,15 @@ def test_source_anchor_and_artifact_only_seal():
         manifest["starts"]["identity"],
         manifest["recipes"]["ktc"]["mapping_data"],
     ]:
-        raw = git(ROOT, "show", anchor + ":" + identity["path"])
+        raw = git(root, "show", anchor + ":" + identity["path"])
         assert hashlib.sha256(raw).hexdigest() == identity["sha256"]
-        assert raw == (ROOT / identity["path"]).read_bytes()
+        assert raw == git(root, "show", "HEAD:" + identity["path"]) == (root / identity["path"]).read_bytes()
     assert {i["path"] for i in manifest["source_identities"]} == set(SOURCES)
+    return commit
+
+
+def test_source_anchor_and_artifact_only_seal():
+    present = [os.path.lexists(ROOT / p) for p in (MANIFEST, REGISTRY)]
+    if not any(present):
+        pytest.skip("Real seal intentionally absent before independent source review")
+    assert_historical_seal(ROOT)

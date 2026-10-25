@@ -51,18 +51,7 @@ def bundle(tmp_path):
             ),
         )
     stats_id = put("stats.zip", archive.getvalue())
-    descriptor = {
-        "format": "dynasty",
-        "join_keys": ["format", "ktc_id"],
-        "nonnull_source_id": True,
-        "provider": "local-thelab",
-        "row_evidence": "registered-raw-end-export",
-        "schema_version": 1,
-        "source_id": "sleeper_id",
-        "source_table": "ktc_values",
-        "target_id": "player_id",
-    }
-    mapping = put("mapping.json", canonical(descriptor))
+    mapping = put("mapping.csv", b"format,ktc_id,sleeper_id\ndynasty,1,p\ndynasty,2,q\n")
     sql = put("query.sql", b"query")
     extractor = put("extractor.py", b"extractor")
     code = put("mapping.py", b"mapping")
@@ -113,6 +102,60 @@ def replace_side(tmp_path, registration, side):
     data = (json.dumps(side, sort_keys=True, separators=(",", ":")) + "\n").encode()
     (tmp_path / "side.json").write_bytes(data)
     registration["ktc"]["target_sidecar"]["sha256"] = hashlib.sha256(data).hexdigest()
+
+
+def replace_input(tmp_path, registration, side, key, data):
+    identity = registration["ktc"][key]
+    (tmp_path / identity["path"]).write_bytes(data)
+    identity["sha256"] = hashlib.sha256(data).hexdigest()
+    side["identities"][key] = dict(identity)
+    replace_side(tmp_path, registration, side)
+
+
+@pytest.mark.parametrize("key", ["raw_end", "target_csv"])
+@pytest.mark.parametrize("mutation", ["leading", "trailing", "short", "blank", "malformed"])
+def test_physical_csv_records_refuse_before_pandas(tmp_path, key, mutation):
+    registration, starts, stats, side = bundle(tmp_path)
+    header, row = (tmp_path / registration["ktc"][key]["path"]).read_bytes().splitlines()
+    bad = {
+        "leading": b"IGNORED," + row,
+        "trailing": row + b",IGNORED",
+        "short": row.rsplit(b",", 1)[0],
+        "blank": row + b"\n",
+        "malformed": b'"' + row,
+    }[mutation]
+    replace_input(tmp_path, registration, side, key, header + b"\n" + bad + b"\n")
+    with pytest.raises(ValueError, match="CSV"):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+@pytest.mark.parametrize("key", ["raw_end", "target_csv"])
+def test_quoted_csv_fields_are_not_counted_as_extra_records(tmp_path, key):
+    registration, starts, stats, side = bundle(tmp_path)
+    path = tmp_path / registration["ktc"][key]["path"]
+    header, row = path.read_bytes().splitlines()
+    quoted = b",".join(b'"' + field + b'"' for field in row.split(b","))
+    replace_input(tmp_path, registration, side, key, header + b"\n" + quoted + b"\n")
+    assert load_ktc_target(registration, starts, stats, tmp_path).player_id.tolist() == ["p"]
+
+
+@pytest.mark.parametrize("player_id", ['p,quoted', 'p\nquoted', 'p"quoted'])
+def test_quoted_delimiters_in_identifiers_round_trip(tmp_path, player_id):
+    registration, starts, stats, side = bundle(tmp_path)
+    for key in ("raw_end", "target_csv", "mapping_data"):
+        frame = pd.read_csv(tmp_path / registration["ktc"][key]["path"], dtype=str)
+        column = "player_id" if key == "target_csv" else "sleeper_id"
+        frame.loc[frame[column] == "p", column] = player_id
+        replace_input(tmp_path, registration, side, key, frame.to_csv(index=False).encode())
+    for frame in (starts, stats):
+        frame.loc[0, "player_id"] = player_id
+    side["observation_dates"][0]["player_id"] = player_id
+    replace_archive(tmp_path, registration, side, {"players": [{
+        "player_id": player_id, "position": "QB", "seasons": [{
+            "year": 2026, "age": 25, "games_played": 17, "fantasy_points": 300,
+        }],
+    }]})
+    assert load_ktc_target(registration, starts, stats, tmp_path).player_id.tolist() == [player_id]
 
 
 def replace_archive(tmp_path, registration, side, envelope):
@@ -337,7 +380,7 @@ def test_target_season_must_be_integer_literal(tmp_path):
         load_ktc_target(registration, starts, stats, tmp_path)
 
 
-def test_frozen_sql_and_mapping_descriptor():
+def test_frozen_sql_contract():
     base = Path(__file__).resolve().parents[1]
     sql = " ".join((base / "sql/ktc_replacement_end.sql").read_text().lower().split())
     assert "select h.format, h.ktc_id, k.sleeper_id, h.date, h.sf_value" in sql
@@ -346,10 +389,67 @@ def test_frozen_sql_and_mapping_descriptor():
     assert "k.sleeper_id is not null" in sql and "h.sf_value > 0" in sql
     assert "h.date between '2026-12-28'::date and '2027-01-10'::date" in sql
     assert "distinct" not in sql
-    assert (
-        (base / "data/ktc_replacement_mapping_source.json").read_bytes()
-        == b'{"format":"dynasty","join_keys":["format","ktc_id"],"nonnull_source_id":true,"provider":"local-thelab","row_evidence":"registered-raw-end-export","schema_version":1,"source_id":"sleeper_id","source_table":"ktc_values","target_id":"player_id"}\n'
-    )
+
+
+def test_mapping_snapshot_has_exact_reviewed_rows_and_physical_schema():
+    from predictor_v5 import replacement_ktc
+
+    data = b"format,ktc_id,sleeper_id\ndynasty,1,p\ndynasty,10,q\n"
+    assert replacement_ktc.mapping_snapshot(data) == {
+        ("dynasty", "1"): "p", ("dynasty", "10"): "q",
+    }
+
+
+@pytest.mark.parametrize("data", [
+    b'{}\n',
+    b"format,sleeper_id,ktc_id\ndynasty,p,1\n",
+    b"format,ktc_id,sleeper_id\nIGNORED,dynasty,1,p\n",
+    b"format,ktc_id,sleeper_id\ndynasty,1,p,IGNORED\n",
+    b"format,ktc_id,sleeper_id\ndynasty,1\n",
+    b"format,ktc_id,sleeper_id\ndynasty,1,p\n\n",
+    b'format,ktc_id,sleeper_id\n"dynasty,1,p\n',
+    b"format,ktc_id,sleeper_id\ndynasty,1,p\ndynasty,1,p\n",
+    b"format,ktc_id,sleeper_id\ndynasty,1,p\ndynasty,1,q\n",
+    b"format,ktc_id,sleeper_id\ndynasty,1,p\ndynasty,2,p\n",
+    b"format,ktc_id,sleeper_id\ndynasty,10,q\ndynasty,1,p\n",
+    b"format,ktc_id,sleeper_id\ndynasty,01,p\n",
+    b"format,ktc_id,sleeper_id\ndynasty,1,\n",
+    b"format,ktc_id,sleeper_id\nredraft,1,p\n",
+    b"format,ktc_id,sleeper_id\n",
+    b'format,ktc_id,sleeper_id\n"dynasty",1,p\n',
+    b"format,ktc_id,sleeper_id\r\ndynasty,1,p\r\n",
+])
+def test_mapping_snapshot_rejects_noncanonical_or_ambiguous_rows(data):
+    from predictor_v5 import replacement_ktc
+
+    with pytest.raises(ValueError):
+        replacement_ktc.mapping_snapshot(data)
+
+
+@pytest.mark.parametrize("mapping", [
+    b"format,ktc_id,sleeper_id\ndynasty,2,q\n",  # absent source
+    b"format,ktc_id,sleeper_id\ndynasty,1,q\n",  # changed Sleeper mapping
+])
+def test_raw_mapping_must_equal_frozen_snapshot(tmp_path, mapping):
+    registration, starts, stats, side = bundle(tmp_path)
+    replace_input(tmp_path, registration, side, "mapping_data", mapping)
+    with pytest.raises(ValueError, match="raw mapping"):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+def test_mapping_bytes_cannot_drift_from_registered_hash(tmp_path):
+    registration, starts, stats, _ = bundle(tmp_path)
+    (tmp_path / "mapping.csv").write_bytes(b"format,ktc_id,sleeper_id\ndynasty,1,q\n")
+    with pytest.raises(ValueError, match="digest differs"):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+def test_sidecar_cannot_substitute_mapping_identity(tmp_path):
+    registration, starts, stats, side = bundle(tmp_path)
+    side["identities"]["mapping_data"] = {"path": "other.csv", "sha256": "a" * 64}
+    replace_side(tmp_path, registration, side)
+    with pytest.raises(ValueError, match="sidecar identity mismatch"):
+        load_ktc_target(registration, starts, stats, tmp_path)
 
 
 @pytest.mark.parametrize("field", ["start", "stats", "raw", "sidecar"])

@@ -1,5 +1,6 @@
 """Offline verification of registered KTC observations."""
 
+import csv
 import hashlib
 import io
 import json
@@ -23,17 +24,50 @@ TARGET_COLUMNS = [
     "games",
     "points",
 ]
-DESCRIPTOR = {
-    "format": "dynasty",
-    "join_keys": ["format", "ktc_id"],
-    "nonnull_source_id": True,
-    "provider": "local-thelab",
-    "row_evidence": "registered-raw-end-export",
-    "schema_version": 1,
-    "source_id": "sleeper_id",
-    "source_table": "ktc_values",
-    "target_id": "player_id",
-}
+MAPPING_COLUMNS = ["format", "ktc_id", "sleeper_id"]
+
+
+def _csv_frame(data: bytes, columns: list[str]) -> pd.DataFrame:
+    """Check physical records before pandas can infer an implicit index."""
+    try:
+        records = csv.reader(io.StringIO(data.decode("utf-8"), newline=""), strict=True)
+        if next(records, None) != columns:
+            raise ValueError("invalid CSV columns")
+        if any(len(record) != len(columns) for record in records):
+            raise ValueError("invalid CSV record width")
+        return pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    except (UnicodeError, csv.Error, pd.errors.ParserError) as exc:
+        raise ValueError("invalid CSV") from exc
+
+
+def mapping_snapshot(data: bytes) -> dict[tuple[str, str], str]:
+    """Decode the canonical, one-to-one pre-outcome dynasty mapping rows.
+
+    Canonical CSV uses UTF-8, minimal quoting, LF records, and numeric ktc_id
+    order. The snapshot covers every non-null dynasty mapping at review time;
+    future raw exports must match it, including rows excluded from scoring.
+    """
+    frame = _csv_frame(data, MAPPING_COLUMNS)
+    if (
+        frame.empty
+        or not frame["format"].eq("dynasty").all()
+        or not frame["ktc_id"].str.fullmatch(r"[1-9][0-9]*").all()
+        or frame["sleeper_id"].map(lambda value: not value or value != value.strip()).any()
+        or frame.duplicated(["format", "ktc_id"]).any()
+        or frame["sleeper_id"].duplicated().any()
+    ):
+        raise ValueError("invalid mapping snapshot rows")
+    rows = sorted(
+        frame.itertuples(index=False, name=None),
+        key=lambda row: (row[0], int(row[1]), row[2]),
+    )
+    canonical = io.StringIO(newline="")
+    writer = csv.writer(canonical, lineterminator="\n")
+    writer.writerow(MAPPING_COLUMNS)
+    writer.writerows(rows)
+    if canonical.getvalue().encode("utf-8") != data:
+        raise ValueError("noncanonical mapping snapshot")
+    return {(format_, ktc_id): sleeper_id for format_, ktc_id, sleeper_id in rows}
 
 
 def select_end_observations(raw: pd.DataFrame) -> pd.DataFrame:
@@ -85,7 +119,7 @@ def _read(root, identity):
         raise ValueError("path escapes root")
     try:
         data = path.read_bytes()
-    except OSError as exc:
+    except (FileNotFoundError, NotADirectoryError) as exc:
         raise ValueError("cannot read registered file") from exc
     if hashlib.sha256(data).hexdigest() != identity["sha256"]:
         raise ValueError("registered digest differs")
@@ -216,8 +250,7 @@ def load_ktc_target(
     if set(ids) != keys:
         raise ValueError("invalid KTC registration")
     data = {key: _read(root, ids[key]) for key in keys}
-    if data["mapping_data"] != canonical_bytes(DESCRIPTOR):
-        raise ValueError("invalid mapping descriptor")
+    mapping = mapping_snapshot(data["mapping_data"])
     side = _canonical(data["target_sidecar"])
     if not isinstance(side, dict) or set(side) != {
         "schema_version",
@@ -242,13 +275,14 @@ def load_ktc_target(
     ] != {k: ids[k] for k in keys - {"target_sidecar"}}:
         raise ValueError("sidecar identity mismatch")
     _validate_coverage(side["coverage"])
+    raw = _csv_frame(data["raw_end"], RAW_COLUMNS)
+    target = _csv_frame(data["target_csv"], TARGET_COLUMNS)
+    if any(
+        mapping.get((row.format, row.ktc_id)) != row.sleeper_id
+        for row in raw.itertuples(index=False)
+    ):
+        raise ValueError("raw mapping absent from or conflicts with frozen snapshot")
     try:
-        raw = pd.read_csv(io.BytesIO(data["raw_end"]), dtype=str, keep_default_na=False)
-        target = pd.read_csv(
-            io.BytesIO(data["target_csv"]),
-            dtype=str,
-            keep_default_na=False,
-        )
         archive_rows = _archive_rows(data["target_stats"])
     except (ValueError, KeyError, TypeError, zipfile.BadZipFile) as exc:
         raise ValueError("invalid registered data") from exc

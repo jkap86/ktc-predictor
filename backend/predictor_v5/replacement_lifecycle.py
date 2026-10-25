@@ -78,6 +78,10 @@ _DIR_FLAGS = (
 _FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
 
 
+class LifecycleRefusal(ValueError):
+    """An expected one-shot or pinned-context integrity refusal, not an IO error."""
+
+
 @dataclass
 class _Captured:
     path: str
@@ -336,9 +340,7 @@ def _absent_at(parent_fd: int, name: str, label: str) -> None:
         os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
     except FileNotFoundError:
         return
-    except OSError as exc:
-        raise ValueError(f"cannot inspect {label}") from exc
-    raise ValueError(f"{label} already exists")
+    raise LifecycleRefusal(f"{label} already exists")
 
 
 def _outcome_identities(registration: dict) -> list[dict]:
@@ -743,6 +745,13 @@ def _validated_claim_timestamp() -> str:
     return value
 
 
+def _open_bound_parent(bound: _PreflightContext) -> int:
+    try:
+        return _open_directory(bound._root_fd, bound._parent_relative)
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise LifecycleRefusal("canonical parent path missing or changed") from exc
+
+
 def _validate_context(context: dict) -> _PreflightContext:
     if (
         type(context) is not _PreflightContext
@@ -750,26 +759,30 @@ def _validate_context(context: dict) -> _PreflightContext:
         or context.closed
         or set(context) != _CONTEXT_FIELDS
     ):
-        raise ValueError("invalid preflight capability")
+        raise LifecycleRefusal("invalid preflight capability")
     if _inode(os.fstat(context._parent_fd)) != context._parent_identity:
-        raise ValueError("preflight parent capability changed")
-    current_parent = _open_directory(context._root_fd, context._parent_relative)
+        raise LifecycleRefusal("preflight parent capability changed")
+    current_parent = _open_bound_parent(context)
     try:
         if _inode(os.fstat(current_parent)) != context._parent_identity:
-            raise ValueError("preflight parent path changed")
+            raise LifecycleRefusal("preflight parent path changed")
     finally:
         os.close(current_parent)
-    if _objects_digest(context) != context._objects_digest:
-        raise ValueError("preflight artifact context changed")
+    try:
+        objects_digest = _objects_digest(context)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise LifecycleRefusal("preflight artifact context changed") from exc
+    if objects_digest != context._objects_digest:
+        raise LifecycleRefusal("preflight artifact context changed")
     if _frames_digest(context["training_frames"]) != context._training_digest:
-        raise ValueError("preflight training frames changed")
+        raise LifecycleRefusal("preflight training frames changed")
     if _frame_digest(context["starts"]) != context._starts_digest:
-        raise ValueError("preflight starts changed")
+        raise LifecycleRefusal("preflight starts changed")
     if (
         context["output_path"] != context._output_path
         or context["claim_path"] != context._claim_path
     ):
-        raise ValueError("preflight paths changed")
+        raise LifecycleRefusal("preflight paths changed")
     return context
 
 
@@ -803,15 +816,15 @@ def _write_all(descriptor: int, raw: bytes) -> None:
 
 
 def _canonical_claim_matches(bound: _PreflightContext, identity) -> None:
-    current_parent = _open_directory(bound._root_fd, bound._parent_relative)
+    current_parent = _open_bound_parent(bound)
     try:
         if _inode(os.fstat(current_parent)) != bound._parent_identity:
-            raise ValueError("canonical claim parent changed after creation")
+            raise LifecycleRefusal("canonical claim parent changed after creation")
         info = os.stat(
             bound._claim_name, dir_fd=current_parent, follow_symlinks=False
         )
         if not stat.S_ISREG(info.st_mode) or _inode(info) != identity:
-            raise ValueError("canonical claim identity changed after creation")
+            raise LifecycleRefusal("canonical claim identity changed after creation")
     finally:
         os.close(current_parent)
 
@@ -826,7 +839,7 @@ def _create_claim(bound: _PreflightContext) -> Path:
             bound._claim_name, flags, 0o600, dir_fd=bound._parent_fd
         )
     except FileExistsError as exc:
-        raise ValueError("replacement claim already exists") from exc
+        raise LifecycleRefusal("replacement claim already exists") from exc
     try:
         created_identity = _inode(os.fstat(descriptor))
         os.fchmod(descriptor, 0o600)
@@ -922,21 +935,21 @@ def _publish_report(bound: _PreflightContext, raw: bytes) -> Path:
                 follow_symlinks=False,
             )
         except FileExistsError as exc:
-            raise ValueError("replacement report already exists") from exc
+            raise LifecycleRefusal("replacement report already exists") from exc
         published = True
         if not _unlink_owned_report_entry(bound, temp_name, report_identity):
-            raise ValueError("temporary report identity changed during publication")
+            raise LifecycleRefusal("temporary report identity changed during publication")
         temp_name = None
         os.fsync(bound._parent_fd)
-        current_parent = _open_directory(bound._root_fd, bound._parent_relative)
+        current_parent = _open_bound_parent(bound)
         try:
             if _inode(os.fstat(current_parent)) != bound._parent_identity:
-                raise ValueError("canonical report parent changed during publication")
+                raise LifecycleRefusal("canonical report parent changed during publication")
             info = os.stat(
                 bound._output_name, dir_fd=current_parent, follow_symlinks=False
             )
             if not stat.S_ISREG(info.st_mode) or _inode(info) != report_identity:
-                raise ValueError("canonical report identity changed during publication")
+                raise LifecycleRefusal("canonical report identity changed during publication")
         finally:
             os.close(current_parent)
         return bound["output_path"]

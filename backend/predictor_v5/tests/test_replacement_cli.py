@@ -328,3 +328,251 @@ def test_standalone_cli_refuses_arguments():
     )
     assert result.returncode == 2
     assert "unrecognized arguments" in result.stderr
+
+
+def _empty_result():
+    from predictor_v5.replacement_cohort import COHORT_COLUMNS
+
+    return {
+        "fits": {}, "cohort_frame": pd.DataFrame(columns=COHORT_COLUMNS),
+        "coverage": {}, "metrics": {}, "diagnostics": {},
+        "gate": {"decision": "retain_ktc"},
+    }
+
+
+def test_payload_records_actual_frozen_dates_in_player_order(tmp_path):
+    from predictor_v5 import ktc_replacement_2026 as cli
+
+    context = _context(tmp_path)
+    context["starts"] = pd.DataFrame([
+        {"season": 2026, "player_id": "z", "bc_date": "2026-09-09", "ktc_date": "2026-09-02"},
+        {"season": 2026, "player_id": "a", "bc_date": "2026-09-08", "ktc_date": "2026-09-05"},
+        {"season": 2026, "player_id": "q", "bc_date": "2026-09-09", "ktc_date": float("nan")},
+    ])
+    outcomes = {"actual_dates": {"mfl_end": "2027-01-10"}, "coverage": {}}
+    payload = cli._payload(context, outcomes, _empty_result())
+    assert payload["actual_dates"] == {
+        "mfl_end": "2027-01-10",
+        "frozen_starts": [
+            {"season": 2026, "player_id": "a", "bc_date": "2026-09-08", "ktc_date": "2026-09-05"},
+            {"season": 2026, "player_id": "q", "bc_date": "2026-09-09", "ktc_date": None},
+            {"season": 2026, "player_id": "z", "bc_date": "2026-09-09", "ktc_date": "2026-09-02"},
+        ],
+    }
+    assert payload["start_identity"]["provenance_limit"] == "raw start provenance not independently verified"
+    first = canonical_bytes(payload)
+    context["starts"] = context["starts"].iloc[::-1]
+    assert canonical_bytes(cli._payload(context, outcomes, _empty_result())) == first
+
+
+@pytest.mark.parametrize("failure", [
+    "missing_metadata", "missing_parent", "missing_confirmation_parent",
+    "missing_required_outcome", "existing_report", "existing_claim",
+    "claim_after_preflight", "claim_race", "context_integrity", "context_noncanonical",
+    "outcome_integrity", "report_after_claim", "report_link_race",
+])
+def test_real_lifecycle_expected_refusals_exit_2(tmp_path, monkeypatch, failure):
+    from predictor_v5 import ktc_replacement_2026 as cli
+    from predictor_v5 import replacement_lifecycle as lifecycle
+    from predictor_v5.tests.test_replacement_lifecycle import _real_preflight_fixture
+
+    fixture = _real_preflight_fixture(tmp_path)
+    manifest = fixture["manifest"]
+    output = tmp_path / manifest["output_template"].replace("<manifest-sha256>", fixture["manifest_sha"])
+    claim = tmp_path / manifest["claim_template"].replace("<manifest-sha256>", fixture["manifest_sha"])
+    if failure == "missing_metadata":
+        (tmp_path / lifecycle.REPLACEMENT_MANIFEST_PATH).unlink()
+    elif failure == "missing_parent":
+        output.parent.rmdir()
+    elif failure == "missing_confirmation_parent":
+        (tmp_path / "backend/predictor_v5/artifacts/confirmations").rmdir()
+    elif failure == "missing_required_outcome":
+        fixture["outcomes"][0].unlink()
+    elif failure == "existing_report":
+        output.write_bytes(b"existing report")
+    elif failure == "existing_claim":
+        claim.write_bytes(b"existing claim")
+
+    def preflight(root):
+        context = lifecycle.preflight(root)
+        if failure == "claim_after_preflight":
+            claim.write_bytes(b"other claim")
+        if failure == "context_integrity":
+            context["manifest"]["sealed_at"] = "2026-10-26T00:00:00+00:00"
+        if failure == "context_noncanonical":
+            context["manifest"]["sealed_at"] = float("nan")
+        return context
+
+    real_open, real_link = lifecycle.os.open, lifecycle.os.link
+
+    def open_race(path, flags, *args, **kwargs):
+        if failure == "claim_race" and path == claim.name and flags & os.O_EXCL:
+            descriptor = real_open(path, flags, *args, **kwargs)
+            os.close(descriptor)
+        return real_open(path, flags, *args, **kwargs)
+
+    def link_race(source, destination, **kwargs):
+        if failure == "report_link_race":
+            output.write_bytes(b"racing report")
+        return real_link(source, destination, **kwargs)
+
+    monkeypatch.setattr(lifecycle.os, "open", open_race)
+    monkeypatch.setattr(lifecycle.os, "link", link_race)
+    reached = []
+
+    def validate(context, _dependencies, root):
+        assert claim.is_file()
+        reached.append("validation")
+        if failure == "outcome_integrity":
+            cli._read(root, context["registration"]["ktc"]["raw_end"])
+        return {"actual_dates": {}, "coverage": {}}
+
+    def fit(*_args):
+        reached.append("fit")
+        if failure == "report_after_claim":
+            output.write_bytes(b"other report")
+        return _empty_result()
+
+    actual_run = cli.run
+    monkeypatch.setattr(cli, "run", lambda _root: actual_run(tmp_path, {
+        "preflight": preflight, "validate_outcomes": validate, "fit_evaluation": fit,
+    }))
+    assert cli.main() == 2
+    assert claim.exists() == (failure in {
+        "existing_claim", "claim_after_preflight", "claim_race", "outcome_integrity",
+        "report_after_claim", "report_link_race",
+    })
+    if failure in {"outcome_integrity", "report_after_claim", "report_link_race"}:
+        assert reached[0] == "validation"
+        if failure == "outcome_integrity":
+            assert reached == ["validation"]
+    else:
+        assert reached == []
+    if output.exists():
+        assert output.read_bytes() in {b"existing report", b"other report", b"racing report"}
+
+
+@pytest.mark.parametrize("failure", [
+    "fit_value_error", "serialization", "write", "link", "outcome_io", "stats_io",
+    "fsync_claim", "fsync_claim_parent", "fsync_report", "fsync_report_parent",
+])
+def test_real_lifecycle_unexpected_failures_exit_1_and_consume(tmp_path, monkeypatch, failure):
+    from predictor_v5 import ktc_replacement_2026 as cli
+    from predictor_v5 import replacement_lifecycle as lifecycle
+    from predictor_v5.tests.test_replacement_lifecycle import _real_preflight_fixture
+
+    fixture = _real_preflight_fixture(tmp_path)
+    output = tmp_path / fixture["manifest"]["output_template"].replace("<manifest-sha256>", fixture["manifest_sha"])
+    claim = tmp_path / fixture["manifest"]["claim_template"].replace("<manifest-sha256>", fixture["manifest_sha"])
+    real_write, real_link, real_sync = os.write, os.link, os.fsync
+    writes = syncs = 0
+
+    def write(descriptor, raw):
+        nonlocal writes
+        writes += 1
+        if failure == "write" and writes == 2:
+            raise OSError("injected report write failure")
+        return real_write(descriptor, raw)
+
+    def link(*args, **kwargs):
+        if failure == "link":
+            raise OSError("injected report link failure")
+        return real_link(*args, **kwargs)
+
+    def sync(descriptor):
+        nonlocal syncs
+        syncs += 1
+        if syncs == {
+            "fsync_claim": 1, "fsync_claim_parent": 2,
+            "fsync_report": 3, "fsync_report_parent": 4,
+        }.get(failure):
+            raise OSError("injected fsync failure")
+        return real_sync(descriptor)
+
+    monkeypatch.setattr(lifecycle.os, "write", write)
+    monkeypatch.setattr(lifecycle.os, "link", link)
+    monkeypatch.setattr(lifecycle.os, "fsync", sync)
+
+    def validate(context, _dependencies, root):
+        assert claim.exists()
+        if failure in {"outcome_io", "stats_io"}:
+            original_read = Path.read_bytes
+            identity = context["registration"]["ktc"][
+                "raw_end" if failure == "outcome_io" else "target_stats"
+            ]
+
+            def unreadable(path):
+                if path == root / identity["path"]:
+                    raise OSError("injected outcome IO failure")
+                return original_read(path)
+
+            monkeypatch.setattr(Path, "read_bytes", unreadable)
+            if failure == "stats_io":
+                cli.load_stats(root / identity["path"])
+            else:
+                cli._read(root, identity)
+        return {"actual_dates": {}, "coverage": {}}
+
+    def fit(*_args):
+        if failure == "fit_value_error":
+            raise ValueError("unexpected model failure")
+        result = _empty_result()
+        if failure == "serialization":
+            result["fits"] = {"not_json": object()}
+        return result
+
+    actual_run = cli.run
+    monkeypatch.setattr(cli, "run", lambda _root: actual_run(tmp_path, {
+        "validate_outcomes": validate, "fit_evaluation": fit,
+    }))
+    assert cli.main() == 1
+    assert claim.exists()
+    assert not output.exists()
+    assert not list(output.parent.glob(".*.tmp.*"))
+
+
+def test_real_preflight_unexpected_io_exits_1_without_claim(tmp_path, monkeypatch):
+    from predictor_v5 import ktc_replacement_2026 as cli
+    from predictor_v5 import replacement_lifecycle as lifecycle
+    from predictor_v5.tests.test_replacement_lifecycle import _real_preflight_fixture
+
+    _real_preflight_fixture(tmp_path)
+
+    def fail_read(_descriptor):
+        raise OSError("unexpected metadata IO")
+
+    monkeypatch.setattr(lifecycle, "_read_descriptor", fail_read)
+    actual_run = cli.run
+    monkeypatch.setattr(cli, "run", lambda _root: actual_run(tmp_path))
+    assert cli.main() == 1
+    assert not list(tmp_path.rglob("*.claim.json"))
+
+
+@pytest.mark.parametrize("sync_number", [2, 4])
+def test_real_lifecycle_lost_canonical_parent_is_integrity_refusal(tmp_path, monkeypatch, sync_number):
+    from predictor_v5 import ktc_replacement_2026 as cli
+    from predictor_v5 import replacement_lifecycle as lifecycle
+    from predictor_v5.tests.test_replacement_lifecycle import _real_preflight_fixture
+
+    fixture = _real_preflight_fixture(tmp_path)
+    output = tmp_path / fixture["manifest"]["output_template"].replace("<manifest-sha256>", fixture["manifest_sha"])
+    preserved = tmp_path / "preserved-consumed-parent"
+    real_sync = os.fsync
+    calls = 0
+
+    def sync(descriptor):
+        nonlocal calls
+        calls += 1
+        real_sync(descriptor)
+        if calls == sync_number:
+            output.parent.rename(preserved)
+
+    monkeypatch.setattr(lifecycle.os, "fsync", sync)
+    actual_run = cli.run
+    monkeypatch.setattr(cli, "run", lambda _root: actual_run(tmp_path, {
+        "validate_outcomes": lambda *_args: {"actual_dates": {}, "coverage": {}},
+        "fit_evaluation": lambda *_args: _empty_result(),
+    }))
+    assert cli.main() == 2
+    assert len(list(preserved.glob("*.claim.json"))) == 1
+    assert not (preserved / output.name).exists()

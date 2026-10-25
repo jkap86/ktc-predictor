@@ -460,12 +460,20 @@ manifest and registry remain protected by PR #6 baseline
 `1157678526d3408850780c7ec7808a730d8c2dbc`; its manifest SHA-256 is
 `c376651de489d0ae5c6478c001d565bb635d6968b46df4a16e99875d9da7430e`.
 
+The previous replacement seal at `8800b7c2937aa22d48a57789f5c97005d60f2f30`
+was superseded by the final-review fix wave. Its two replacement JSON files
+were explicitly removed; Git history preserves the earlier evidence. They
+must not be restored as a valid seal over the changed source. A newly reviewed
+source-anchor commit and its new artifact-only child are required before
+registration or evaluation. No new replacement artifacts are supplied in
+this Phase A fix.
+
 An independent reviewer must approve the committed source anchor, including
 the seal generator and its tests, before actual sealing. The anchor must be
 the exact full committed HEAD SHA and the tracked worktree/index must be
 clean. The generator checks required regular-file identities against Git
 blobs and working bytes, training archive member, verified MFL v1 provenance,
-frozen starts and mapping descriptor. Untracked review notes are permitted;
+frozen starts and the actual canonical mapping snapshot. Untracked review notes are permitted;
 either existing output (including a dangling symlink) prevents sealing.
 Neither artifact contains future target hashes.
 
@@ -493,6 +501,17 @@ Inspect both and commit **only those two new JSON files**, with the approved
 source anchor as the commit's sole parent. Run
 `python -m pytest predictor_v5/tests/test_replacement_seal.py -v` and check
 `git diff --name-status HEAD^ HEAD`: exactly those two additions are allowed.
+Then run the dedicated strict Phase B handoff check from `backend`:
+
+```bash
+python -c 'from predictor_v5.tests.test_replacement_seal import ROOT, assert_seal_handoff; assert_seal_handoff(ROOT)'
+```
+
+This handoff check requires current HEAD to be the artifact-only child. The
+normal suite instead identifies the historical seal and verifies its exact
+sole parent, two-artifact diff, committed/working bytes, and source hashes.
+Unrelated later commits and merges are allowed; uncommitted substitute pairs
+or changed sealed source bytes still refuse.
 Before generation, only the real artifact assertion skips; all synthetic
 generator and protected-baseline checks must pass. Do not amend source into
 the artifact commit. If checks fail, stop for independent review.
@@ -507,6 +526,35 @@ Git blob `ead24b508102ca2a1071d07f3f665e9ea920aa96`, introduced at `c415177`.
 These identities freeze the existing bytes. **Raw start provenance is not
 independently verified**: they do not prove its historical export or mapping.
 This exception never extends to future KTC end observations.
+Reports include `actual_dates.frozen_starts`: all frozen player keys sorted
+by `(season, player_id)`, with actual `bc_date` and `ktc_date` (null where the
+frozen source observation is absent), alongside the end observations/cutoffs.
+Reporting these dates does not upgrade the raw-start provenance limitation.
+
+The separate `data/ktc_replacement_mapping_snapshot.csv` freezes 532 dynasty
+`(format, ktc_id, sleeper_id)` rows read from the local database
+`postgres://localhost:5432/thelab` on 2026-10-25, after schema inspection.
+Its SHA-256 is
+`e4f4434801fcfab7ffa7c1d0d0ab8e74486329c39f0d44a649cb4757c1edc742`.
+Only the mapping population was read, with this SELECT:
+
+```sql
+SELECT format, ktc_id, sleeper_id
+FROM public.ktc_values
+WHERE format = 'dynasty' AND sleeper_id IS NOT NULL
+ORDER BY format COLLATE "C", ktc_id, sleeper_id COLLATE "C";
+```
+
+The canonical file has exactly those three columns, UTF-8 with LF records,
+minimal CSV quoting, numeric KTC-ID ordering, and one-to-one nonempty keys.
+No history dates or market values were queried to create it. The manifest's
+`recipes.ktc.mapping_data` binds these bytes; SQL and mapping code have separate
+identities. Registration and the KTC sidecar must bind the same snapshot.
+Every future raw row, including rows excluded from scoring, must have an
+identical frozen source-to-Sleeper mapping. New, missing, or changed mappings
+refuse; do not refresh this snapshot after reviewing outcomes to make a run
+pass. The future raw export must still contain every candidate in the fixed
+window, and independent review must check completeness.
 
 ### Later independent review, registration and one-shot execution
 
@@ -538,6 +586,14 @@ durably creates the manifest-keyed `.claim.json` under
 `artifacts/replacements/` before hashing or opening outcomes; all inputs are
 then validated before fitting. A canonical, no-replace report is written
 under `artifacts/replacements/2026-<manifest-sha256>.json`.
+
+Both `artifacts/replacements/` and `artifacts/confirmations/` must already
+exist as regular directories. Tracked `.gitkeep` files provide them in a
+fresh checkout; retain them when packaging the repository. Provision and
+durably sync any manually restored directories before preflight. The runner
+does not create missing parents during a one-shot attempt; a missing required
+path or metadata file refuses with exit 2. General I/O and publication/fsync
+failures exit 1; they must not be treated as input corrections.
 
 A preclaim refusal (exit 2) reads no outcomes and permits correction and
 review before retry. **Once a claim exists, never delete the claim or retry**,

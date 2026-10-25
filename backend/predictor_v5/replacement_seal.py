@@ -25,7 +25,7 @@ from predictor_v5.replacement_contract import (
     validate_manifest,
     validate_registry,
 )
-from predictor_v5.replacement_ktc import DESCRIPTOR, RAW_COLUMNS, TARGET_COLUMNS
+from predictor_v5.replacement_ktc import RAW_COLUMNS, TARGET_COLUMNS, mapping_snapshot
 from predictor_v5.replacement_mfl import TARGET_COLUMNS as MFL_COLUMNS
 from predictor_v5.replacement_starts import (
     GIT_BLOB,
@@ -39,7 +39,7 @@ MANIFEST_PATH = PREFIX + "data/ktc_replacement_2026_manifest.json"
 REGISTRY_PATH = PREFIX + "data/ktc_replacement_2026_holdout_registry.json"
 ARCHIVE_PATH = "backend/data/training-data.zip"
 MFL_PATH = PREFIX + "data/backchannel_labels_2019_2025_mfl.csv"
-MAPPING_PATH = PREFIX + "data/ktc_replacement_mapping_source.json"
+MAPPING_PATH = PREFIX + "data/ktc_replacement_mapping_snapshot.csv"
 SOURCE_PATHS = tuple(
     sorted(
         PREFIX + name
@@ -181,8 +181,7 @@ def build_manifest(root: Path, source_anchor: str) -> dict:
         != GIT_BLOB
     ):
         raise ValueError("frozen start Git/content identity differs")
-    if contents[MAPPING_PATH] != canonical_bytes(DESCRIPTOR):
-        raise ValueError("mapping descriptor differs")
+    mapping_snapshot(contents[MAPPING_PATH])
     try:
         with zipfile.ZipFile(io.BytesIO(contents[ARCHIVE_PATH])) as archive:
             if archive.namelist() != ["training-data.json"]:

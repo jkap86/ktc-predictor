@@ -115,7 +115,7 @@ def _stats_bytes(data):
 def load_stats(path: Path) -> pd.DataFrame:
     try:
         return _stats_bytes(Path(path).read_bytes())
-    except OSError as exc:
+    except (FileNotFoundError, NotADirectoryError) as exc:
         raise ValueError("cannot read stats") from exc
 
 

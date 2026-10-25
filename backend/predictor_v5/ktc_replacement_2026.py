@@ -16,7 +16,11 @@ from predictor_v5.replacement_cohort import (
     verify_common_stats,
 )
 from predictor_v5.replacement_ktc import _canonical, _read, load_ktc_target
-from predictor_v5.replacement_lifecycle import preflight, run_claimed_stages
+from predictor_v5.replacement_lifecycle import (
+    LifecycleRefusal,
+    preflight,
+    run_claimed_stages,
+)
 from predictor_v5.replacement_metrics import diagnostics, gate, score
 from predictor_v5.replacement_mfl import load_mfl_target, load_stats
 from predictor_v5.replacement_report import _render_report
@@ -144,6 +148,15 @@ def _payload(context: dict, outcomes: dict, fitted: dict) -> dict:
     cohort = fitted["cohort_frame"]
     rows = cohort[COHORT_COLUMNS].to_dict("records") if not cohort.empty else []
     evaluated_gate = fitted["gate"]
+    start_dates = context["starts"]
+    frozen_dates = []
+    if not start_dates.empty:
+        dates = (
+            start_dates[["season", "player_id", "bc_date", "ktc_date"]]
+            .sort_values(["season", "player_id"], kind="stable")
+            .astype(object)
+        )
+        frozen_dates = dates.where(pd.notna(dates), None).to_dict("records")
     return {
         "protocol": {
             "name": manifest["protocol"],
@@ -172,7 +185,7 @@ def _payload(context: dict, outcomes: dict, fitted: dict) -> dict:
         "recipe_identities": manifest["recipes"],
         "model": manifest["model"],
         "cutoffs": manifest["cutoffs"],
-        "actual_dates": outcomes["actual_dates"],
+        "actual_dates": {**outcomes["actual_dates"], "frozen_starts": frozen_dates},
         "filters": manifest["filters"],
         "fits": fitted["fits"],
         "cohort": {"columns": COHORT_COLUMNS, "rows": rows},
@@ -195,7 +208,7 @@ def run(root: Path, dependencies: dict | None = None) -> dict:
     root = Path(root)
     try:
         context = configured["preflight"](root)
-    except ValueError as exc:
+    except (ValueError, FileNotFoundError, NotADirectoryError) as exc:
         raise ProtocolFailure(str(exc)) from exc
 
     result = {}
@@ -203,7 +216,7 @@ def run(root: Path, dependencies: dict | None = None) -> dict:
     def validate(bound):
         try:
             return configured["validate_outcomes"](bound, configured, root)
-        except ValueError as exc:
+        except (ValueError, FileNotFoundError, NotADirectoryError) as exc:
             raise ProtocolFailure(str(exc)) from exc
 
     def fit(bound, outcomes):
@@ -217,9 +230,12 @@ def run(root: Path, dependencies: dict | None = None) -> dict:
         result["wrapper"] = json.loads(raw)
         return raw
 
-    configured["run_claimed_stages"](
-        context, validate_outcomes=validate, fit=fit, write_report=render
-    )
+    try:
+        configured["run_claimed_stages"](
+            context, validate_outcomes=validate, fit=fit, write_report=render
+        )
+    except LifecycleRefusal as exc:
+        raise ProtocolFailure(str(exc)) from exc
     return result["wrapper"]
 
 
