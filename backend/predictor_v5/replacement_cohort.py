@@ -352,6 +352,31 @@ def matched_cohort(starts, ktc, mfl, predictions):
         _finite(frame, "fitted_start", positive=True)
         _finite(frame, "predicted_end", nonnegative=True)
 
+    for source, target, frozen_value in (
+        ("ktc", ktc, "ktc_value"),
+        ("mfl", mfl, "bc_value"),
+    ):
+        frozen_columns = ["season", "player_id", frozen_value]
+        if source == "mfl":
+            frozen_columns.append("bc_trades")
+        shared = target.merge(
+            starts[frozen_columns],
+            on=["season", "player_id"],
+            how="inner",
+            validate="one_to_one",
+        )
+        observed = shared[frozen_value].notna()
+        if not shared.loc[observed, "start_value"].eq(
+            shared.loc[observed, frozen_value]
+        ).all():
+            raise ValueError(f"{source} target start differs from frozen starts")
+        if source == "mfl":
+            observed_trades = shared["bc_trades"].notna()
+            if not shared.loc[observed_trades, "start_trades_window"].eq(
+                shared.loc[observed_trades, "bc_trades"]
+            ).all():
+                raise ValueError("mfl target start trades differ from frozen starts")
+
     start_mask = (
         starts["ktc_value"].notna()
         & starts["bc_value"].notna()
@@ -362,20 +387,6 @@ def matched_cohort(starts, ktc, mfl, predictions):
         & starts["bc_trades"].ge(5)
     )
     valid_starts = starts.loc[start_mask].copy()
-    for source, target, value, frozen_value in (
-        ("ktc", ktc, "start_value", "ktc_value"),
-        ("mfl", mfl, "start_value", "bc_value"),
-    ):
-        shared = target.merge(
-            valid_starts[["season", "player_id", frozen_value, "bc_trades"]],
-            on=["season", "player_id"],
-            how="inner",
-            validate="one_to_one",
-        )
-        if not shared[value].eq(shared[frozen_value]).all():
-            raise ValueError(f"{source} target start differs from frozen starts")
-        if source == "mfl" and not shared["start_trades_window"].eq(shared["bc_trades"]).all():
-            raise ValueError("mfl target start trades differ from frozen starts")
     inputs = {
         "starts": valid_starts,
         "ktc": ktc,

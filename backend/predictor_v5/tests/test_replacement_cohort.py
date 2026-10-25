@@ -266,6 +266,48 @@ def test_start_conflict_cannot_hide_behind_missing_prediction():
         )
 
 
+def test_ktc_start_conflict_cannot_hide_behind_mfl_illiquidity():
+    frozen = starts([
+        {"player_id": "a", "season": 2026, "ktc_value": 100,
+         "bc_value": 200, "bc_trades": 4},
+    ])
+    with pytest.raises(ValueError, match="ktc target start"):
+        matched_cohort(
+            frozen,
+            ktc([["a", 2026, 99, 110, "QB", 25, 1, 1]]),
+            mfl([]),
+            {"ktc": prediction([]), "mfl": prediction([])},
+        )
+
+
+def test_mfl_start_conflict_cannot_hide_behind_missing_ktc_start():
+    frozen = starts([
+        {"player_id": "a", "season": 2026, "ktc_value": np.nan,
+         "ktc_date": np.nan, "bc_value": 200},
+    ])
+    with pytest.raises(ValueError, match="mfl target start"):
+        matched_cohort(
+            frozen,
+            ktc([]),
+            mfl([["a", 2026, 199, 220, "QB", 25, 1, 1]]),
+            {"ktc": prediction([]), "mfl": prediction([])},
+        )
+
+
+def test_mfl_trade_conflict_cannot_hide_behind_missing_ktc_start():
+    frozen = starts([
+        {"player_id": "a", "season": 2026, "ktc_value": np.nan,
+         "ktc_date": np.nan, "bc_value": 200, "bc_trades": 6},
+    ])
+    with pytest.raises(ValueError, match="mfl target start trades"):
+        matched_cohort(
+            frozen,
+            ktc([]),
+            mfl([["a", 2026, 200, 220, "QB", 25, 1, 1]]),
+            {"ktc": prediction([]), "mfl": prediction([])},
+        )
+
+
 @pytest.mark.parametrize("mutation,match", [
     ("start_duplicate", "duplicate"), ("target_duplicate", "duplicate"),
     ("prediction_schema", "prediction schema"), ("target_schema", "target schema"),
