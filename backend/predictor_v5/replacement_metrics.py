@@ -53,28 +53,72 @@ def score(cohort):
 
 
 def _number(value):
-    return isinstance(value, numbers.Real) and not isinstance(value, (bool, np.bool_)) and math.isfinite(value)
+    if not isinstance(value, numbers.Real) or isinstance(value, (bool, np.bool_)):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, TypeError, ValueError):
+        return False
+
+
+def _consistent(left, right):
+    """Allow at most 1e-15 absolute rounding noise, with no relative tolerance."""
+    return _number(left) and _number(right) and math.isclose(left, right, rel_tol=0, abs_tol=1e-15)
 
 
 def gate(metrics):
     reasons = []
+    if not isinstance(metrics, dict) or set(metrics) != {"overall", "positions"}:
+        reasons.append("invalid_metrics_shape")
     overall = metrics.get("overall", {}) if isinstance(metrics, dict) else {}
     positions = metrics.get("positions", {}) if isinstance(metrics, dict) else {}
     if not isinstance(overall, dict):
         overall = {}
     if not isinstance(positions, dict):
         positions = {}
+    if set(positions) != set(POSITIONS):
+        reasons.append("invalid_positions_shape")
+    def validate_group(group, label):
+        if set(group) != {"count", "ktc", "mfl", "delta"}:
+            reasons.append(f"{label}_invalid_shape")
+        skills = {}
+        for source in ("ktc", "mfl"):
+            item = group.get(source)
+            if not isinstance(item, dict) or set(item) != {"mae", "baseline", "skill"}:
+                reasons.append(f"{label}_{source}_invalid_shape")
+                continue
+            mae, baseline, skill = item["mae"], item["baseline"], item["skill"]
+            if not _number(mae) or mae < 0:
+                reasons.append(f"{label}_{source}_invalid_mae")
+            elif not _number(baseline) or baseline <= 0:
+                reasons.append(f"{label}_{source}_invalid_baseline")
+            elif not _number(skill):
+                reasons.append(f"{label}_{source}_missing_skill")
+            else:
+                try:
+                    expected = 1 - mae / baseline
+                except (OverflowError, ZeroDivisionError):
+                    expected = float("nan")
+                if not _consistent(skill, expected):
+                    reasons.append(f"{label}_{source}_inconsistent_skill")
+                else:
+                    skills[source] = skill
+        delta = group.get("delta")
+        if not _number(delta):
+            reasons.append(f"{label}_missing_delta")
+            return None
+        if len(skills) == 2:
+            computed = skills["mfl"] - skills["ktc"]
+            if not _consistent(delta, computed):
+                reasons.append(f"{label}_inconsistent_delta")
+                return None
+            return computed
+        return None
     count = overall.get("count")
     if not isinstance(count, numbers.Integral) or isinstance(count, (bool, np.bool_)) or count <= 0:
         reasons.append("invalid_overall_count")
-    delta = overall.get("delta")
-    for source in ("ktc", "mfl"):
-        item = overall.get(source)
-        if not isinstance(item, dict) or not _number(item.get("skill")):
-            reasons.append(f"overall_{source}_missing_skill")
-    if not _number(delta):
-        reasons.append("missing_overall_delta")
-    elif delta < -0.01:
+    delta = validate_group(overall, "overall")
+    if delta is not None and delta < -0.01:
         reasons.append("overall_delta_below_threshold")
     position_counts = []
     for position in POSITIONS:
@@ -82,18 +126,13 @@ def gate(metrics):
         if not isinstance(group, dict):
             reasons.append(f"{position.lower()}_missing")
             continue
-        count, delta = group.get("count"), group.get("delta")
-        for source in ("ktc", "mfl"):
-            item = group.get(source)
-            if not isinstance(item, dict) or not _number(item.get("skill")):
-                reasons.append(f"{position.lower()}_{source}_missing_skill")
+        count = group.get("count")
+        delta = validate_group(group, position.lower())
         if not isinstance(count, numbers.Integral) or isinstance(count, (bool, np.bool_)) or count < 30:
             reasons.append(f"{position.lower()}_insufficient_count")
         if isinstance(count, numbers.Integral) and not isinstance(count, (bool, np.bool_)) and count >= 0:
             position_counts.append(count)
-        if not _number(delta):
-            reasons.append(f"{position.lower()}_missing_delta")
-        elif delta < -0.05:
+        if delta is not None and delta < -0.05:
             reasons.append(f"{position.lower()}_delta_below_threshold")
     if len(position_counts) == len(POSITIONS) and isinstance(overall.get("count"), numbers.Integral) and sum(position_counts) != overall["count"]:
         reasons.append("count_mismatch")

@@ -1,3 +1,4 @@
+import copy
 import json
 
 import pandas as pd
@@ -23,17 +24,19 @@ def test_source_specific_baselines_and_targets():
 
 
 def test_gate_exact_boundaries_and_counts():
-    sources = {"ktc": {"skill": 0.5}, "mfl": {"skill": 0.5}}
-    metrics = {"overall": {"count": 120, "delta": -0.01, **sources}, "positions": {
-        p: {"count": 30, "delta": -0.05, **sources} for p in ("QB", "RB", "TE", "WR")}}
+    def group(count, skill):
+        return {"count": count, "ktc": {"mae": 1 - skill, "baseline": 1, "skill": skill},
+                "mfl": {"mae": 1, "baseline": 1, "skill": 0}, "delta": -skill}
+    metrics = {"overall": group(120, 0.01), "positions": {
+        p: group(30, 0.05) for p in ("QB", "RB", "TE", "WR")}}
     assert gate(metrics)["decision"] == "recommend_replacement"
     assert gate(metrics)["promotion_authorized"] is False
-    metrics["overall"]["delta"] = -0.010000001
+    metrics["overall"] = group(120, 0.010000001)
     assert gate(metrics)["decision"] == "retain_ktc"
-    metrics["overall"]["delta"] = -0.01
-    metrics["positions"]["QB"]["delta"] = -0.050000001
+    metrics["overall"] = group(120, 0.01)
+    metrics["positions"]["QB"] = group(30, 0.050000001)
     assert gate(metrics)["decision"] == "retain_ktc"
-    metrics["positions"]["QB"] = {"count": 29, "delta": -0.05, **sources}
+    metrics["positions"]["QB"] = group(29, 0.05)
     assert gate(metrics)["decision"] == "retain_ktc"
 
 
@@ -111,4 +114,40 @@ def test_inconsistent_count_and_missing_skill_cannot_pass_gate():
     assert gate(metrics)["decision"] == "retain_ktc"
     metrics = score(data)
     metrics["overall"]["count"] = 121
+    assert gate(metrics)["decision"] == "retain_ktc"
+
+
+@pytest.mark.parametrize("path,value", [
+    (("overall", "ktc", "baseline"), 0), (("overall", "ktc", "baseline"), -1),
+    (("overall", "ktc", "baseline"), float("inf")), (("overall", "ktc", "baseline"), True),
+    (("overall", "ktc", "mae"), -1), (("overall", "ktc", "mae"), float("nan")),
+    (("overall", "ktc", "mae"), True), (("overall", "ktc", "skill"), 0.7),
+    (("overall", "delta"), 0.9), (("overall", "count"), True),
+    (("positions", "QB", "mfl", "baseline"), 0),
+    (("positions", "RB", "delta"), 1), (("positions", "TE", "count"), False),
+])
+def test_gate_rejects_contradictory_metrics(path, value):
+    data = cohort([row(f"{p}{i}", p) for p in ("QB", "RB", "TE", "WR") for i in range(30)])
+    metrics = score(data)
+    target = metrics
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    result = gate(metrics)
+    assert result["decision"] == "retain_ktc"
+    assert result["reasons"]
+    assert result == gate(copy.deepcopy(metrics))
+
+
+@pytest.mark.parametrize("mutation", ["root_extra", "position_extra", "group_extra", "source_extra", "source_missing", "missing_position", "root_list"])
+def test_gate_rejects_invalid_shapes(mutation):
+    data = cohort([row(f"{p}{i}", p) for p in ("QB", "RB", "TE", "WR") for i in range(30)])
+    metrics = score(data)
+    if mutation == "root_extra": metrics["extra"] = 1
+    elif mutation == "position_extra": metrics["positions"]["K"] = {}
+    elif mutation == "group_extra": metrics["overall"]["extra"] = 1
+    elif mutation == "source_extra": metrics["overall"]["ktc"]["extra"] = 1
+    elif mutation == "source_missing": del metrics["overall"]["ktc"]["mae"]
+    elif mutation == "missing_position": del metrics["positions"]["QB"]
+    else: metrics = []
     assert gate(metrics)["decision"] == "retain_ktc"
