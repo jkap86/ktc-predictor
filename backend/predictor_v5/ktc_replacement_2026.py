@@ -88,12 +88,13 @@ def _validate_outcomes(context: dict, dependencies: dict, root: Path) -> dict:
 
 def _prediction(model, target: pd.DataFrame) -> pd.DataFrame:
     ordered = target.sort_values(["season", "player_id"], kind="stable")
+    predicted = model.predict(ordered) if len(ordered) else pd.Series(dtype=float)
     return pd.DataFrame(
         {
             "player_id": ordered["player_id"].to_numpy(),
             "season": ordered["season"].to_numpy(),
             "fitted_start": ordered["start_value"].to_numpy(dtype=float),
-            "predicted_end": model.predict(ordered),
+            "predicted_end": predicted,
         }
     )
 

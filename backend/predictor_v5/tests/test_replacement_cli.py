@@ -14,6 +14,7 @@ from predictor_v5.replacement_contract import canonical_bytes
 def test_atomic_canonical_report(tmp_path, monkeypatch):
     from predictor_v5 import replacement_report
 
+    (tmp_path / "reports").mkdir()
     destination = tmp_path / "reports" / "result.json"
     payload = {"z": [3, 2, 1], "a": {"value": "deterministic"}}
     wrapper = replacement_report.write_report(payload, destination)
@@ -45,6 +46,53 @@ def test_atomic_canonical_report(tmp_path, monkeypatch):
         replacement_report.write_report(payload, failed)
     assert not failed.exists()
     assert not list(failed.parent.glob(f".{failed.name}.tmp.*"))
+
+
+def test_report_requires_existing_parent_directory(tmp_path):
+    from predictor_v5.replacement_report import write_report
+
+    destination = tmp_path / "missing" / "result.json"
+    with pytest.raises(FileNotFoundError):
+        write_report({"decision": "retain_ktc"}, destination)
+    assert not destination.parent.exists()
+
+
+def test_report_temp_collision_is_not_removed(tmp_path, monkeypatch):
+    from predictor_v5 import replacement_report
+
+    token = "collision"
+    destination = tmp_path / "result.json"
+    collision = tmp_path / f".{destination.name}.tmp.{token}"
+    collision.write_bytes(b"unowned")
+    monkeypatch.setattr(replacement_report.secrets, "token_hex", lambda _size: token)
+
+    with pytest.raises(FileExistsError):
+        replacement_report.write_report({"decision": "retain_ktc"}, destination)
+    assert collision.read_bytes() == b"unowned"
+    assert not destination.exists()
+
+
+def test_report_cleanup_preserves_replacement_final_inode(tmp_path, monkeypatch):
+    from predictor_v5 import replacement_report
+
+    destination = tmp_path / "result.json"
+    replacement = b"concurrent replacement"
+    real_fsync = os.fsync
+    calls = 0
+
+    def replace_before_directory_sync(descriptor):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            destination.unlink()
+            destination.write_bytes(replacement)
+            raise OSError("injected directory fsync failure")
+        return real_fsync(descriptor)
+
+    monkeypatch.setattr(replacement_report.os, "fsync", replace_before_directory_sync)
+    with pytest.raises(OSError, match="directory fsync"):
+        replacement_report.write_report({"decision": "retain_ktc"}, destination)
+    assert destination.read_bytes() == replacement
 
 
 def _context(tmp_path):
@@ -148,6 +196,64 @@ def test_cli_exit_and_order(tmp_path):
         "paired raw MFL-minus-KTC MAE difference"
     )
     assert json.loads(context["output_path"].read_bytes()) == wrapper
+
+
+def test_empty_targets_reach_real_gate_report_and_exit_0(tmp_path, monkeypatch):
+    from predictor_v5 import ktc_replacement_2026 as cli
+    from predictor_v5.replacement_cohort import START_COLUMNS
+    from predictor_v5.replacement_ktc import TARGET_COLUMNS as KTC_COLUMNS
+    from predictor_v5.replacement_mfl import TARGET_COLUMNS as MFL_COLUMNS
+
+    context = _context(tmp_path)
+    context["starts"] = pd.DataFrame(columns=START_COLUMNS)
+    empty_ktc = pd.DataFrame(columns=KTC_COLUMNS)
+    empty_mfl = pd.DataFrame(columns=MFL_COLUMNS)
+    outcomes = {
+        "ktc": empty_ktc,
+        "mfl": empty_mfl,
+        "actual_dates": {},
+        "coverage": {"ktc": {}, "mfl": {}},
+    }
+
+    class Model:
+        def fit(self, _training):
+            return self
+
+        def predict(self, _target):
+            pytest.fail("empty target reached model.predict")
+
+    def model_factory(**_kwargs):
+        return Model()
+
+    def claimed(bound, *, validate_outcomes, fit, write_report):
+        bound["claim_path"].write_text("claimed")
+        payload = fit(bound, validate_outcomes(bound))
+        bound["output_path"].write_bytes(write_report(payload))
+        return bound["output_path"]
+
+    actual_run = cli.run
+    monkeypatch.setattr(
+        cli,
+        "run",
+        lambda root: actual_run(
+            root,
+            {
+                "preflight": lambda _root: context,
+                "run_claimed_stages": claimed,
+                "validate_outcomes": lambda *_args: outcomes,
+                "model_factory": model_factory,
+            },
+        ),
+    )
+
+    assert cli.main() == 0
+    wrapper = json.loads(context["output_path"].read_bytes())
+    assert wrapper["payload"]["cohort"]["rows"] == []
+    assert wrapper["payload"]["gate"]["decision"] == "retain_ktc"
+    assert wrapper["payload"]["decision"] == {
+        "recommendation": "retain_ktc",
+        "promotion_authorized": False,
+    }
 
 
 @pytest.mark.parametrize("phase", ["preflight", "validation"])
