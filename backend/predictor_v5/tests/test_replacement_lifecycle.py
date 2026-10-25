@@ -519,7 +519,7 @@ def test_preflight_nofollow_open_rejects_check_open_swap(tmp_path, monkeypatch):
 
     monkeypatch.setattr(lifecycle.os, "open", swapping_open)
     monkeypatch.setattr(lifecycle.os, "read", guarded_read)
-    with pytest.raises(OSError):
+    with pytest.raises(lifecycle.LifecycleRefusal, match="symlink"):
         lifecycle.preflight(tmp_path)
 
 

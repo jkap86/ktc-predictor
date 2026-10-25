@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import json
 import os
@@ -544,6 +545,44 @@ def test_real_preflight_unexpected_io_exits_1_without_claim(tmp_path, monkeypatc
     monkeypatch.setattr(lifecycle, "_read_descriptor", fail_read)
     actual_run = cli.run
     monkeypatch.setattr(cli, "run", lambda _root: actual_run(tmp_path))
+    assert cli.main() == 1
+    assert not list(tmp_path.rglob("*.claim.json"))
+
+
+def test_real_preflight_required_source_symlink_exits_2_without_claim(tmp_path, monkeypatch):
+    from predictor_v5 import ktc_replacement_2026 as cli
+    from predictor_v5.tests.test_replacement_lifecycle import _real_preflight_fixture
+
+    _real_preflight_fixture(tmp_path)
+    source = tmp_path / "fixture/ktc.sql"
+    source.unlink()
+    source.symlink_to("mfl.sql")
+    actual_run = cli.run
+    monkeypatch.setattr(cli, "run", lambda _root: actual_run(tmp_path))
+
+    exit_code = cli.main()
+    assert not list(tmp_path.rglob("*.claim.json"))
+    assert not list((tmp_path / "backend/predictor_v5/artifacts/replacements").glob("*.json"))
+    assert exit_code == 2
+
+
+def test_real_preflight_required_source_open_io_stays_exit_1(tmp_path, monkeypatch):
+    from predictor_v5 import ktc_replacement_2026 as cli
+    from predictor_v5 import replacement_lifecycle as lifecycle
+    from predictor_v5.tests.test_replacement_lifecycle import _real_preflight_fixture
+
+    _real_preflight_fixture(tmp_path)
+    real_open = os.open
+
+    def fail_source_open(path, flags, *args, **kwargs):
+        if path == "ktc.sql" and flags & os.O_NOFOLLOW:
+            raise OSError(errno.EIO, "unexpected source open IO")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(lifecycle.os, "open", fail_source_open)
+    actual_run = cli.run
+    monkeypatch.setattr(cli, "run", lambda _root: actual_run(tmp_path))
+
     assert cli.main() == 1
     assert not list(tmp_path.rglob("*.claim.json"))
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -249,6 +250,12 @@ def _capture(
     parent_fd, name = _open_parent(root_fd, value)
     try:
         descriptor = os.open(name, _FILE_FLAGS, dir_fd=parent_fd)
+    except OSError as exc:
+        # O_NOFOLLOW refuses a symlink leaf with ELOOP. Other open failures
+        # remain IO errors; do not relabel disk/permission failures as inputs.
+        if exc.errno == errno.ELOOP:
+            raise LifecycleRefusal("required repository input is a symlink") from exc
+        raise
     finally:
         os.close(parent_fd)
     try:
