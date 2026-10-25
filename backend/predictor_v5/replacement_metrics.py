@@ -66,6 +66,11 @@ def _consistent(left, right):
     return _number(left) and _number(right) and math.isclose(left, right, rel_tol=0, abs_tol=1e-15)
 
 
+def _below_threshold(skills, threshold):
+    """Compare without the cancellation incurred by subtracting two skills."""
+    return skills["mfl"] < math.fsum((skills["ktc"], threshold))
+
+
 def gate(metrics):
     reasons = []
     if not isinstance(metrics, dict) or set(metrics) != {"overall", "positions"}:
@@ -112,13 +117,13 @@ def gate(metrics):
             if not _consistent(delta, computed):
                 reasons.append(f"{label}_inconsistent_delta")
                 return None
-            return computed
+            return skills
         return None
     count = overall.get("count")
     if not isinstance(count, numbers.Integral) or isinstance(count, (bool, np.bool_)) or count <= 0:
         reasons.append("invalid_overall_count")
-    delta = validate_group(overall, "overall")
-    if delta is not None and delta < -0.01:
+    skills = validate_group(overall, "overall")
+    if skills is not None and _below_threshold(skills, -0.01):
         reasons.append("overall_delta_below_threshold")
     position_counts = []
     for position in POSITIONS:
@@ -127,12 +132,12 @@ def gate(metrics):
             reasons.append(f"{position.lower()}_missing")
             continue
         count = group.get("count")
-        delta = validate_group(group, position.lower())
+        skills = validate_group(group, position.lower())
         if not isinstance(count, numbers.Integral) or isinstance(count, (bool, np.bool_)) or count < 30:
             reasons.append(f"{position.lower()}_insufficient_count")
         if isinstance(count, numbers.Integral) and not isinstance(count, (bool, np.bool_)) and count >= 0:
             position_counts.append(count)
-        if delta is not None and delta < -0.05:
+        if skills is not None and _below_threshold(skills, -0.05):
             reasons.append(f"{position.lower()}_delta_below_threshold")
     if len(position_counts) == len(POSITIONS) and isinstance(overall.get("count"), numbers.Integral) and sum(position_counts) != overall["count"]:
         reasons.append("count_mismatch")

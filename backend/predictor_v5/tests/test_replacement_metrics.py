@@ -23,21 +23,64 @@ def test_source_specific_baselines_and_targets():
     assert metrics["overall"]["delta"] == 0.25
 
 
-def test_gate_exact_boundaries_and_counts():
-    def group(count, skill):
-        return {"count": count, "ktc": {"mae": 1 - skill, "baseline": 1, "skill": skill},
-                "mfl": {"mae": 1, "baseline": 1, "skill": 0}, "delta": -skill}
-    metrics = {"overall": group(120, 0.01), "positions": {
-        p: group(30, 0.05) for p in ("QB", "RB", "TE", "WR")}}
-    assert gate(metrics)["decision"] == "recommend_replacement"
-    assert gate(metrics)["promotion_authorized"] is False
-    metrics["overall"] = group(120, 0.010000001)
-    assert gate(metrics)["decision"] == "retain_ktc"
-    metrics["overall"] = group(120, 0.01)
-    metrics["positions"]["QB"] = group(30, 0.050000001)
-    assert gate(metrics)["decision"] == "retain_ktc"
-    metrics["positions"]["QB"] = group(29, 0.05)
-    assert gate(metrics)["decision"] == "retain_ktc"
+def gate_cohort(group, below=False):
+    rows = []
+    for position in ("QB", "RB", "TE", "WR"):
+        if group == "overall":
+            ktc_error, mfl_error = 30, 31 + (0.0000001 if below else 0)
+        elif group == position:
+            ktc_error, mfl_error = 25, 30 + (0.0000001 if below else 0)
+        else:
+            # Compensate for the selected position's loss so the overall gate
+            # isolates the positional boundary under test.
+            ktc_error, mfl_error = 30, 20
+        for index in range(30):
+            value = row(f"{position}{index}", position)
+            value[6], value[7], value[8] = 100, 0, ktc_error
+            value[9], value[10], value[11] = 100, 0, mfl_error
+            rows.append(value)
+    return cohort(rows)
+
+
+@pytest.mark.parametrize("group", ["overall", "QB", "RB", "TE", "WR"])
+def test_gate_preserves_inclusive_boundaries_through_scoring(group):
+    metrics = score(gate_cohort(group))
+    threshold = -0.01 if group == "overall" else -0.05
+    measured = metrics["overall" if group == "overall" else "positions"][
+        group if group != "overall" else "delta"
+    ]
+    if group != "overall":
+        measured = measured["delta"]
+    assert measured < threshold  # binary subtraction crosses the exact boundary
+    assert gate(metrics) == {
+        "decision": "recommend_replacement",
+        "reasons": [],
+        "primary": "mfl_eligible_only",
+        "fallback": "ktc",
+        "promotion_authorized": False,
+    }
+
+
+@pytest.mark.parametrize("group", ["overall", "QB", "RB", "TE", "WR"])
+def test_gate_rejects_one_billionth_below_boundary_through_scoring(group):
+    result = gate(score(gate_cohort(group, below=True)))
+    reason = (
+        "overall_delta_below_threshold"
+        if group == "overall"
+        else f"{group.lower()}_delta_below_threshold"
+    )
+    assert result["decision"] == "retain_ktc"
+    assert result["reasons"] == [reason]
+    assert result["primary"] == "ktc"
+    assert result["fallback"] is None
+    assert result["promotion_authorized"] is False
+
+
+def test_gate_requires_thirty_players_per_position():
+    metrics = score(gate_cohort("QB").iloc[:-1])
+    result = gate(metrics)
+    assert result["decision"] == "retain_ktc"
+    assert result["reasons"] == ["wr_insufficient_count"]
 
 
 def test_diagnostics_ties_and_non_gating():
