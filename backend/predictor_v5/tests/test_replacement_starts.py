@@ -72,3 +72,60 @@ def test_missing_coverage_reports_sorted_identities():
     assert coverage["missing_keys"] == [(2026, "2"), (2026, "3")]
     assert coverage["missing_count"] == 2
     assert coverage["matched_count"] == 1
+
+
+@pytest.mark.parametrize("duplicate_side", ["starts", "target"])
+def test_duplicate_player_season_is_rejected(duplicate_side):
+    starts = pd.DataFrame([{"season": 2026, "player_id": "1", "ktc_value": 100}])
+    target = pd.DataFrame([{"season": 2026, "player_id": "1", "start_value": 100}])
+    if duplicate_side == "starts":
+        starts = pd.concat([starts, starts], ignore_index=True)
+    else:
+        target = pd.concat([target, target], ignore_index=True)
+    with pytest.raises(ValueError, match="duplicate or missing start keys"):
+        check_target_starts(starts, target, "ktc")
+
+
+def test_duplicate_frozen_player_is_rejected(monkeypatch):
+    row = {
+        "player_id": "1",
+        "bc_value": 80,
+        "bc_trades": 5,
+        "bc_date": "2026-09-09",
+        "bc_model_version": "baseline-hl28-v1",
+        "ktc_value": 100,
+        "ktc_date": "2026-08-26",
+    }
+    monkeypatch.setattr(
+        pd, "read_csv", lambda *args, **kwargs: pd.DataFrame([row, row])
+    )
+    with pytest.raises(ValueError, match="duplicate or missing start player ID"):
+        load_starts(STARTS, ROOT)
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("bc_date", "2026-09-10"),
+        ("ktc_date", "2026-09-10"),
+        ("ktc_date", "2026-08-25"),
+        ("bc_model_version", "baseline-hl28-v2"),
+    ],
+    ids=["bc-future", "ktc-future", "ktc-too-old", "wrong-model"],
+)
+def test_invalid_frozen_observation_is_rejected(monkeypatch, field, bad_value):
+    # Preserve real identity checks; substitute only the already-parsed frame to
+    # exercise policy rejection on independently specified invalid observations.
+    row = {
+        "player_id": "1",
+        "bc_value": 80,
+        "bc_trades": 5,
+        "bc_date": "2026-09-09",
+        "bc_model_version": "baseline-hl28-v1",
+        "ktc_value": 100,
+        "ktc_date": "2026-08-26",
+    }
+    row[field] = bad_value
+    monkeypatch.setattr(pd, "read_csv", lambda *args, **kwargs: pd.DataFrame([row]))
+    with pytest.raises(ValueError, match="invalid start"):
+        load_starts(STARTS, ROOT)
