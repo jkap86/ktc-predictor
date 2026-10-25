@@ -1,6 +1,7 @@
 """Validate and compare the content-addressed 2026 start snapshot."""
 
 import hashlib
+import io
 import subprocess
 from pathlib import Path
 
@@ -14,10 +15,10 @@ RELATIVE_PATH = "backend/predictor_v5/data/start_values_2026.csv"
 
 def load_starts(path: Path, root: Path) -> pd.DataFrame:
     path, root = Path(path).resolve(), Path(root).resolve()
-    if (
-        path != root / RELATIVE_PATH
-        or hashlib.sha256(path.read_bytes()).hexdigest() != SHA256
-    ):
+    if path != root / RELATIVE_PATH:
+        raise ValueError("frozen start content or path differs")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != SHA256:
         raise ValueError("frozen start content or path differs")
     try:
         blob = subprocess.check_output(
@@ -32,7 +33,7 @@ def load_starts(path: Path, root: Path) -> pd.DataFrame:
         raise ValueError("cannot verify frozen start Git identity") from exc
     if blob != GIT_BLOB or not introduced.startswith(INTRODUCTION):
         raise ValueError("frozen start Git identity differs")
-    starts = pd.read_csv(path, dtype={"player_id": str})
+    starts = pd.read_csv(io.BytesIO(raw), dtype={"player_id": str})
     if starts["player_id"].isna().any() or starts["player_id"].duplicated().any():
         raise ValueError("duplicate or missing start player ID")
     cutoff = pd.Timestamp("2026-09-09")

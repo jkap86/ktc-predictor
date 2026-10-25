@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pandas as pd
@@ -27,6 +28,63 @@ def test_frozen_identity_and_dates():
     )
     ktc_dates = pd.to_datetime(starts["ktc_date"].dropna())
     assert ktc_dates.between("2026-08-26", "2026-09-09").all()
+
+
+def test_parses_verified_bytes_if_file_changes_before_parse(monkeypatch, tmp_path):
+    snapshot = tmp_path / "backend/predictor_v5/data/start_values_2026.csv"
+    snapshot.parent.mkdir(parents=True)
+    snapshot.write_bytes(STARTS.read_bytes())
+    real_read_bytes = Path.read_bytes
+
+    def replace_after_read(path):
+        original = real_read_bytes(path)
+        path.write_text(
+            "player_id,bc_value,bc_trades,bc_date,bc_model_version,ktc_value,ktc_date\nattacker,999,5,2026-09-09,baseline-hl28-v1,100,2026-09-09\n"
+        )
+        return original
+
+    monkeypatch.setattr(Path, "read_bytes", replace_after_read)
+    monkeypatch.setattr(
+        subprocess,
+        "check_output",
+        lambda command, **kwargs: (
+            "ead24b508102ca2a1071d07f3f665e9ea920aa96\n"
+            if command[1] == "rev-parse"
+            else "c415177f9e7e0653879b2eed2a7a29205725e9e7\n"
+        ),
+    )
+    starts = load_starts(snapshot, tmp_path)
+    assert len(starts) == 528
+    assert "attacker" not in starts.player_id.values
+
+
+def test_rejects_altered_snapshot_bytes(monkeypatch):
+    monkeypatch.setattr(Path, "read_bytes", lambda self: b"altered")
+    with pytest.raises(ValueError, match="content or path"):
+        load_starts(STARTS, ROOT)
+
+
+def test_rejects_wrong_snapshot_path():
+    with pytest.raises(ValueError, match="content or path"):
+        load_starts(ROOT / "other.csv", ROOT)
+
+
+@pytest.mark.parametrize("failure", ["blob", "introduction", "git failure"])
+def test_rejects_invalid_git_identity(monkeypatch, failure):
+    real_check_output = subprocess.check_output
+
+    def altered_git(command, **kwargs):
+        if failure == "git failure":
+            raise subprocess.CalledProcessError(1, command)
+        if failure == "blob" and command[1] == "rev-parse":
+            return "0000000000000000000000000000000000000000\n"
+        if failure == "introduction" and command[1] == "log":
+            return "0000000000000000000000000000000000000000\n"
+        return real_check_output(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "check_output", altered_git)
+    with pytest.raises(ValueError, match="Git identity"):
+        load_starts(STARTS, ROOT)
 
 
 def test_start_missing_is_coverage_but_conflict_refuses():
