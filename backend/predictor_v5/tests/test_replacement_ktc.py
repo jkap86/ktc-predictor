@@ -1,0 +1,267 @@
+import hashlib
+import io
+import json
+import socket
+import zipfile
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from predictor_v5.replacement_ktc import load_ktc_target, select_end_observations
+
+
+def bundle(tmp_path):
+    def put(name, data):
+        (tmp_path / name).write_bytes(data)
+        return {"path": name, "sha256": hashlib.sha256(data).hexdigest()}
+
+    canonical = lambda obj: (
+        json.dumps(obj, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode()
+    raw = put(
+        "raw.csv",
+        b"format,ktc_id,sleeper_id,date,sf_value\ndynasty,1,p,2027-01-10,20\n",
+    )
+    target = put(
+        "target.csv",
+        b"player_id,season,start_value,end_value,position,age,games,points\np,2026,10,20,QB,25,17,300\n",
+    )
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(
+            "training-data.json",
+            json.dumps(
+                {
+                    "players": [
+                        {
+                            "player_id": "p",
+                            "position": "QB",
+                            "seasons": [
+                                {
+                                    "year": 2026,
+                                    "age": 25,
+                                    "games_played": 17,
+                                    "fantasy_points": 300,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+    stats_id = put("stats.zip", archive.getvalue())
+    descriptor = {
+        "format": "dynasty",
+        "join_keys": ["format", "ktc_id"],
+        "nonnull_source_id": True,
+        "provider": "local-thelab",
+        "row_evidence": "registered-raw-end-export",
+        "schema_version": 1,
+        "source_id": "sleeper_id",
+        "source_table": "ktc_values",
+        "target_id": "player_id",
+    }
+    mapping = put("mapping.json", canonical(descriptor))
+    sql = put("query.sql", b"query")
+    extractor = put("extractor.py", b"extractor")
+    code = put("mapping.py", b"mapping")
+    ids = {
+        "raw_end": raw,
+        "target_csv": target,
+        "target_stats": stats_id,
+        "sql": sql,
+        "extractor": extractor,
+        "mapping_code": code,
+        "mapping_data": mapping,
+    }
+    side = {
+        "schema_version": 1,
+        "provider": "local-thelab",
+        "reviewer": "reviewer",
+        "starts": {
+            "path": "backend/predictor_v5/data/start_values_2026.csv",
+            "sha256": "6366b85300c4f9532f0866c602c6d262baaccf6c3a84b9252a6d2e8d46c541bb",
+        },
+        "identities": ids,
+        "observation_dates": [{"player_id": "p", "date": "2027-01-10"}],
+        "coverage": {
+            "raw_players": 1,
+            "target_players": 1,
+            "missing_start_keys": [],
+            "excluded_raw_players": [],
+        },
+    }
+    ids = dict(ids, target_sidecar=put("side.json", canonical(side)))
+    starts = pd.DataFrame([{"season": 2026, "player_id": "p", "ktc_value": 10}])
+    stats = pd.DataFrame(
+        [
+            {
+                "season": 2026,
+                "player_id": "p",
+                "position": "QB",
+                "age": 25.0,
+                "games": 17,
+                "points": 300.0,
+            }
+        ]
+    )
+    return {"ktc": ids}, starts, stats, side
+
+
+def test_registered_bundle_matches_raw_and_stats(tmp_path):
+    registration, starts, stats, _ = bundle(tmp_path)
+    target = load_ktc_target(registration, starts, stats, tmp_path)
+    assert target.to_dict("records") == [
+        {
+            "player_id": "p",
+            "season": 2026,
+            "start_value": 10.0,
+            "end_value": 20.0,
+            "position": "QB",
+            "age": 25.0,
+            "games": 17,
+            "points": 300.0,
+        }
+    ]
+
+
+def test_sidecar_records_excluded_raw_player_date(tmp_path):
+    registration, starts, stats, side = bundle(tmp_path)
+    raw = b"format,ktc_id,sleeper_id,date,sf_value\ndynasty,1,p,2027-01-10,20\ndynasty,2,q,2026-12-28,30\n"
+    (tmp_path / "raw.csv").write_bytes(raw)
+    identity = registration["ktc"]["raw_end"]
+    identity["sha256"] = hashlib.sha256(raw).hexdigest()
+    side["identities"]["raw_end"] = identity
+    side["observation_dates"].append({"player_id": "q", "date": "2026-12-28"})
+    side["coverage"] = {
+        "raw_players": 2,
+        "target_players": 1,
+        "missing_start_keys": [],
+        "excluded_raw_players": ["q"],
+    }
+    data = (json.dumps(side, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    (tmp_path / "side.json").write_bytes(data)
+    registration["ktc"]["target_sidecar"]["sha256"] = hashlib.sha256(data).hexdigest()
+    assert len(load_ktc_target(registration, starts, stats, tmp_path)) == 1
+
+
+def test_offline_load_cannot_open_network(tmp_path, monkeypatch):
+    registration, starts, stats, _ = bundle(tmp_path)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("network access")
+
+    monkeypatch.setattr(socket, "socket", forbidden)
+    assert len(load_ktc_target(registration, starts, stats, tmp_path)) == 1
+
+
+def test_target_season_must_be_integer_literal(tmp_path):
+    registration, starts, stats, side = bundle(tmp_path)
+    data = (tmp_path / "target.csv").read_bytes().replace(b",2026,", b",2026.0,")
+    (tmp_path / "target.csv").write_bytes(data)
+    registration["ktc"]["target_csv"]["sha256"] = hashlib.sha256(data).hexdigest()
+    side["identities"]["target_csv"] = registration["ktc"]["target_csv"]
+    side_data = (
+        json.dumps(side, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode()
+    (tmp_path / "side.json").write_bytes(side_data)
+    registration["ktc"]["target_sidecar"]["sha256"] = hashlib.sha256(
+        side_data
+    ).hexdigest()
+    with pytest.raises(ValueError):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+def test_frozen_sql_and_mapping_descriptor():
+    base = Path(__file__).resolve().parents[1]
+    sql = " ".join((base / "sql/ktc_replacement_end.sql").read_text().lower().split())
+    assert "select h.format, h.ktc_id, k.sleeper_id, h.date, h.sf_value" in sql
+    assert "join ktc_values k using (format, ktc_id)" in sql
+    assert "h.format = 'dynasty'" in sql
+    assert "k.sleeper_id is not null" in sql and "h.sf_value > 0" in sql
+    assert "h.date between '2026-12-28'::date and '2027-01-10'::date" in sql
+    assert "distinct" not in sql
+    assert (
+        (base / "data/ktc_replacement_mapping_source.json").read_bytes()
+        == b'{"format":"dynasty","join_keys":["format","ktc_id"],"nonnull_source_id":true,"provider":"local-thelab","row_evidence":"registered-raw-end-export","schema_version":1,"source_id":"sleeper_id","source_table":"ktc_values","target_id":"player_id"}\n'
+    )
+
+
+@pytest.mark.parametrize("field", ["start", "stats", "raw", "sidecar"])
+def test_bundle_disagreements_refused(tmp_path, field):
+    registration, starts, stats, side = bundle(tmp_path)
+    if field == "start":
+        starts.loc[0, "ktc_value"] = 11
+    elif field == "stats":
+        stats.loc[0, "points"] = 301
+    elif field == "raw":
+        (tmp_path / "raw.csv").write_text("tampered")
+    else:
+        side["coverage"]["raw_players"] = 2
+        data = (json.dumps(side, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        (tmp_path / "side.json").write_bytes(data)
+        registration["ktc"]["target_sidecar"]["sha256"] = hashlib.sha256(
+            data
+        ).hexdigest()
+    with pytest.raises(ValueError):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
+def test_latest_inclusive_and_identical_duplicates():
+    raw = pd.DataFrame(
+        [
+            ["dynasty", "1", "p", "2026-12-28", 10],
+            ["dynasty", "1", "p", "2027-01-10", 20],
+            ["dynasty", "1", "p", "2027-01-10", 20],
+        ],
+        columns=["format", "ktc_id", "sleeper_id", "date", "sf_value"],
+    )
+    result = select_end_observations(raw)
+    assert result.to_dict("records") == [
+        {"player_id": "p", "date": "2027-01-10", "end_value": 20.0}
+    ]
+
+
+def test_conflicting_older_values_are_rejected():
+    raw = pd.DataFrame(
+        [
+            ["dynasty", "1", "p", "2026-12-28", 10],
+            ["dynasty", "2", "p", "2026-12-28", 11],
+            ["dynasty", "1", "p", "2027-01-10", 20],
+        ],
+        columns=["format", "ktc_id", "sleeper_id", "date", "sf_value"],
+    )
+    with pytest.raises(ValueError):
+        select_end_observations(raw)
+
+
+def test_source_identity_cannot_remap_across_dates():
+    raw = pd.DataFrame(
+        [
+            ["dynasty", "1", "p", "2026-12-28", 10],
+            ["dynasty", "1", "q", "2027-01-10", 20],
+        ],
+        columns=["format", "ktc_id", "sleeper_id", "date", "sf_value"],
+    )
+    with pytest.raises(ValueError):
+        select_end_observations(raw)
+
+
+def test_boolean_is_not_a_numeric_observation():
+    raw = pd.DataFrame(
+        [["dynasty", "1", "p", "2027-01-10", True]],
+        columns=["format", "ktc_id", "sleeper_id", "date", "sf_value"],
+    )
+    with pytest.raises(ValueError):
+        select_end_observations(raw)
+
+
+@pytest.mark.parametrize("value", [0, 9999, -1, float("nan"), float("inf")])
+def test_invalid_values_rejected(value):
+    raw = pd.DataFrame(
+        [["dynasty", "1", "p", "2027-01-10", value]],
+        columns=["format", "ktc_id", "sleeper_id", "date", "sf_value"],
+    )
+    with pytest.raises(ValueError):
+        select_end_observations(raw)
