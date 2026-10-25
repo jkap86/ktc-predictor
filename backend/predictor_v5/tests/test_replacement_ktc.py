@@ -353,6 +353,68 @@ def test_sidecar_records_excluded_raw_player_date(tmp_path):
     assert len(load_ktc_target(registration, starts, stats, tmp_path)) == 1
 
 
+def test_sentinel_only_player_is_preserved_as_excluded_raw_evidence(tmp_path):
+    registration, starts, stats, side = bundle(tmp_path)
+    raw = (
+        b"format,ktc_id,sleeper_id,date,sf_value\n"
+        b"dynasty,1,p,2027-01-10,20\n"
+        b"dynasty,2,q,2026-12-28,9999\n"
+    )
+    replace_input(tmp_path, registration, side, "raw_end", raw)
+    side["observation_dates"].append({"player_id": "q", "date": "2026-12-28"})
+    side["coverage"] = {
+        "raw_players": 2,
+        "target_players": 1,
+        "missing_start_keys": [],
+        "excluded_raw_players": ["q"],
+    }
+    replace_side(tmp_path, registration, side)
+
+    target = load_ktc_target(registration, starts, stats, tmp_path)
+
+    assert target.player_id.tolist() == ["p"]
+    assert target.attrs["coverage"] == side["coverage"]
+
+
+def test_latest_sentinel_excludes_player_without_older_value_fallback(tmp_path):
+    registration, starts, stats, side = bundle(tmp_path)
+    raw = (
+        b"format,ktc_id,sleeper_id,date,sf_value\n"
+        b"dynasty,1,p,2027-01-10,20\n"
+        b"dynasty,2,q,2026-12-28,30\n"
+        b"dynasty,2,q,2027-01-10,9999\n"
+    )
+    replace_input(tmp_path, registration, side, "raw_end", raw)
+    side["observation_dates"].append({"player_id": "q", "date": "2027-01-10"})
+    side["coverage"] = {
+        "raw_players": 2,
+        "target_players": 1,
+        "missing_start_keys": [],
+        "excluded_raw_players": ["q"],
+    }
+    replace_side(tmp_path, registration, side)
+
+    target = load_ktc_target(registration, starts, stats, tmp_path)
+
+    assert target.player_id.tolist() == ["p"]
+    assert target.attrs["coverage"] == side["coverage"]
+
+
+def test_latest_sentinel_cannot_fallback_for_normalized_target_key(tmp_path):
+    registration, starts, stats, side = bundle(tmp_path)
+    raw = (
+        b"format,ktc_id,sleeper_id,date,sf_value\n"
+        b"dynasty,1,p,2026-12-28,20\n"
+        b"dynasty,1,p,2027-01-10,9999\n"
+    )
+    replace_input(tmp_path, registration, side, "raw_end", raw)
+    side["observation_dates"] = [{"player_id": "p", "date": "2027-01-10"}]
+    replace_side(tmp_path, registration, side)
+
+    with pytest.raises(ValueError, match="raw observations disagree"):
+        load_ktc_target(registration, starts, stats, tmp_path)
+
+
 def test_offline_load_cannot_open_network(tmp_path, monkeypatch):
     registration, starts, stats, _ = bundle(tmp_path)
 
@@ -521,7 +583,9 @@ def test_boolean_is_not_a_numeric_observation():
         select_end_observations(raw)
 
 
-@pytest.mark.parametrize("value", [0, 9999, -1, float("nan"), float("inf")])
+@pytest.mark.parametrize(
+    "value", [0, -1, 10000, "malformed", float("nan"), float("inf")]
+)
 def test_invalid_values_rejected(value):
     raw = pd.DataFrame(
         [["dynasty", "1", "p", "2027-01-10", value]],

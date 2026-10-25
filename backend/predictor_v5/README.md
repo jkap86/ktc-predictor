@@ -431,8 +431,11 @@ Both models train on exactly 2021–2025 and score the same liquid matched
 2026 player cohort, each against its own market outcomes and no-change
 baseline. Start is 2026-09-09 and end is 2027-01-10, America/New_York;
 KTC end observations must lie in the inclusive 2026-12-28–2027-01-10 window.
-Positive KTC values must be below 9999; positive MFL values require at least
-five trades at both endpoints. There is no imputation or source substitution.
+The raw KTC export preserves `9999` sentinel observations as provenance, but
+the selected latest sentinel makes that player ineligible for the normalized
+target; it never falls back to an older value. Scored KTC values must be
+positive and below 9999. Positive MFL values require at least five trades at
+both endpoints. There is no imputation or source substitution.
 
 The gate uses full-precision MFL-minus-KTC normalized skill: at least -0.01
 overall, at least -0.05 in each position, and at least 30 matched players in

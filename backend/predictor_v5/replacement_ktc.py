@@ -94,7 +94,7 @@ def select_end_observations(raw: pd.DataFrame) -> pd.DataFrame:
     if (df.groupby(["format", "ktc_id"])["sleeper_id"].nunique() > 1).any():
         raise ValueError("source identity remapped")
     values = pd.to_numeric(df["sf_value"], errors="coerce")
-    if not values.between(0, 9999, inclusive="neither").all():
+    if not (values.gt(0) & values.le(9999)).all():
         raise ValueError("invalid value")
     df["sf_value"] = values.astype(float)
     for keys in (["format", "ktc_id", "date"], ["sleeper_id", "date"]):
@@ -323,8 +323,9 @@ def load_ktc_target(
     for col in ("start_value", "end_value", "age", "points"):
         target[col] = target[col].astype(float)
     selected = select_end_observations(raw)
+    eligible = selected[selected["end_value"].lt(9999)]
     merged = target.merge(
-        selected,
+        eligible,
         on="player_id",
         how="left",
         suffixes=("", "_raw"),
