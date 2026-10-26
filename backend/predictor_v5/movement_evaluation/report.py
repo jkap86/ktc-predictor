@@ -29,6 +29,7 @@ from .contract import (
     POSITIONS,
     ContractRefusal,
     KtcMode,
+    classify_path_error,
     contract_payload,
     key_sha256,
     validate_ktc_mode,
@@ -162,13 +163,13 @@ def _regular_source(path: Path) -> bytes:
     try:
         info = path.lstat()
     except OSError as exc:
-        _refuse(f"missing source identity file: {path.name}", exc)
-    if path.is_symlink() or not stat.S_ISREG(info.st_mode):
+        classify_path_error(f"missing source identity file: {path.name}", exc)
+    if not stat.S_ISREG(info.st_mode):
         _refuse(f"source identity path must be a regular non-symlink file: {path.name}")
     try:
         return path.read_bytes()
     except OSError as exc:
-        _refuse(f"could not read source identity file: {path.name}", exc)
+        classify_path_error(f"could not read source identity file: {path.name}", exc)
 
 
 def source_identities(package_root: Path) -> dict[str, str]:
@@ -177,8 +178,8 @@ def source_identities(package_root: Path) -> dict[str, str]:
     try:
         info = root.lstat()
     except OSError as exc:
-        _refuse("predictor_v5 package root is missing", exc)
-    if root.is_symlink() or not stat.S_ISDIR(info.st_mode):
+        classify_path_error("predictor_v5 package root is missing", exc)
+    if not stat.S_ISDIR(info.st_mode):
         _refuse("predictor_v5 package root must be a regular non-symlink directory")
     return {
         relative: hashlib.sha256(_regular_source(root / relative)).hexdigest()

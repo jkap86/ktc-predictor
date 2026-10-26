@@ -7,7 +7,7 @@ import hashlib
 import io
 import json
 import math
-import os
+import stat
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +20,7 @@ from predictor_v5.movement_evaluation.contract import (
     POSITIONS,
     ContractRefusal,
     KtcMode,
+    classify_path_error,
     key_sha256,
     validate_ktc_mode,
 )
@@ -247,12 +248,15 @@ def parse_label_bytes(raw: bytes) -> pd.DataFrame:
 
 def _path_bytes(path: Path, expected_hash: str, label: str) -> bytes:
     try:
-        stat = path.lstat()
+        info = path.lstat()
     except OSError as exc:
-        _refuse(f"missing pinned {label}", exc)
-    if not stat or not os.path.isfile(path) or path.is_symlink():
+        classify_path_error(f"missing pinned {label}", exc)
+    if not stat.S_ISREG(info.st_mode):
         _refuse(f"pinned {label} must be a regular non-symlink file")
-    raw = path.read_bytes()
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        classify_path_error(f"could not read pinned {label}", exc)
     actual = hashlib.sha256(raw).hexdigest()
     if actual != expected_hash:
         _refuse(f"pinned {label} hash mismatch")

@@ -247,6 +247,31 @@ def _rank_metrics(frame: pd.DataFrame, actual: np.ndarray, predicted: np.ndarray
         for cell, rows in work.groupby(group_columns, sort=True):
             n = len(rows)
             k = max(1, math.ceil(0.10 * n))
+            cell_name = ":".join(str(part) for part in cell) if isinstance(cell, tuple) else str(cell)
+            identity = {
+                "cell": cell_name,
+                "n": n,
+                "k": k,
+                **(
+                    {"season": int(cell[0]), "position": str(cell[1])}
+                    if isinstance(cell, tuple)
+                    else {"season": int(cell)}
+                ),
+            }
+            if rows["pred"].nunique(dropna=False) == 1:
+                cell_top.append(
+                    {
+                        **identity,
+                        "selection_reason": "constant_prediction",
+                        "top_overlap": None,
+                        "bottom_overlap": None,
+                        "top_mean_actual_movement": None,
+                        "bottom_mean_actual_movement": None,
+                        "top_boundary_tie_count": n,
+                        "bottom_boundary_tie_count": n,
+                    }
+                )
+                continue
             pred_order = rows.sort_values(["pred", "player_id"], ascending=[False, True], kind="mergesort")
             actual_order = rows.sort_values(["r", "player_id"], ascending=[False, True], kind="mergesort")
             pred_bottom = rows.sort_values(["pred", "player_id"], ascending=[True, True], kind="mergesort")
@@ -255,10 +280,9 @@ def _rank_metrics(frame: pd.DataFrame, actual: np.ndarray, predicted: np.ndarray
             bottom_ids = set(pred_bottom.head(k)["player_id"])
             cutoff_top = float(pred_order.iloc[min(k, n) - 1]["pred"])
             cutoff_bottom = float(pred_bottom.iloc[min(k, n) - 1]["pred"])
-            cell_name = ":".join(str(part) for part in cell) if isinstance(cell, tuple) else str(cell)
             cell_top.append({
-                "cell": cell_name, "n": n, "k": k,
-                **({"season": int(cell[0]), "position": str(cell[1])} if isinstance(cell, tuple) else {"season": int(cell)}),
+                **identity,
+                "selection_reason": None,
                 "top_overlap": len(top_ids & set(actual_order.head(k)["player_id"])) / k,
                 "bottom_overlap": len(bottom_ids & set(actual_bottom.head(k)["player_id"])) / k,
                 "top_mean_actual_movement": float(pred_order.head(k)["r"].mean()),
@@ -462,6 +486,15 @@ def score_contrast(frame: pd.DataFrame, left: str, right: str) -> dict[str, obje
     def gain(key: str) -> dict[str, object]:
         return difference(key)
 
+    def relative_mae_log_reduction() -> dict[str, object]:
+        left_mae = left_score["mae_log"]["value"]
+        comparator_mae = right_score["mae_log"]["value"]
+        if left_mae is None or comparator_mae is None:
+            return _null("undefined_component")
+        if comparator_mae == 0:
+            return _null("zero_comparator_mae")
+        return _null(None, float(1 - left_mae / comparator_mae))
+
     left_cells = left_score["rank"]["season_position"]
     right_cells = right_score["rank"]["season_position"]
     common_cells = sorted(
@@ -489,10 +522,11 @@ def score_contrast(frame: pd.DataFrame, left: str, right: str) -> dict[str, obje
         "right": right_score,
         "left_model": left,
         "right_model": right,
-        "sign_convention": "left - right; positive_mae_log_improvement is right MAE minus left MAE, positive when left improves",
+        "sign_convention": "left - right; positive_mae_log_improvement is right MAE minus left MAE, positive when left improves; relative_mae_log_reduction is 1 - left MAE / right comparator MAE",
         "mae_log_difference": difference("mae_log"),
         "rmse_log_difference": difference("rmse_log"),
         "positive_mae_log_improvement": _null("undefined_component" if left_score["mae_log"]["value"] is None or right_score["mae_log"]["value"] is None else None, None if left_score["mae_log"]["value"] is None or right_score["mae_log"]["value"] is None else float(right_score["mae_log"]["value"] - left_score["mae_log"]["value"])),
+        "relative_mae_log_reduction": relative_mae_log_reduction(),
         "mae_value_difference": difference("mae_value"),
         "rmse_value_difference": difference("rmse_value"),
         "skill_log_gain": gain("skill_log"),
@@ -979,4 +1013,3 @@ def summarize_primary(
         "multiplicity": "family-wide multiplicity is uncontrolled",
     }
     return summaries, pooled
-

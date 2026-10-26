@@ -135,6 +135,47 @@ def test_score_contrast_signs_and_common_endpoint_error_are_explicit():
     assert "left - right" in result["sign_convention"]
 
 
+def test_primary_contrast_reports_relative_mae_reduction_with_comparator_denominator():
+    frame = _frame(
+        [
+            (2020, "a", "QB", 24, 10, 1, 1.0, math.exp(1.0)),
+            (2020, "b", "QB", 24, 10, 1, 1.0, math.exp(-1.0)),
+        ]
+    )
+    for model, predicted_r in (
+        ("production", np.array([0.75, -0.75])),
+        ("no_production", np.array([0.5, -0.5])),
+    ):
+        frame[f"{model}_r_hat"] = predicted_r
+        frame[f"{model}_E_hat"] = np.exp(predicted_r)
+        frame[f"{model}_d_hat"] = frame[f"{model}_E_hat"] - frame["S"]
+
+    contrast = score_contrast(frame, "production", "no_production")
+
+    assert contrast["relative_mae_log_reduction"] == {
+        "value": pytest.approx(0.5),
+        "reason": None,
+    }
+    assert contrast["skill_log_gain"]["value"] == pytest.approx(0.25)
+    assert contrast["relative_mae_log_reduction"]["value"] != pytest.approx(
+        contrast["skill_log_gain"]["value"]
+    )
+
+
+def test_relative_mae_reduction_is_undefined_for_zero_comparator_mae():
+    frame = _frame()
+    frame["no_production_E_hat"] = frame["E"]
+    frame["no_production_r_hat"] = frame["r"]
+    frame["no_production_d_hat"] = frame["d"]
+
+    contrast = score_contrast(frame, "production", "no_production")
+
+    assert contrast["relative_mae_log_reduction"] == {
+        "value": None,
+        "reason": "zero_comparator_mae",
+    }
+
+
 def test_direction_baselines_majority_ties_and_mover_accuracy():
     actual = np.array([-2 * FLAT_BAND, 0, 2 * FLAT_BAND])
     assert training_majority_class(np.array([-1, 1, 0])) == "flat"
@@ -210,6 +251,41 @@ def test_rank_uses_average_ties_and_top_k_uses_player_id_boundary_order():
     cell = rank["top_bottom"]["cells"][0]
     assert cell["k"] == 1 and cell["top_boundary_tie_count"] == 2
     assert cell["top_mean_actual_movement"] == pytest.approx(np.log(1100 / 1000))
+
+
+def test_rank_abstains_only_in_constant_season_position_cells():
+    frame = _frame(
+        [
+            (2020, "qb-a", "QB", 24, 10, 100, 1000, 1300),
+            (2020, "qb-b", "QB", 24, 10, 100, 1000, 700),
+            (2020, "rb-a", "RB", 24, 10, 100, 1000, 1400),
+            (2020, "rb-b", "RB", 24, 10, 100, 1000, 600),
+        ]
+    )
+    frame["production_E_hat"] = [1200.0, 1200.0, 1350.0, 650.0]
+    frame["production_r_hat"] = np.log(frame["production_E_hat"] / frame["S"])
+    frame["production_d_hat"] = frame["production_E_hat"] - frame["S"]
+
+    rank = score_model(frame, "production")["rank"]
+    cells = {cell["cell"]: cell for cell in rank["top_bottom"]["cells"]}
+
+    constant = cells["2020:QB"]
+    assert constant["n"] == 2
+    assert constant["k"] == 1
+    assert constant["selection_reason"] == "constant_prediction"
+    assert constant["top_overlap"] is None
+    assert constant["bottom_overlap"] is None
+    assert constant["top_mean_actual_movement"] is None
+    assert constant["bottom_mean_actual_movement"] is None
+    assert rank["season_position"]["2020:QB"]["spearman"] == {
+        "value": None,
+        "reason": "constant_prediction",
+    }
+
+    scored = cells["2020:RB"]
+    assert scored["selection_reason"] is None
+    assert scored["top_overlap"] == 1.0
+    assert scored["bottom_overlap"] == 1.0
 
 
 def test_large_move_precision_recall_and_largest_error_limit_are_deterministic():

@@ -210,6 +210,27 @@ def _apply_tiers(test: pd.DataFrame, edges: dict[str, tuple[float, float] | None
     return pd.Series(tiers, index=test.index, dtype="object")
 
 
+def _json_safe_estimator_parameter(value: object) -> object:
+    if isinstance(value, np.generic):
+        return _json_safe_estimator_parameter(value.item())
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not np.isfinite(value):
+            _refuse("effective estimator parameters must be finite")
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_estimator_parameter(item) for item in value]
+    if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            _refuse("effective estimator parameter mappings require string keys")
+        return {
+            key: _json_safe_estimator_parameter(value[key])
+            for key in sorted(value)
+        }
+    _refuse("effective estimator parameters must be JSON-safe")
+
+
 def _parameters(model: object) -> dict[str, object]:
     result: dict[str, object] = {
         "label_source": TARGET_ID,
@@ -234,6 +255,10 @@ def _parameters(model: object) -> dict[str, object]:
         do_early_stopping = getattr(estimator, "do_early_stopping_", None)
         if do_early_stopping is not False:
             _refuse("early stopping must be inactive for historical folds")
+        result["effective_estimator_params"] = {
+            name: _json_safe_estimator_parameter(parameters[name])
+            for name in sorted(parameters)
+        }
         result["do_early_stopping"] = False
     return result
 

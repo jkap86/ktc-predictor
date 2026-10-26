@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
@@ -15,6 +16,16 @@ import pandas as pd
 
 class ContractRefusal(ValueError):
     """Raised when an evaluator input or protocol value violates the contract."""
+
+
+_PATH_CONTRACT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
+
+
+def classify_path_error(message: str, error: OSError) -> None:
+    """Refuse missing/unsafe path races while preserving operational I/O failures."""
+    if error.errno in _PATH_CONTRACT_ERRNOS:
+        raise ContractRefusal(message) from error
+    raise error
 
 
 KtcMode = Literal["off", "archive"]

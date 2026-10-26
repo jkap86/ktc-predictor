@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from copy import deepcopy
 from typing import ClassVar
@@ -384,10 +385,21 @@ def test_real_models_keep_contract_parameters_and_monotone_grid() -> None:
     for fold in folds:
         for name in ("production", "no_production"):
             parameters = fold.model_parameters[name]
+            model_index = 0 if name == "production" else 1
+            estimator = fold._models[model_index].estimator
+            expected_effective = {
+                key: list(value) if isinstance(value, tuple) else value
+                for key, value in estimator.get_params(deep=False).items()
+            }
             assert parameters["hgb_params"] == dict(HGB_PARAMS)
             assert parameters["monotonic_cst"] == list(MONOTONIC)
             assert parameters["early_stopping"] == "auto"
             assert parameters["do_early_stopping"] is False
+            assert parameters["effective_estimator_params"] == expected_effective
+            assert parameters["effective_estimator_params"]["max_bins"] == 255
+            assert parameters["effective_estimator_params"]["max_depth"] is None
+            assert parameters["effective_estimator_params"]["validation_fraction"] == 0.1
+            json.dumps(parameters["effective_estimator_params"], allow_nan=False)
     train = rows.loc[rows["season"] == 2020].copy()
     model = __import__("predictor_v5.model", fromlist=["WhatIfModel"]).WhatIfModel(
         label_source=TARGET_ID, scale_max=SCALE_MAX
@@ -534,8 +546,6 @@ def test_out_of_contract_diagnostic_season_refuses_before_prediction(season: int
     with pytest.raises(ContractRefusal, match="outside the historical contract"):
         attach_start_observable_diagnostics(data, folds)
     assert sum(len(model.predict_frames) for model in SpyModel.instances) == predict_calls_before
-
-
 def test_duplicate_excluded_season_diagnostic_keys_refuse_before_prediction() -> None:
     primary = _rows()
     folds = run_primary_folds(primary, model_factory=_spy_factory)
@@ -579,4 +589,3 @@ def test_valid_2020_only_diagnostic_is_unavailable_without_prediction() -> None:
     }
     assert diagnostics["thin_endpoint"]["n"] == 0
     assert sum(len(model.predict_frames) for model in SpyModel.instances) == predict_calls_before
-

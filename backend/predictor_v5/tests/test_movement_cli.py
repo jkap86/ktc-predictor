@@ -349,6 +349,88 @@ def test_main_maps_only_contract_refusals_to_exit_two(
     assert str(exception) in capsys.readouterr().err
 
 
+def _reader_boundary_path(boundary: str) -> Path:
+    if boundary.startswith("source_"):
+        return PACKAGE_ROOT / "movement_evaluation" / "contract.py"
+    return REPO_ROOT / data_module.INPUT_IDENTITIES["labels"]["path"]
+
+
+def _fail_reader_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    boundary: str,
+    error_number: int,
+) -> None:
+    target = _reader_boundary_path(boundary)
+    if boundary.endswith("_lstat"):
+        real_lstat = Path.lstat
+
+        def fail_lstat(path: Path):
+            if path == target:
+                raise OSError(error_number, "injected reader lstat failure")
+            return real_lstat(path)
+
+        monkeypatch.setattr(Path, "lstat", fail_lstat)
+        return
+
+    real_read_bytes = Path.read_bytes
+
+    def fail_read_bytes(path: Path) -> bytes:
+        if path == target:
+            raise OSError(error_number, "injected reader read failure")
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ["source_lstat", "source_read", "input_lstat", "input_read"],
+)
+@pytest.mark.parametrize(
+    "error_number",
+    [errno.EIO, errno.EMFILE, errno.EACCES, errno.EPERM, errno.ENFILE, errno.ENOSPC],
+)
+def test_actual_readers_map_operational_io_errors_to_exit_one(
+    boundary: str,
+    error_number: int,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _fail_reader_boundary(
+        monkeypatch,
+        boundary=boundary,
+        error_number=error_number,
+    )
+
+    assert main([]) == 1
+    error = capsys.readouterr().err
+    assert "movement evaluation failed" in error
+    assert "injected reader" in error
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ["source_lstat", "source_read", "input_lstat", "input_read"],
+)
+@pytest.mark.parametrize("error_number", [errno.ENOENT, errno.ENOTDIR, errno.ELOOP])
+def test_actual_readers_map_missing_or_raced_paths_to_exit_two(
+    boundary: str,
+    error_number: int,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _fail_reader_boundary(
+        monkeypatch,
+        boundary=boundary,
+        error_number=error_number,
+    )
+
+    assert main([]) == 2
+    error = capsys.readouterr().err
+    assert "movement evaluation refused" in error
+
+
 def test_main_returns_zero_for_published_report_regardless_of_evidence_flags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
