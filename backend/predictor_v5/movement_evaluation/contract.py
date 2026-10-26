@@ -79,22 +79,22 @@ INPUT_IDENTITIES = MappingProxyType(
     }
 )
 
-_DATES = {
-    2020: ("2020-09-10", "2021-01-03"),
-    2021: ("2021-09-09", "2022-01-09"),
-    2022: ("2022-09-08", "2023-01-08"),
-    2023: ("2023-09-07", "2024-01-07"),
-    2024: ("2024-09-05", "2025-01-05"),
-    2025: ("2025-09-04", "2026-01-04"),
-}
-_GENERATIONS = {
-    2020: {"start": {"id": 9381, "revision": 3}, "end": {"id": 9496, "revision": 3}},
-    2021: {"start": {"id": 9719, "revision": 3}, "end": {"id": 9841, "revision": 3}},
-    2022: {"start": {"id": 10026, "revision": 3}, "end": {"id": 10148, "revision": 3}},
-    2023: {"start": {"id": 10350, "revision": 3}, "end": {"id": 10472, "revision": 3}},
-    2024: {"start": {"id": 10665, "revision": 3}, "end": {"id": 10787, "revision": 3}},
-    2025: {"start": {"id": 10983, "revision": 3}, "end": {"id": 11105, "revision": 3}},
-}
+_DATES = (
+    (2020, ("2020-09-10", "2021-01-03")),
+    (2021, ("2021-09-09", "2022-01-09")),
+    (2022, ("2022-09-08", "2023-01-08")),
+    (2023, ("2023-09-07", "2024-01-07")),
+    (2024, ("2024-09-05", "2025-01-05")),
+    (2025, ("2025-09-04", "2026-01-04")),
+)
+_GENERATIONS = (
+    (2020, (("start", (9381, 3)), ("end", (9496, 3)))),
+    (2021, (("start", (9719, 3)), ("end", (9841, 3)))),
+    (2022, (("start", (10026, 3)), ("end", (10148, 3)))),
+    (2023, (("start", (10350, 3)), ("end", (10472, 3)))),
+    (2024, (("start", (10665, 3)), ("end", (10787, 3)))),
+    (2025, (("start", (10983, 3)), ("end", (11105, 3)))),
+)
 
 
 @dataclass(frozen=True)
@@ -168,7 +168,7 @@ def contract_payload(mode: KtcMode) -> dict[str, object]:
     mode = validate_ktc_mode(mode)
     model = {
         "features": FEATURES,
-        "hgb_params": HGB_PARAMS,
+        "hgb_params": dict(HGB_PARAMS),
         "monotonic": MONOTONIC,
         "scale_max": SCALE_MAX,
         "points_grid_step": POINTS_GRID_STEP,
@@ -183,12 +183,18 @@ def contract_payload(mode: KtcMode) -> dict[str, object]:
             "scale": SCALE_MAX,
             "columns": {"start": "start_value", "end": "end_value"},
             "positions": POSITIONS,
-            "dates": _DATES.copy(),
-            "generations": {season: {k: v.copy() for k, v in values.items()} for season, values in _GENERATIONS.items()},
+            "dates": {season: list(dates) for season, dates in _DATES},
+            "generations": {
+                season: {kind: {"id": values[0], "revision": values[1]} for kind, values in records}
+                for season, records in _GENERATIONS
+            },
         },
         "inputs": {key: dict(value) for key, value in INPUT_IDENTITIES.items()},
         "models": {"production": model, "no_production": {**model, "points": 0.0}},
-        "folds": tuple(FOLDS),
+        "folds": [
+            {"test_season": fold.test_season, "train_seasons": list(fold.train_seasons), "short_history": fold.short_history}
+            for fold in FOLDS
+        ],
         "metrics": {
             "flat_band": FLAT_BAND,
             "large_move_band": LARGE_MOVE_BAND,
