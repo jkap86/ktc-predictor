@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from typing import Any
+from itertools import pairwise
+from typing import Any, Literal, Protocol
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ from numpy.typing import ArrayLike
 from .contract import (
     CALIBRATION_EDGES,
     FLAT_BAND,
+    FOLDS,
     LARGE_MOVE_BAND,
     POSITIONS,
     SCALE_MAX,
@@ -24,6 +26,27 @@ _SEASONS = tuple(range(2020, 2026))
 _LIQUIDITY_BANDS = ("5-9", "10-24", "25+")
 _TIERS = ("low", "mid", "high")
 _MODEL_BASE = ("S", "E", "r", "d")
+_PRIMARY_MODELS = ("production", "no_production", "no_change")
+_CONTRASTS = (
+    ("production_vs_no_production", "production", "no_production"),
+    ("production_vs_no_change", "production", "no_change"),
+)
+_BOOTSTRAP_METRICS = (
+    "mae_log_difference",
+    "rmse_log_difference",
+    "mae_value_difference",
+    "rmse_value_difference",
+    "skill_log_gain",
+    "skill_value_gain",
+    "direction_accuracy_difference",
+    "positive_mae_log_improvement",
+)
+
+
+class _FoldLike(Protocol):
+    spec: object
+    predictions: pd.DataFrame
+    training_majority: str
 
 
 def _null(reason: str | None = None, value: float | None = None) -> dict[str, object]:
@@ -522,6 +545,425 @@ def macro_by_season(fold_scores: Sequence[Mapping[str, object]]) -> dict[str, ob
             if not math.isfinite(value):
                 raise ContractRefusal(f"fold metric {key} must be finite")
             values.append(value)
-        output[key] = {"value": None if not values else float(np.mean(values)), "reason": "no_defined_folds" if not values else None, "n_defined": len(values), "n_total": total}
+        output[key] = {
+            "value": None if not values else float(np.mean(values)),
+            "reason": "no_defined_folds" if not values else None,
+            "n_defined": len(values),
+            "n_undefined": total - len(values),
+            "n_total": total,
+        }
     return output
+
+
+def _ordered_uncertainty_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(frame, pd.DataFrame):
+        raise ContractRefusal("uncertainty requires a pandas DataFrame")
+    required = {"season", "player_id", "position"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ContractRefusal(f"uncertainty frame is missing columns: {', '.join(missing)}")
+    ordered = frame.sort_values(["season", "player_id"], kind="mergesort").reset_index(drop=True).copy(deep=True)
+    sorted_keys(ordered)
+    if ordered["position"].isna().any() or (~ordered["position"].isin(POSITIONS)).any():
+        raise ContractRefusal("uncertainty frame contains an unknown position")
+    for model in _PRIMARY_MODELS:
+        _validate_frame(ordered, model)
+    return ordered
+
+
+def _cluster_draw_indices(
+    frame: pd.DataFrame,
+    cluster: Literal["player", "season"],
+    rng: Any,
+) -> np.ndarray:
+    """Draw sorted clusters with replacement and retain every row in each draw."""
+    if cluster not in ("player", "season"):
+        raise ContractRefusal("cluster must be exactly 'player' or 'season'")
+    column = "player_id" if cluster == "player" else "season"
+    labels = sorted(frame[column].unique().tolist())
+    if not labels:
+        return np.asarray([], dtype=np.int64)
+    groups = [np.flatnonzero(frame[column].to_numpy() == label) for label in labels]
+    selected = rng.integers(0, len(groups), size=len(groups))
+    return np.concatenate([groups[int(index)] for index in selected]).astype(np.int64, copy=False)
+
+
+def _finite(value: float | np.floating[Any] | None) -> float | None:
+    if value is None:
+        return None
+    result = float(value)
+    return result if math.isfinite(result) else None
+
+
+def _mean(values: np.ndarray) -> float | None:
+    if len(values) == 0:
+        return None
+    return _finite(np.mean(values))
+
+
+def _rmse(values: np.ndarray) -> float | None:
+    if len(values) == 0:
+        return None
+    with np.errstate(over="ignore", invalid="ignore"):
+        return _finite(np.sqrt(np.mean(np.square(values))))
+
+
+def _skill(errors: np.ndarray, actual: np.ndarray) -> float | None:
+    error = _mean(errors)
+    baseline = _mean(np.abs(actual))
+    if error is None or baseline is None or baseline == 0:
+        return None
+    return _finite(1.0 - error / baseline)
+
+
+def _direction_accuracy(actual: np.ndarray, predicted: np.ndarray) -> float | None:
+    if len(actual) == 0:
+        return None
+    return _finite(np.mean(direction(actual) == direction(predicted)))
+
+
+def _average_ranks(values: np.ndarray) -> np.ndarray:
+    order = np.argsort(values, kind="mergesort")
+    ordered = values[order]
+    boundaries = np.concatenate(
+        (
+            np.asarray([0], dtype=int),
+            np.flatnonzero(ordered[1:] != ordered[:-1]) + 1,
+            np.asarray([len(values)], dtype=int),
+        )
+    )
+    ranks = np.empty(len(values), dtype=float)
+    for start, stop in pairwise(boundaries):
+        ranks[order[start:stop]] = (float(start) + float(stop - 1)) / 2.0 + 1.0
+    return ranks
+
+
+def _spearman_value(actual: np.ndarray, predicted: np.ndarray) -> float | None:
+    if len(actual) < 2 or np.all(actual == actual[0]) or np.all(predicted == predicted[0]):
+        return None
+    actual_rank = _average_ranks(actual)
+    predicted_rank = _average_ranks(predicted)
+    actual_centered = actual_rank - actual_rank.mean()
+    predicted_centered = predicted_rank - predicted_rank.mean()
+    denominator = math.sqrt(
+        float(np.sum(actual_centered**2)) * float(np.sum(predicted_centered**2))
+    )
+    if denominator == 0:
+        return None
+    return _finite(float(np.sum(actual_centered * predicted_centered)) / denominator)
+
+
+def _rank_contrast(
+    frame: pd.DataFrame,
+    left: str,
+    right: str,
+) -> tuple[float | None, dict[str, float | None]]:
+    if right == "no_change":
+        return None, {position: None for position in POSITIONS}
+    actual = frame["r"].to_numpy(dtype=float)
+    left_predicted = frame[f"{left}_r_hat"].to_numpy(dtype=float)
+    right_predicted = frame[f"{right}_r_hat"].to_numpy(dtype=float)
+    cell_values: dict[str, list[float]] = {position: [] for position in POSITIONS}
+    for season in sorted(frame["season"].unique().tolist()):
+        for position in POSITIONS:
+            mask = (frame["season"].to_numpy() == season) & (
+                frame["position"].to_numpy() == position
+            )
+            left_value = _spearman_value(actual[mask], left_predicted[mask])
+            right_value = _spearman_value(actual[mask], right_predicted[mask])
+            if left_value is not None and right_value is not None:
+                cell_values[position].append(left_value - right_value)
+    per_position = {
+        position: _mean(np.asarray(values, dtype=float)) for position, values in cell_values.items()
+    }
+    defined = [value for values in cell_values.values() for value in values]
+    return _mean(np.asarray(defined, dtype=float)), per_position
+
+
+def _paired_statistics(frame: pd.DataFrame) -> dict[str, dict[str, object]]:
+    actual_r = frame["r"].to_numpy(dtype=float)
+    actual_d = frame["d"].to_numpy(dtype=float)
+    scores: dict[str, dict[str, float | None]] = {}
+    for model in _PRIMARY_MODELS:
+        predicted_r = frame[f"{model}_r_hat"].to_numpy(dtype=float)
+        predicted_d = frame[f"{model}_d_hat"].to_numpy(dtype=float)
+        log_errors = np.abs(predicted_r - actual_r)
+        value_errors = np.abs(predicted_d - actual_d)
+        scores[model] = {
+            "mae_log": _mean(log_errors),
+            "rmse_log": _rmse(log_errors),
+            "mae_value": _mean(value_errors),
+            "rmse_value": _rmse(value_errors),
+            "skill_log": _skill(log_errors, actual_r),
+            "skill_value": _skill(value_errors, actual_d),
+            "direction_accuracy": _direction_accuracy(actual_r, predicted_r),
+        }
+
+    def difference(left: str, right: str, metric: str) -> float | None:
+        left_value = scores[left][metric]
+        right_value = scores[right][metric]
+        if left_value is None or right_value is None:
+            return None
+        return _finite(left_value - right_value)
+
+    output: dict[str, dict[str, object]] = {}
+    for name, left, right in _CONTRASTS:
+        rank, per_position = _rank_contrast(frame, left, right)
+        mae_difference = difference(left, right, "mae_log")
+        output[name] = {
+            "mae_log_difference": mae_difference,
+            "rmse_log_difference": difference(left, right, "rmse_log"),
+            "mae_value_difference": difference(left, right, "mae_value"),
+            "rmse_value_difference": difference(left, right, "rmse_value"),
+            "skill_log_gain": difference(left, right, "skill_log"),
+            "skill_value_gain": difference(left, right, "skill_value"),
+            "direction_accuracy_difference": difference(left, right, "direction_accuracy"),
+            "positive_mae_log_improvement": None
+            if mae_difference is None
+            else -mae_difference,
+            "movement_spearman_difference": {
+                "value": rank,
+                "per_position": per_position,
+            },
+        }
+    return output
+
+
+def _bootstrap_interval(
+    estimate: float | None,
+    draws: Sequence[float | None],
+    requested: int,
+) -> dict[str, object]:
+    valid = np.asarray(
+        [float(value) for value in draws if value is not None and math.isfinite(float(value))],
+        dtype=float,
+    )
+    minimum = math.ceil(0.9 * requested)
+    enough = len(valid) >= minimum
+    if enough:
+        bounds = np.quantile(valid, [0.025, 0.975], method="linear")
+        lower, upper = float(bounds[0]), float(bounds[1])
+    else:
+        lower = upper = None
+    return {
+        "estimate": _finite(estimate),
+        "lower": lower,
+        "upper": upper,
+        "percentiles": [2.5, 97.5],
+        "requested_draws": requested,
+        "effective_draws": len(valid),
+        "undefined_draws": requested - len(valid),
+        "minimum_valid_draws": minimum,
+        "reason": None if enough else "insufficient_valid_resamples",
+    }
+
+
+def bootstrap_uncertainty(
+    frame: pd.DataFrame,
+    *,
+    seed: int = 20261025,
+    resamples: int = 2000,
+    cluster: Literal["player", "season"],
+) -> dict[str, object]:
+    """Recompute paired contrasts on deterministic retained-row cluster draws."""
+    if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)) or int(seed) < 0:
+        raise ContractRefusal("seed must be a nonnegative integer")
+    if (
+        isinstance(resamples, bool)
+        or not isinstance(resamples, (int, np.integer))
+        or int(resamples) <= 0
+    ):
+        raise ContractRefusal("resamples must be a positive integer")
+    if cluster not in ("player", "season"):
+        raise ContractRefusal("cluster must be exactly 'player' or 'season'")
+    seed = int(seed)
+    resamples = int(resamples)
+    ordered = _ordered_uncertainty_frame(frame)
+    cluster_column = "player_id" if cluster == "player" else "season"
+    labels = sorted(ordered[cluster_column].unique().tolist())
+    point = _paired_statistics(ordered)
+    accumulators: dict[str, dict[str, object]] = {}
+    for contrast_name, _, _ in _CONTRASTS:
+        accumulators[contrast_name] = {
+            **{metric: [] for metric in _BOOTSTRAP_METRICS},
+            "movement_spearman_difference": [],
+            "per_position": {position: [] for position in POSITIONS},
+        }
+
+    rng = np.random.default_rng(seed)
+    for _ in range(resamples):
+        indices = _cluster_draw_indices(ordered, cluster, rng)
+        drawn = ordered.iloc[indices].reset_index(drop=True)
+        statistics = _paired_statistics(drawn)
+        for contrast_name, _, _ in _CONTRASTS:
+            contrast = statistics[contrast_name]
+            accumulator = accumulators[contrast_name]
+            for metric in _BOOTSTRAP_METRICS:
+                accumulator[metric].append(contrast[metric])
+            rank = contrast["movement_spearman_difference"]
+            accumulator["movement_spearman_difference"].append(rank["value"])
+            for position in POSITIONS:
+                accumulator["per_position"][position].append(rank["per_position"][position])
+
+    contrasts: dict[str, object] = {}
+    for contrast_name, _, _ in _CONTRASTS:
+        point_contrast = point[contrast_name]
+        accumulator = accumulators[contrast_name]
+        contrast_intervals: dict[str, object] = {
+            metric: _bootstrap_interval(point_contrast[metric], accumulator[metric], resamples)
+            for metric in _BOOTSTRAP_METRICS
+        }
+        point_rank = point_contrast["movement_spearman_difference"]
+        rank_interval = _bootstrap_interval(
+            point_rank["value"], accumulator["movement_spearman_difference"], resamples
+        )
+        rank_interval["per_position"] = {
+            position: _bootstrap_interval(
+                point_rank["per_position"][position],
+                accumulator["per_position"][position],
+                resamples,
+            )
+            for position in POSITIONS
+        }
+        contrast_intervals["movement_spearman_difference"] = rank_interval
+        contrasts[contrast_name] = contrast_intervals
+
+    result: dict[str, object] = {
+        "cluster": cluster,
+        "sampling_unit": "distinct_player_id" if cluster == "player" else "entire_test_season",
+        "seed": seed,
+        "requested_resamples": resamples,
+        "percentiles": [2.5, 97.5],
+        "quantile_method": "linear",
+        "minimum_valid_fraction": 0.9,
+        "n_clusters": len(labels),
+        "cluster_labels": labels,
+        "paired_draws": True,
+        "refit_models": False,
+        "contrasts": contrasts,
+        "caveat": (
+            "Player-cluster intervals condition on observed seasons and do not capture common market shocks."
+            if cluster == "player"
+            else (
+                f"Exploratory only: {'five' if len(labels) == 5 else len(labels)} observed test-season "
+                "blocks do not provide a reliable "
+                "new-season guarantee."
+            )
+        ),
+        "joint_uncertainty_limit": (
+            "Neither one-way bootstrap captures simultaneous player/team/season/league uncertainty; "
+            "team and league identifiers are unavailable."
+        ),
+        "multiplicity": "family-wide multiplicity is uncontrolled",
+    }
+    if cluster == "season":
+        result["exploratory"] = True
+    return result
+
+
+def _primary_scores(frame: pd.DataFrame) -> tuple[dict[str, object], dict[str, object]]:
+    models = {model: score_model(frame, model) for model in _PRIMARY_MODELS}
+    contrasts = {
+        name: score_contrast(frame, left, right) for name, left, right in _CONTRASTS
+    }
+    return models, contrasts
+
+
+def leave_one_season_out(frame: pd.DataFrame) -> list[dict[str, object]]:
+    """Return pooled aggregate estimates after omitting each observed test season."""
+    ordered = _ordered_uncertainty_frame(frame)
+    seasons = sorted(int(season) for season in ordered["season"].unique().tolist())
+    output: list[dict[str, object]] = []
+    for omitted in seasons:
+        retained = ordered.loc[ordered["season"] != omitted].reset_index(drop=True)
+        models, contrasts = _primary_scores(retained)
+        output.append(
+            {
+                "omitted_season": omitted,
+                "included_seasons": [season for season in seasons if season != omitted],
+                "n": len(retained),
+                "models": models,
+                "contrasts": contrasts,
+            }
+        )
+    return output
+
+
+def summarize_primary(
+    folds: Sequence[_FoldLike],
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Aggregate fixed held-out folds without importing or refitting model classes."""
+    fold_list = list(folds)
+    expected_seasons = [fold.test_season for fold in FOLDS]
+    actual_seasons = [int(fold.spec.test_season) for fold in fold_list]
+    if actual_seasons != expected_seasons:
+        raise ContractRefusal("primary summaries require the five fixed folds in test-season order")
+
+    summaries: list[dict[str, object]] = []
+    pooled_frames: list[pd.DataFrame] = []
+    fold_model_scores: dict[str, list[Mapping[str, object]]] = {
+        model: [] for model in _PRIMARY_MODELS
+    }
+    for fold in fold_list:
+        season = int(fold.spec.test_season)
+        predictions = _ordered_uncertainty_frame(fold.predictions)
+        if len(predictions) == 0 or set(predictions["season"].astype(int)) != {season}:
+            raise ContractRefusal(f"fold {season} predictions must contain only its nonempty test season")
+        models, contrasts = _primary_scores(predictions)
+        for model in _PRIMARY_MODELS:
+            fold_model_scores[model].append(models[model])
+        summary: dict[str, object] = {
+            "test_season": season,
+            "train_seasons": list(fold.spec.train_seasons),
+            "short_history": bool(fold.spec.short_history),
+            "n": len(predictions),
+            "models": models,
+            "contrasts": contrasts,
+            "direction_baselines": score_direction_baselines(
+                predictions, str(fold.training_majority)
+            ),
+            "slices": score_slices(predictions, _PRIMARY_MODELS),
+            "uncertainty": bootstrap_uncertainty(predictions, cluster="player"),
+        }
+        for field in ("tier_edges", "model_parameters", "clipping"):
+            if hasattr(fold, field):
+                summary[field] = getattr(fold, field)
+        summaries.append(summary)
+        pooled_frames.append(predictions)
+
+    pooled_frame = (
+        pd.concat(pooled_frames, ignore_index=True)
+        .sort_values(["season", "player_id"], kind="mergesort")
+        .reset_index(drop=True)
+    )
+    pooled_models, pooled_contrasts = _primary_scores(pooled_frame)
+    uncertainty = {
+        "player_cluster": bootstrap_uncertainty(pooled_frame, cluster="player"),
+        "by_position": {
+            position: bootstrap_uncertainty(
+                pooled_frame.loc[pooled_frame["position"] == position].reset_index(drop=True),
+                cluster="player",
+            )
+            for position in POSITIONS
+        },
+        "season_block_exploratory": bootstrap_uncertainty(pooled_frame, cluster="season"),
+    }
+    pooled: dict[str, object] = {
+        "n": len(pooled_frame),
+        "models": pooled_models,
+        "contrasts": pooled_contrasts,
+        "macro_by_season": {
+            model: macro_by_season(fold_model_scores[model]) for model in _PRIMARY_MODELS
+        },
+        "uncertainty": uncertainty,
+        "leave_one_season_out": leave_one_season_out(pooled_frame),
+        "slices": score_slices(pooled_frame, _PRIMARY_MODELS),
+        "target_diagnostics": target_diagnostics(pooled_frame),
+        "uncertainty_caveat": (
+            "Neither one-way bootstrap captures simultaneous player/team/season/league uncertainty; "
+            "team and league identifiers are unavailable."
+        ),
+        "multiplicity": "family-wide multiplicity is uncontrolled",
+    }
+    return summaries, pooled
 
