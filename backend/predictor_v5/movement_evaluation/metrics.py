@@ -94,8 +94,6 @@ def _validate_frame(frame: pd.DataFrame, model: str | None = None) -> None:
         endpoint = _array(frame[f"{model}_E_hat"].to_numpy(), name=f"{model}_E_hat")
         if (endpoint <= 0).any():
             raise ContractRefusal(f"{model}_E_hat must be strictly positive")
-        if (endpoint > SCALE_MAX).any():
-            raise ContractRefusal(f"{model}_E_hat exceeds the scale cap")
         predicted_r = _array(frame[f"{model}_r_hat"].to_numpy(), name=f"{model}_r_hat")
         predicted_d = _array(frame[f"{model}_d_hat"].to_numpy(), name=f"{model}_d_hat")
         if not np.allclose(predicted_r, np.log(endpoint / starts), rtol=1e-10, atol=1e-12):
@@ -337,7 +335,7 @@ def score_model(frame: pd.DataFrame, model: str) -> dict[str, object]:
         "tail": {"large_move": _large_move(actual_r, pred_r, frame), "largest_errors": _large_move(actual_r, pred_r, frame)["largest_errors"], "top_bottom": _rank_metrics(frame, actual_r, pred_r)["top_bottom"]},
         "low_support": len(frame) < 30,
         "status": "low_support" if len(frame) < 30 else "supported",
-        "clipping": {"at_cap_count": int((frame[f"{model}_E_hat"].to_numpy(dtype=float) >= SCALE_MAX).sum())},
+        "clipping": {"at_cap_count": int((frame[f"{model}_E_hat"].to_numpy(dtype=float) == SCALE_MAX).sum())},
         "exclusions": {"count": 0, "reason": "matched_prediction_cohort"},
         "descriptive": {
             "age": _distribution(frame.get("age", pd.Series(dtype=float))),

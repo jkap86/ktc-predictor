@@ -296,7 +296,7 @@ def test_nonfinite_descriptive_values_and_macro_values_refuse_and_outputs_serial
     json.dumps(result, allow_nan=False)
 
 
-def test_cap_count_requires_exact_cap_and_above_cap_prediction_refuses():
+def test_cap_count_requires_exact_cap_and_accepts_uncapped_ratio_endpoint():
     capped = _frame([(2020, "a", "QB", 24, 10, 1, 1000, 2000)])
     capped["production_E_hat"] = float(10000)
     capped["production_r_hat"] = np.log(capped["production_E_hat"] / capped["S"])
@@ -311,8 +311,8 @@ def test_cap_count_requires_exact_cap_and_above_cap_prediction_refuses():
     above["production_E_hat"] = 10001.0
     above["production_r_hat"] = np.log(above["production_E_hat"] / above["S"])
     above["production_d_hat"] = above["production_E_hat"] - above["S"]
-    with pytest.raises(ContractRefusal):
-        score_model(above, "production")
+    above_score = score_model(above, "production")
+    assert above_score["clipping"]["at_cap_count"] == 0
 
 
 def test_per_position_rank_contrast_has_membership_and_numeric_aggregates():
