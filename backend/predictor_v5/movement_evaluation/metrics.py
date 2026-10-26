@@ -680,7 +680,11 @@ def _rank_contrast(
     return _mean(np.asarray(defined, dtype=float)), per_position
 
 
-def _paired_statistics(frame: pd.DataFrame) -> dict[str, dict[str, object]]:
+def _paired_statistics(
+    frame: pd.DataFrame,
+    *,
+    include_rank: bool = True,
+) -> dict[str, dict[str, object]]:
     actual_r = frame["r"].to_numpy(dtype=float)
     actual_d = frame["d"].to_numpy(dtype=float)
     scores: dict[str, dict[str, float | None]] = {}
@@ -708,9 +712,8 @@ def _paired_statistics(frame: pd.DataFrame) -> dict[str, dict[str, object]]:
 
     output: dict[str, dict[str, object]] = {}
     for name, left, right in _CONTRASTS:
-        rank, per_position = _rank_contrast(frame, left, right)
         mae_difference = difference(left, right, "mae_log")
-        output[name] = {
+        contrast: dict[str, object] = {
             "mae_log_difference": mae_difference,
             "rmse_log_difference": difference(left, right, "rmse_log"),
             "mae_value_difference": difference(left, right, "mae_value"),
@@ -721,11 +724,14 @@ def _paired_statistics(frame: pd.DataFrame) -> dict[str, dict[str, object]]:
             "positive_mae_log_improvement": None
             if mae_difference is None
             else -mae_difference,
-            "movement_spearman_difference": {
+        }
+        if include_rank:
+            rank, per_position = _rank_contrast(frame, left, right)
+            contrast["movement_spearman_difference"] = {
                 "value": rank,
                 "per_position": per_position,
-            },
-        }
+            }
+        output[name] = contrast
     return output
 
 
@@ -781,29 +787,35 @@ def bootstrap_uncertainty(
     ordered = _ordered_uncertainty_frame(frame)
     cluster_column = "player_id" if cluster == "player" else "season"
     labels = sorted(ordered[cluster_column].unique().tolist())
-    point = _paired_statistics(ordered)
+    include_rank = cluster == "player"
+    point = _paired_statistics(ordered, include_rank=include_rank)
     accumulators: dict[str, dict[str, object]] = {}
     for contrast_name, _, _ in _CONTRASTS:
-        accumulators[contrast_name] = {
-            **{metric: [] for metric in _BOOTSTRAP_METRICS},
-            "movement_spearman_difference": [],
-            "per_position": {position: [] for position in POSITIONS},
+        accumulator: dict[str, object] = {
+            metric: [] for metric in _BOOTSTRAP_METRICS
         }
+        if include_rank:
+            accumulator["movement_spearman_difference"] = []
+            accumulator["per_position"] = {position: [] for position in POSITIONS}
+        accumulators[contrast_name] = accumulator
 
     rng = np.random.default_rng(seed)
     for _ in range(resamples):
         indices = _cluster_draw_indices(ordered, cluster, rng)
         drawn = ordered.iloc[indices].reset_index(drop=True)
-        statistics = _paired_statistics(drawn)
+        statistics = _paired_statistics(drawn, include_rank=include_rank)
         for contrast_name, _, _ in _CONTRASTS:
             contrast = statistics[contrast_name]
             accumulator = accumulators[contrast_name]
             for metric in _BOOTSTRAP_METRICS:
                 accumulator[metric].append(contrast[metric])
-            rank = contrast["movement_spearman_difference"]
-            accumulator["movement_spearman_difference"].append(rank["value"])
-            for position in POSITIONS:
-                accumulator["per_position"][position].append(rank["per_position"][position])
+            if include_rank:
+                rank = contrast["movement_spearman_difference"]
+                accumulator["movement_spearman_difference"].append(rank["value"])
+                for position in POSITIONS:
+                    accumulator["per_position"][position].append(
+                        rank["per_position"][position]
+                    )
 
     contrasts: dict[str, object] = {}
     for contrast_name, _, _ in _CONTRASTS:
@@ -813,19 +825,20 @@ def bootstrap_uncertainty(
             metric: _bootstrap_interval(point_contrast[metric], accumulator[metric], resamples)
             for metric in _BOOTSTRAP_METRICS
         }
-        point_rank = point_contrast["movement_spearman_difference"]
-        rank_interval = _bootstrap_interval(
-            point_rank["value"], accumulator["movement_spearman_difference"], resamples
-        )
-        rank_interval["per_position"] = {
-            position: _bootstrap_interval(
-                point_rank["per_position"][position],
-                accumulator["per_position"][position],
-                resamples,
+        if include_rank:
+            point_rank = point_contrast["movement_spearman_difference"]
+            rank_interval = _bootstrap_interval(
+                point_rank["value"], accumulator["movement_spearman_difference"], resamples
             )
-            for position in POSITIONS
-        }
-        contrast_intervals["movement_spearman_difference"] = rank_interval
+            rank_interval["per_position"] = {
+                position: _bootstrap_interval(
+                    point_rank["per_position"][position],
+                    accumulator["per_position"][position],
+                    resamples,
+                )
+                for position in POSITIONS
+            }
+            contrast_intervals["movement_spearman_difference"] = rank_interval
         contrasts[contrast_name] = contrast_intervals
 
     result: dict[str, object] = {

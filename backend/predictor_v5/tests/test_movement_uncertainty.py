@@ -203,6 +203,43 @@ def test_bootstrap_records_all_contrast_families_and_undefined_draw_counts():
         assert positive["effective_draws"] == difference["effective_draws"]
 
 
+def test_season_block_omits_rank_and_preserves_repeated_block_weight(monkeypatch):
+    frame = _prediction_frame(
+        [
+            (2021, "a", "QB", -0.5, -0.5, 0.5),
+            (2021, "b", "QB", 0.5, 0.5, -0.5),
+            (2022, "c", "QB", -0.5, 0.5, -0.5),
+            (2022, "d", "QB", 0.5, -0.5, 0.5),
+            (2023, "e", "QB", -0.5, -0.5, -0.5),
+            (2023, "f", "QB", 0.5, 0.5, 0.5),
+        ]
+    )
+
+    def repeated_season_draw(_frame, cluster, _rng):
+        assert cluster == "season"
+        return np.asarray([0, 1, 0, 1, 2, 3], dtype=int)
+
+    monkeypatch.setattr(
+        "predictor_v5.movement_evaluation.metrics._cluster_draw_indices",
+        repeated_season_draw,
+    )
+    result = bootstrap_uncertainty(frame, seed=5, resamples=1, cluster="season")
+
+    contrast = result["contrasts"]["production_vs_no_production"]
+    assert "movement_spearman_difference" not in contrast
+    expected = {
+        "mae_log_difference": -1 / 3,
+        "skill_log_gain": 2 / 3,
+        "direction_accuracy_difference": 1 / 3,
+        "positive_mae_log_improvement": 1 / 3,
+    }
+    for metric, value in expected.items():
+        assert contrast[metric]["lower"] == pytest.approx(value)
+        assert contrast[metric]["upper"] == pytest.approx(value)
+        assert contrast[metric]["effective_draws"] == 1
+    assert "movement_spearman_difference" not in result["contrasts"]["production_vs_no_change"]
+
+
 def test_bootstrap_handles_empty_thin_and_one_cluster_with_finite_json():
     template = _bootstrap_frame().iloc[0:0].copy()
     empty = bootstrap_uncertainty(template, seed=4, resamples=20, cluster="player")
@@ -277,6 +314,10 @@ def test_summary_pins_five_fold_estimates_macro_pooling_and_exploratory_metadata
     assert exploratory["cluster"] == "season"
     assert exploratory["n_clusters"] == 5
     assert exploratory["exploratory"] is True
+    assert all(
+        "movement_spearman_difference" not in contrast
+        for contrast in exploratory["contrasts"].values()
+    )
     assert "five observed test-season blocks" in exploratory["caveat"]
     assert len(pooled["leave_one_season_out"]) == 5
     assert "simultaneous player/team/season/league uncertainty" in pooled["uncertainty_caveat"]
