@@ -1,3 +1,4 @@
+import json
 import math
 
 import numpy as np
@@ -63,8 +64,20 @@ def test_hand_computed_error_and_skill_metrics_use_pooled_denominators():
     assert result["mean_predicted_movement"]["value"] == pytest.approx(frame["production_r_hat"].mean())
     assert result["mae_value"]["value"] == pytest.approx(value_error.mean())
     assert result["value_change_mae"]["value"] == result["mae_value"]["value"]
+    assert result["endpoint_mae"]["value"] == result["mae_value"]["value"]
+    assert result["endpoint_rmse"]["value"] == result["rmse_value"]["value"]
     assert result["skill_log"]["value"] == pytest.approx(1 - log_error.mean() / np.mean(np.abs(frame["r"])))
     assert result["skill_value"]["value"] == pytest.approx(1 - value_error.mean() / np.mean(np.abs(frame["d"])))
+
+
+def test_contrast_reports_all_paired_error_skill_direction_and_rank_families():
+    result = score_contrast(_frame(), "production", "no_production")
+    for key in ("mae_log_difference", "rmse_log_difference", "mae_value_difference", "rmse_value_difference", "skill_log_gain", "skill_value_gain", "direction_accuracy_difference"):
+        assert key in result
+        assert set(result[key]) == {"value", "reason"}
+    assert "movement_spearman_difference" in result
+    assert "included_cells" in result["movement_spearman_difference"]
+    assert "per_position" in result["movement_spearman_difference"]
 
 
 def test_zero_denominators_empty_and_nonfinite_predictions_are_explicit():
@@ -90,6 +103,25 @@ def test_metric_input_requires_sorted_unique_keys_and_finite_actuals():
     bad.loc[0, "r"] = np.nan
     with pytest.raises(ContractRefusal):
         score_model(bad, "production")
+    duplicate = pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
+    with pytest.raises(ContractRefusal):
+        score_model(duplicate, "production")
+
+
+def test_metric_input_rejects_inconsistent_endpoint_and_movement_equivalents():
+    bad = _frame([(2020, "a", "QB", 24, 10, 1, 1000, 2000)])
+    bad.loc[0, "r"] = 0.0
+    with pytest.raises(ContractRefusal):
+        score_model(bad, "production")
+    bad = _frame([(2020, "a", "QB", 24, 10, 1, 1000, 2000)])
+    bad.loc[0, "production_d_hat"] += 1.0
+    with pytest.raises(ContractRefusal):
+        score_model(bad, "production")
+    for column in ("production_r_hat", "production_d_hat"):
+        bad = _frame([(2020, "a", "QB", 24, 10, 1, 1000, 2000)])
+        bad[column] = np.inf
+        with pytest.raises(ContractRefusal):
+            score_model(bad, "production")
 
 
 def test_score_contrast_signs_and_common_endpoint_error_are_explicit():
@@ -108,8 +140,9 @@ def test_direction_baselines_majority_ties_and_mover_accuracy():
     assert training_majority_class(np.array([-1, 1, 0])) == "flat"
     assert training_majority_class(np.array([-1, -2 * FLAT_BAND, 2 * FLAT_BAND])) == "down"
     frame = _frame()
+    frame["E"] = frame["S"] * np.exp(actual)
     frame["r"] = actual
-    frame["d"] = actual
+    frame["d"] = frame["E"] - frame["S"]
     result = score_direction_baselines(frame, "flat")
     assert result["no_change"]["direction_accuracy"]["value"] == pytest.approx(1 / 3)
     assert result["no_change"]["mover_accuracy"]["value"] == 0.0
@@ -118,13 +151,21 @@ def test_direction_baselines_majority_ties_and_mover_accuracy():
 
 def test_direction_confusion_and_supported_balanced_accuracy_have_absent_nulls():
     frame = _frame()
-    frame["r"] = [-2 * FLAT_BAND, 0.0, 2 * FLAT_BAND]
-    frame["production_r_hat"] = [-2 * FLAT_BAND, 0.0, 2 * FLAT_BAND]
-    frame["production_d_hat"] = frame["production_r_hat"]
+    values = np.array([-2 * FLAT_BAND, 0.0, 2 * FLAT_BAND])
+    frame["E"] = frame["S"] * np.exp(values)
+    frame["r"] = values
+    frame["d"] = frame["E"] - frame["S"]
+    frame["production_E_hat"] = frame["S"] * np.exp(values)
+    frame["production_r_hat"] = values
+    frame["production_d_hat"] = frame["production_E_hat"] - frame["S"]
     score = score_model(frame, "production")["direction"]
     assert score["confusion_matrix"] == {"down": {"down": 1, "flat": 0, "up": 0}, "flat": {"down": 0, "flat": 1, "up": 0}, "up": {"down": 0, "flat": 0, "up": 1}}
     assert score["balanced_accuracy"]["value"] == 1.0
-    absent = score_direction_baselines(frame.assign(r=[0.0, 0.0, 0.0]), "flat")["no_change"]
+    absent_frame = frame.copy()
+    absent_frame["E"] = absent_frame["S"]
+    absent_frame["r"] = 0.0
+    absent_frame["d"] = 0.0
+    absent = score_direction_baselines(absent_frame, "flat")["no_change"]
     assert absent["class_recalls"]["down"] == {"value": None, "reason": "absent_class"}
 
 
@@ -139,6 +180,8 @@ def test_calibration_bins_rank_and_tail_metrics_include_empty_cells_and_ties():
         result["tail"]["largest_errors"], key=lambda row: (-row["absolute_log_error"], row["season"], row["player_id"])
     )
     assert result["tail"]["large_move"]["threshold"] == pytest.approx(math.log(1.5))
+    assert result["tail"]["large_move"]["retrospective"] is True
+    assert "direction" in result["tail"]["large_move"]
 
 
 def test_constant_prediction_rank_and_ols_are_nullable():
@@ -184,6 +227,8 @@ def test_large_move_precision_recall_and_largest_error_limit_are_deterministic()
 
 def test_slices_emit_requested_empty_cells_and_support_descriptions():
     frame = _frame()
+    frame["value_tier"] = ["low", "mid", "high"]
+    frame["production_value_tier"] = frame["value_tier"]
     result = score_slices(frame, ("production", "no_change"))
     assert "overall" in result
     assert "season" in result and "2022" in result["season"]["production"]
@@ -193,6 +238,34 @@ def test_slices_emit_requested_empty_cells_and_support_descriptions():
     assert "start_liquidity" in result["production"]
     assert result["production"]["position"]["TE"]["low_support"] is True
     assert result["production"]["endpoint_liquidity"]["25+"]["retrospective"] is True
+    assert result["production"]["overall"]["low_support"] is True
+    assert result["production"]["start_liquidity"]["5-9"]["n"] == 3
+
+
+def test_slices_refuse_missing_or_malformed_tiers_and_liquidity():
+    with pytest.raises(ContractRefusal):
+        score_slices(_frame(), ("production",))
+    bad_tier = _frame()
+    bad_tier["value_tier"] = ["low", "bogus", "high"]
+    with pytest.raises(ContractRefusal):
+        score_slices(bad_tier, ("production",))
+    bad_liquidity = _frame()
+    bad_liquidity["value_tier"] = ["low", "mid", "high"]
+    bad_liquidity["start_trades_window"] = [5, "bad", 25]
+    with pytest.raises(ContractRefusal):
+        score_slices(bad_liquidity, ("production",))
+
+
+def test_nonfinite_descriptive_values_and_macro_values_refuse_and_outputs_serialize():
+    bad = _frame()
+    bad["value_tier"] = ["low", "mid", "high"]
+    bad["age"] = [24.0, np.inf, 26.0]
+    with pytest.raises(ContractRefusal):
+        score_model(bad, "production")
+    with pytest.raises(ContractRefusal):
+        macro_by_season([{"mae_log": {"value": np.inf, "reason": None}}])
+    result = score_model(_frame(), "production")
+    json.dumps(result, allow_nan=False)
 
 
 def test_target_diagnostics_are_labeled_scale_drift_observations():

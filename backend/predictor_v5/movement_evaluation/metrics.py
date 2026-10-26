@@ -15,6 +15,7 @@ from .contract import (
     FLAT_BAND,
     LARGE_MOVE_BAND,
     POSITIONS,
+    SCALE_MAX,
     ContractRefusal,
     sorted_keys,
 )
@@ -83,12 +84,22 @@ def _validate_frame(frame: pd.DataFrame, model: str | None = None) -> None:
         values = _array(frame[column].to_numpy(), name=column)
         if column in ("S", "E") and (values <= 0).any():
             raise ContractRefusal(f"{column} must be strictly positive")
+    starts = frame["S"].to_numpy(dtype=float)
+    ends = frame["E"].to_numpy(dtype=float)
+    if not np.allclose(frame["r"].to_numpy(dtype=float), np.log(ends / starts), rtol=1e-10, atol=1e-12):
+        raise ContractRefusal("r is inconsistent with log(E / S)")
+    if not np.allclose(frame["d"].to_numpy(dtype=float), ends - starts, rtol=1e-10, atol=1e-12):
+        raise ContractRefusal("d is inconsistent with E - S")
     if model is not None:
         endpoint = _array(frame[f"{model}_E_hat"].to_numpy(), name=f"{model}_E_hat")
         if (endpoint <= 0).any():
             raise ContractRefusal(f"{model}_E_hat must be strictly positive")
-        _array(frame[f"{model}_r_hat"].to_numpy(), name=f"{model}_r_hat")
-        _array(frame[f"{model}_d_hat"].to_numpy(), name=f"{model}_d_hat")
+        predicted_r = _array(frame[f"{model}_r_hat"].to_numpy(), name=f"{model}_r_hat")
+        predicted_d = _array(frame[f"{model}_d_hat"].to_numpy(), name=f"{model}_d_hat")
+        if not np.allclose(predicted_r, np.log(endpoint / starts), rtol=1e-10, atol=1e-12):
+            raise ContractRefusal(f"{model}_r_hat is inconsistent with log({model}_E_hat / S)")
+        if not np.allclose(predicted_d, endpoint - starts, rtol=1e-10, atol=1e-12):
+            raise ContractRefusal(f"{model}_d_hat is inconsistent with {model}_E_hat - S")
 
 
 def _metric_summary(errors: np.ndarray, *, empty_reason: str = "empty_cohort") -> dict[str, object]:
@@ -264,8 +275,11 @@ def _large_move(actual: np.ndarray, predicted: np.ndarray, frame: pd.DataFrame) 
         largest.append({"season": int(frame.iloc[index]["season"]) if "season" in frame else None, "player_id": str(frame.iloc[index]["player_id"]) if "player_id" in frame else str(index), "absolute_log_error": float(errors[index]), "signed_log_error": float(predicted[index] - actual[index])})
     return {
         "threshold": LARGE_MOVE_BAND,
+        "retrospective": True,
+        "diagnostic_only": True,
         "n": int(mask.sum()),
         "coverage": _null("empty_cohort" if len(actual) == 0 else None, None if len(actual) == 0 else float(mask.mean())),
+        "direction": _direction_metrics(selected_actual, selected_pred),
         "change_error": _metric_summary(np.abs(selected_pred - selected_actual)),
         "bias": _nullable_mean(selected_pred - selected_actual),
         "positive_recall": _recall(int(np.sum(pred_pos & actual_pos)), int(np.sum(actual_pos))),
@@ -284,6 +298,7 @@ def score_model(frame: pd.DataFrame, model: str) -> dict[str, object]:
     pred_d = _array(frame[f"{model}_d_hat"], name=f"{model}_d_hat")
     log_errors = np.abs(pred_r - actual_r)
     value_errors = np.abs(pred_d - actual_d)
+    endpoint_errors = np.abs(frame[f"{model}_E_hat"].to_numpy(dtype=float) - frame["E"].to_numpy(dtype=float))
     abs_actual_r = np.abs(actual_r)
     abs_actual_d = np.abs(actual_d)
     reason = "empty_cohort" if len(frame) == 0 else None
@@ -308,12 +323,20 @@ def score_model(frame: pd.DataFrame, model: str) -> dict[str, object]:
         "mean_actual_value_change": _null(reason, None if reason else float(np.mean(actual_d))),
         "mean_predicted_value_change": _null(reason, None if reason else float(np.mean(pred_d))),
         "value_change_mae": _null(reason, None if reason else float(np.mean(value_errors))),
+        "endpoint_mae": _null(reason, None if reason else float(np.mean(endpoint_errors))),
+        "endpoint_rmse": _null(reason, None if reason else float(np.sqrt(np.mean(endpoint_errors**2)))),
+        "endpoint_median_abs_error": _null(reason, None if reason else float(np.median(endpoint_errors))),
+        "endpoint_p90_abs_error": _null(reason, None if reason else float(np.quantile(endpoint_errors, 0.9, method="linear"))),
         "skill_log": _null("zero_baseline_error" if log_baseline == 0 else reason, None if reason or log_baseline == 0 else 1 - float(np.mean(log_errors)) / log_baseline),
         "skill_value": _null("zero_baseline_error" if value_baseline == 0 else reason, None if reason or value_baseline == 0 else 1 - float(np.mean(value_errors)) / value_baseline),
         "direction": _direction_metrics(actual_r, pred_r),
         "calibration": _calibration(actual_r, pred_r),
         "rank": _rank_metrics(frame, actual_r, pred_r),
         "tail": {"large_move": _large_move(actual_r, pred_r, frame), "largest_errors": _large_move(actual_r, pred_r, frame)["largest_errors"], "top_bottom": _rank_metrics(frame, actual_r, pred_r)["top_bottom"]},
+        "low_support": len(frame) < 30,
+        "status": "low_support" if len(frame) < 30 else "supported",
+        "clipping": {"at_cap_count": int((frame[f"{model}_E_hat"].to_numpy(dtype=float) >= SCALE_MAX).sum())},
+        "exclusions": {"count": 0, "reason": "matched_prediction_cohort"},
         "descriptive": {
             "age": _distribution(frame.get("age", pd.Series(dtype=float))),
             "games": _distribution(frame.get("games", pd.Series(dtype=float))),
@@ -326,12 +349,10 @@ def score_model(frame: pd.DataFrame, model: str) -> dict[str, object]:
 
 
 def _distribution(values: Any) -> dict[str, object]:
-    try:
-        arr = _array(pd.Series(values).dropna().to_numpy())
-    except ContractRefusal:
+    present = pd.Series(values).dropna()
+    if len(present) == 0:
         return {"n": 0, "mean": _null("empty_cohort"), "median": _null("empty_cohort"), "min": _null("empty_cohort"), "max": _null("empty_cohort")}
-    if len(arr) == 0:
-        return {"n": 0, "mean": _null("empty_cohort"), "median": _null("empty_cohort"), "min": _null("empty_cohort"), "max": _null("empty_cohort")}
+    arr = _array(present.to_numpy())
     return {"n": len(arr), "mean": _null(None, arr.mean()), "median": _null(None, np.median(arr)), "min": _null(None, arr.min()), "max": _null(None, arr.max())}
 
 
@@ -343,6 +364,24 @@ def _liquidity(frame: pd.DataFrame, endpoint: str) -> pd.Series:
     return pd.Series(np.nan, index=frame.index)
 
 
+def _validate_slice_inputs(frame: pd.DataFrame) -> None:
+    if "value_tier" not in frame:
+        raise ContractRefusal("slice frame is missing value_tier")
+    tiers = frame["value_tier"]
+    if tiers.isna().any() or (~tiers.isin(_TIERS)).any():
+        raise ContractRefusal("value_tier must be low, mid, or high")
+    for endpoint in ("start", "end"):
+        names = (f"{endpoint}_trades_window", f"{endpoint}_trades")
+        name = next((candidate for candidate in names if candidate in frame), None)
+        if name is None:
+            raise ContractRefusal(f"slice frame is missing {endpoint} liquidity")
+        raw = frame[name]
+        numeric = pd.to_numeric(raw, errors="coerce")
+        malformed = raw.notna() & numeric.isna()
+        if malformed.any() or numeric.isna().any() or (~np.isfinite(numeric.to_numpy(dtype=float))).any() or (numeric < 0).any():
+            raise ContractRefusal(f"{endpoint} liquidity must be finite and nonnegative")
+
+
 def _liquidity_band(values: pd.Series) -> pd.Series:
     numeric = pd.to_numeric(values, errors="coerce")
     return pd.Series(np.select([numeric.between(5, 9), numeric.between(10, 24), numeric >= 25], _LIQUIDITY_BANDS, default="missing"), index=values.index)
@@ -351,6 +390,11 @@ def _liquidity_band(values: pd.Series) -> pd.Series:
 def _slice_score(frame: pd.DataFrame, model: str, mask: pd.Series, *, retrospective: bool = False) -> dict[str, object]:
     result = score_model(frame.loc[mask].reset_index(drop=True), model)
     result["low_support"] = result["n"] < 30
+    result["status"] = "low_support" if result["n"] < 30 else "supported"
+    result["exclusions"] = {
+        "count": int((~mask).sum()),
+        "reason": "outside_requested_slice" if (~mask).any() else "none",
+    }
     if retrospective:
         result["retrospective"] = True
     return result
@@ -358,7 +402,8 @@ def _slice_score(frame: pd.DataFrame, model: str, mask: pd.Series, *, retrospect
 
 def score_slices(frame: pd.DataFrame, model_names: tuple[str, ...]) -> dict[str, object]:
     _validate_frame(frame)
-    result: dict[str, object] = {"overall": {model: score_model(frame, model) for model in model_names}}
+    _validate_slice_inputs(frame)
+    result: dict[str, object] = {"overall": {model: _slice_score(frame, model, pd.Series(True, index=frame.index)) for model in model_names}}
     for model in model_names:
         model_result: dict[str, object] = {"overall": result["overall"][model]}
         model_result["season"] = {str(season): _slice_score(frame, model, frame["season"] == season) for season in _SEASONS}
@@ -389,6 +434,25 @@ def score_contrast(frame: pd.DataFrame, left: str, right: str) -> dict[str, obje
         b = right_score[key]["value"]
         return _null("undefined_component" if a is None or b is None else None, None if a is None or b is None else float(a - b))
 
+    def gain(key: str) -> dict[str, object]:
+        return difference(key)
+
+    left_cells = left_score["rank"]["season_position"]
+    right_cells = right_score["rank"]["season_position"]
+    common_cells = sorted(
+        key for key in left_cells
+        if key in right_cells and left_cells[key]["spearman"]["value"] is not None and right_cells[key]["spearman"]["value"] is not None
+    )
+    rank_differences = [left_cells[key]["spearman"]["value"] - right_cells[key]["spearman"]["value"] for key in common_cells]
+    rank_difference: dict[str, object] = _null("no_common_defined_cells" if not rank_differences else None, None if not rank_differences else float(np.mean(rank_differences)))
+    rank_difference["included_cells"] = common_cells
+    rank_difference["n_cells"] = len(common_cells)
+    per_position: dict[str, dict[str, object]] = {}
+    for position in POSITIONS:
+        position_values = [value for key, value in zip(common_cells, rank_differences) if key.endswith(f":{position}")]
+        per_position[position] = _null("no_common_defined_cells" if not position_values else None, None if not position_values else float(np.mean(position_values)))
+    rank_difference["per_position"] = per_position
+
     out: dict[str, object] = {
         "left": left_score,
         "right": right_score,
@@ -396,9 +460,14 @@ def score_contrast(frame: pd.DataFrame, left: str, right: str) -> dict[str, obje
         "right_model": right,
         "sign_convention": "left - right; positive_mae_log_improvement is right MAE minus left MAE, positive when left improves",
         "mae_log_difference": difference("mae_log"),
+        "rmse_log_difference": difference("rmse_log"),
         "positive_mae_log_improvement": _null("undefined_component" if left_score["mae_log"]["value"] is None or right_score["mae_log"]["value"] is None else None, None if left_score["mae_log"]["value"] is None or right_score["mae_log"]["value"] is None else float(right_score["mae_log"]["value"] - left_score["mae_log"]["value"])),
         "mae_value_difference": difference("mae_value"),
+        "rmse_value_difference": difference("rmse_value"),
+        "skill_log_gain": gain("skill_log"),
+        "skill_value_gain": gain("skill_value"),
         "direction_accuracy_difference": _null("undefined_component" if left_score["direction"]["direction_accuracy"]["value"] is None or right_score["direction"]["direction_accuracy"]["value"] is None else None, None if left_score["direction"]["direction_accuracy"]["value"] is None or right_score["direction"]["direction_accuracy"]["value"] is None else float(left_score["direction"]["direction_accuracy"]["value"] - right_score["direction"]["direction_accuracy"]["value"])),
+        "movement_spearman_difference": rank_difference,
     }
     out["skill_log_difference"] = difference("skill_log")
     return out
@@ -429,8 +498,22 @@ def macro_by_season(fold_scores: Sequence[Mapping[str, object]]) -> dict[str, ob
         values = []
         for score in fold_scores:
             cell = score.get(key)
-            if isinstance(cell, Mapping) and cell.get("value") is not None:
-                values.append(float(cell["value"]))
+            if cell is None:
+                continue
+            if not isinstance(cell, Mapping):
+                raise ContractRefusal(f"fold metric {key} must be a nullable metric mapping")
+            value = cell.get("value")
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                raise ContractRefusal(f"fold metric {key} is not numeric")
+            try:
+                value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ContractRefusal(f"fold metric {key} is not numeric") from exc
+            if not math.isfinite(value):
+                raise ContractRefusal(f"fold metric {key} must be finite")
+            values.append(value)
         output[key] = {"value": None if not values else float(np.mean(values)), "reason": "no_defined_folds" if not values else None, "n_defined": len(values), "n_total": total}
     return output
 
