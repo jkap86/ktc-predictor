@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import ast
+import errno
 import hashlib
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from predictor_v5.movement_evaluation import __main__ as cli_module
 from predictor_v5.movement_evaluation import data as data_module
 from predictor_v5.movement_evaluation import report as report_module
 from predictor_v5.movement_evaluation.__main__ import main, parse_args, run
@@ -43,6 +47,60 @@ def test_help_exposes_only_the_isolated_diagnostic_option(capsys: pytest.Capture
     assert "--ktc-diagnostic {off,archive}" in output
     for forbidden in ("--season", "--data-path", "--output", "--model", "--threshold"):
         assert forbidden not in output
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--ktc", "archive"],
+        ["--ktc-d", "off"],
+        ["--ktc-di", "archive"],
+        ["--h"],
+        ["--hel"],
+    ],
+)
+def test_abbreviated_options_exit_two_before_run(
+    arguments: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden_run(**_kwargs: object) -> Path:
+        raise AssertionError("abbreviated options must refuse before evaluator stages")
+
+    monkeypatch.setattr(
+        "predictor_v5.movement_evaluation.__main__.run", forbidden_run
+    )
+    with pytest.raises(SystemExit) as raised:
+        main(arguments)
+    assert raised.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        (["--ktc", "archive"], 2),
+        (["--ktc-d", "off"], 2),
+        (["--h"], 2),
+        (["--ktc-diagnostic", "archive"], 0),
+        (["--ktc-diagnostic=off"], 0),
+        (["-h"], 0),
+        (["--help"], 0),
+    ],
+)
+def test_parser_subprocess_accepts_only_exact_documented_options(
+    arguments: list[str], expected: int
+) -> None:
+    script = (
+        "import sys; "
+        "from predictor_v5.movement_evaluation.__main__ import parse_args; "
+        "parse_args(sys.argv[1:])"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script, *arguments],
+        cwd=REPO_ROOT / "backend",
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == expected, completed.stderr
 
 
 @pytest.mark.parametrize(
@@ -299,6 +357,61 @@ def test_main_returns_zero_for_published_report_regardless_of_evidence_flags(
         lambda **_kwargs: Path("report-with-negative-or-unavailable-evidence.json"),
     )
     assert main([]) == 0
+
+
+def test_main_maps_real_publisher_enospc_to_exit_one_without_partial_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo_root = tmp_path / "repo"
+    artifacts = repo_root / "backend/predictor_v5/artifacts"
+    artifacts.mkdir(parents=True)
+    synthetic_cli = (
+        repo_root / "backend/predictor_v5/movement_evaluation/__main__.py"
+    )
+    bundle = SimpleNamespace()
+    data = SimpleNamespace(primary_scored="primary")
+    folds = ("folds",)
+    identity = {"synthetic": "operational-io-boundary"}
+    digest = hashlib.sha256(report_module.canonical_bytes(identity)).hexdigest()
+    report = {"run_identity": identity, "run_sha256": digest}
+
+    monkeypatch.setattr(cli_module, "__file__", str(synthetic_cli))
+    monkeypatch.setattr(cli_module, "runtime_identity", dict)
+    monkeypatch.setattr(
+        cli_module,
+        "source_identities",
+        lambda _root: {"model.py": MODEL_SOURCE_SHA256},
+    )
+    monkeypatch.setattr(cli_module, "load_pinned_bundle", lambda *_args, **_kwargs: bundle)
+    monkeypatch.setattr(cli_module, "prepare_evaluation_data", lambda value: data)
+    monkeypatch.setattr(cli_module, "run_primary_folds", lambda _rows: folds)
+    monkeypatch.setattr(cli_module, "summarize_primary", lambda _folds: ((), {}))
+    monkeypatch.setattr(
+        cli_module, "attach_start_observable_diagnostics", lambda *_args: {}
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "run_ktc_diagnostic",
+        lambda *_args, **_kwargs: {"status": "off"},
+    )
+    monkeypatch.setattr(cli_module, "build_report", lambda **_kwargs: report)
+    real_mkdir = report_module.os.mkdir
+
+    def disk_full(path: str, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        if path == "market_movement":
+            raise OSError(errno.ENOSPC, "No space left on device")
+        real_mkdir(path, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(report_module.os, "mkdir", disk_full)
+
+    assert main([]) == 1
+    assert "movement evaluation failed" in capsys.readouterr().err
+    output = artifacts / "market_movement"
+    assert not output.exists()
+    assert not list(artifacts.rglob("development-*.json"))
+    assert not list(artifacts.rglob(".*.tmp.*"))
 
 
 def test_real_runtime_reads_only_pinned_inputs_and_source_identity_files(

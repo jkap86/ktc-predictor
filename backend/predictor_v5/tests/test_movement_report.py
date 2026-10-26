@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import stat
@@ -645,6 +646,39 @@ def test_publication_refuses_static_ancestor_symlinks(
         publish_report(report, root)
 
     assert not list(outside.rglob("development-*.json"))
+
+
+@pytest.mark.parametrize("stage", ["root", "child", "existing_report"])
+def test_operational_open_errors_are_not_contract_refusals(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+) -> None:
+    root = _repo(tmp_path)
+    report = _report()
+    destination = report_path(root, report["run_sha256"])
+    if stage == "existing_report":
+        publish_report(report, root)
+    module = __import__("predictor_v5.movement_evaluation.report", fromlist=["report"])
+    real_open = module.os.open
+
+    def fail_open(path, flags, mode=0o777, *, dir_fd=None):
+        is_target = (
+            (stage == "root" and Path(path) == root)
+            or (stage == "child" and path == "backend")
+            or (stage == "existing_report" and path == destination.name)
+        )
+        if is_target:
+            raise OSError(errno.EIO, "simulated device I/O error")
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(module.os, "open", fail_open)
+    with pytest.raises(OSError) as raised:
+        publish_report(report, root)
+    assert raised.value.errno == errno.EIO
+    assert not isinstance(raised.value, ContractRefusal)
+    if stage != "existing_report":
+        assert not destination.exists()
 
 
 @pytest.mark.parametrize("failure", ["write", "file_fsync", "directory_fsync"])

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import hashlib
 import math
@@ -609,6 +610,16 @@ def _validated_sha256(value: str) -> str:
     return value
 
 
+_PATH_REFUSAL_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
+
+
+def _raise_path_error(message: str, error: OSError) -> None:
+    """Classify invalid/raced paths as refusals and preserve operational I/O."""
+    if error.errno in _PATH_REFUSAL_ERRNOS:
+        _refuse(message, error)
+    raise error
+
+
 def report_path(repo_root: Path, run_sha256: str) -> Path:
     """Return the sole permitted destination for a run identity."""
     digest = _validated_sha256(run_sha256)
@@ -627,7 +638,9 @@ def _open_root_directory(path: Path) -> int:
     try:
         descriptor = os.open(path, flags)
     except OSError as exc:
-        _refuse("repository root must be an existing non-symlink directory", exc)
+        _raise_path_error(
+            "repository root must be an existing non-symlink directory", exc
+        )
     if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
         os.close(descriptor)
         _refuse("repository root must be a directory")
@@ -639,7 +652,7 @@ def _open_child_directory(parent: int, name: str, label: str) -> int:
     try:
         descriptor = os.open(name, flags, dir_fd=parent)
     except OSError as exc:
-        _refuse(f"{label} must be an existing non-symlink directory", exc)
+        _raise_path_error(f"{label} must be an existing non-symlink directory", exc)
     if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
         os.close(descriptor)
         _refuse(f"{label} must be a directory")
@@ -654,7 +667,7 @@ def _validate_directory_entry(parent: int, name: str, child: int, label: str) ->
     try:
         linked = os.stat(name, dir_fd=parent, follow_symlinks=False)
     except OSError as exc:
-        _refuse(f"{label} changed during publication", exc)
+        _raise_path_error(f"{label} changed during publication", exc)
     opened = os.fstat(child)
     if not stat.S_ISDIR(linked.st_mode) or not _same_inode(linked, opened):
         _refuse(f"{label} changed during publication")
@@ -664,7 +677,7 @@ def _validate_directory_chain(chain: _DirectoryChain) -> None:
     try:
         linked_root = chain.root_path.lstat()
     except OSError as exc:
-        _refuse("repository root changed during publication", exc)
+        _raise_path_error("repository root changed during publication", exc)
     if stat.S_ISLNK(linked_root.st_mode) or not _same_inode(
         linked_root, os.fstat(chain.root)
     ):
@@ -720,8 +733,6 @@ def _anchored_output_directory(repo_root: Path):
             created = True
         except FileExistsError:
             pass
-        except OSError as exc:
-            _refuse("could not create market movement output directory", exc)
         output = _open_child_directory(
             artifacts, "market_movement", "market movement output"
         )
@@ -838,7 +849,7 @@ def _read_regular(directory: int, name: str) -> bytes | None:
     try:
         descriptor = os.open(name, flags, dir_fd=directory)
     except OSError as exc:
-        _refuse("could not open existing report destination safely", exc)
+        _raise_path_error("could not open existing report destination safely", exc)
     try:
         opened = os.fstat(descriptor)
         if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):

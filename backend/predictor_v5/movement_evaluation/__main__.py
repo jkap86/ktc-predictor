@@ -31,7 +31,8 @@ from .report import (
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse the evaluator's deliberately narrow public grammar."""
     parser = argparse.ArgumentParser(
-        description="Run the pinned 2020-2025 historical market-movement evaluation."
+        description="Run the pinned 2020-2025 historical market-movement evaluation.",
+        allow_abbrev=False,
     )
     parser.add_argument(
         "--ktc-diagnostic",
