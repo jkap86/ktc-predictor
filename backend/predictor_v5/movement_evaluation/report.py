@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import math
 import os
@@ -9,7 +10,10 @@ import platform
 import re
 import secrets
 import stat
+import threading
 from collections.abc import Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +87,27 @@ _FOLD_SCORE_FIELDS = (
     "slices",
     "uncertainty",
 )
+
+
+@dataclass
+class _LocalPublicationState:
+    lock: threading.Lock
+    owner: int | None = None
+
+
+@dataclass(frozen=True)
+class _DirectoryChain:
+    root_path: Path
+    root: int
+    backend: int
+    package: int
+    artifacts: int
+    output: int
+    output_path: Path
+
+
+_LOCAL_PUBLICATION_STATES: dict[tuple[int, int], _LocalPublicationState] = {}
+_LOCAL_PUBLICATION_STATES_GUARD = threading.Lock()
 
 
 def _refuse(message: str, cause: BaseException | None = None) -> None:
@@ -597,40 +622,186 @@ def report_path(repo_root: Path, run_sha256: str) -> Path:
     )
 
 
-def _require_directory(path: Path, label: str) -> None:
+def _open_root_directory(path: Path) -> int:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        info = path.lstat()
+        descriptor = os.open(path, flags)
     except OSError as exc:
-        _refuse(f"missing {label} directory", exc)
-    if path.is_symlink() or not stat.S_ISDIR(info.st_mode):
-        _refuse(f"{label} must be a regular non-symlink directory")
+        _refuse("repository root must be an existing non-symlink directory", exc)
+    if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        _refuse("repository root must be a directory")
+    return descriptor
 
 
-def _output_directory(repo_root: Path) -> Path:
-    root = Path(repo_root)
-    _require_directory(root, "repository root")
-    current = root
-    for component, label in (
-        ("backend", "backend"),
-        ("predictor_v5", "predictor_v5"),
-        ("artifacts", "artifacts"),
+def _open_child_directory(parent: int, name: str, label: str) -> int:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(name, flags, dir_fd=parent)
+    except OSError as exc:
+        _refuse(f"{label} must be an existing non-symlink directory", exc)
+    if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        _refuse(f"{label} must be a directory")
+    return descriptor
+
+
+def _same_inode(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
+
+
+def _validate_directory_entry(parent: int, name: str, child: int, label: str) -> None:
+    try:
+        linked = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except OSError as exc:
+        _refuse(f"{label} changed during publication", exc)
+    opened = os.fstat(child)
+    if not stat.S_ISDIR(linked.st_mode) or not _same_inode(linked, opened):
+        _refuse(f"{label} changed during publication")
+
+
+def _validate_directory_chain(chain: _DirectoryChain) -> None:
+    try:
+        linked_root = chain.root_path.lstat()
+    except OSError as exc:
+        _refuse("repository root changed during publication", exc)
+    if stat.S_ISLNK(linked_root.st_mode) or not _same_inode(
+        linked_root, os.fstat(chain.root)
     ):
-        current = current / component
-        _require_directory(current, label)
-    output = current / "market_movement"
+        _refuse("repository root changed during publication")
+    _validate_directory_entry(chain.root, "backend", chain.backend, "backend directory")
+    _validate_directory_entry(
+        chain.backend, "predictor_v5", chain.package, "predictor_v5 directory"
+    )
+    _validate_directory_entry(
+        chain.package, "artifacts", chain.artifacts, "artifacts directory"
+    )
+    _validate_directory_entry(
+        chain.artifacts,
+        "market_movement",
+        chain.output,
+        "market movement output directory",
+    )
+
+
+def _rmdir_owned(parent: int, name: str, identity: tuple[int, int]) -> bool:
     try:
-        output.mkdir(mode=0o755)
-    except FileExistsError:
-        pass
-    except OSError as exc:
-        _refuse("could not create market movement output directory", exc)
-    _require_directory(output, "market movement output")
+        info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    if (info.st_dev, info.st_ino) != identity or not stat.S_ISDIR(info.st_mode):
+        return False
     try:
-        if output.resolve(strict=True).parent != current.resolve(strict=True):
-            _refuse("market movement output escapes its artifacts namespace")
-    except OSError as exc:
-        _refuse("could not resolve market movement output directory", exc)
-    return output
+        os.rmdir(name, dir_fd=parent)
+    except OSError:
+        return False
+    return True
+
+
+@contextmanager
+def _anchored_output_directory(repo_root: Path):
+    root_path = Path(repo_root)
+    descriptors: list[int] = []
+    created = False
+    parent_durable = False
+    output_identity: tuple[int, int] | None = None
+    yielded = False
+    try:
+        root = _open_root_directory(root_path)
+        descriptors.append(root)
+        backend = _open_child_directory(root, "backend", "backend")
+        descriptors.append(backend)
+        package = _open_child_directory(backend, "predictor_v5", "predictor_v5")
+        descriptors.append(package)
+        artifacts = _open_child_directory(package, "artifacts", "artifacts")
+        descriptors.append(artifacts)
+        try:
+            os.mkdir("market_movement", 0o755, dir_fd=artifacts)
+            created = True
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            _refuse("could not create market movement output directory", exc)
+        output = _open_child_directory(
+            artifacts, "market_movement", "market movement output"
+        )
+        descriptors.append(output)
+        output_info = os.fstat(output)
+        output_identity = (output_info.st_dev, output_info.st_ino)
+        try:
+            os.fsync(artifacts)
+            if created:
+                parent_durable = True
+        except OSError:
+            if created:
+                _rmdir_owned(artifacts, "market_movement", output_identity)
+                try:
+                    os.fsync(artifacts)
+                except OSError:
+                    pass
+            raise
+        chain = _DirectoryChain(
+            root_path=root_path,
+            root=root,
+            backend=backend,
+            package=package,
+            artifacts=artifacts,
+            output=output,
+            output_path=(
+                root_path
+                / "backend"
+                / "predictor_v5"
+                / "artifacts"
+                / "market_movement"
+            ),
+        )
+        _validate_directory_chain(chain)
+        yielded = True
+        yield chain
+    except Exception:
+        if (
+            created
+            and not yielded
+            and output_identity is not None
+            and parent_durable
+            and _rmdir_owned(artifacts, "market_movement", output_identity)
+        ):
+            try:
+                os.fsync(artifacts)
+            except OSError:
+                pass
+        raise
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+@contextmanager
+def _publication_guard(directory: int):
+    info = os.fstat(directory)
+    identity = (info.st_dev, info.st_ino)
+    thread_id = threading.get_ident()
+    with _LOCAL_PUBLICATION_STATES_GUARD:
+        state = _LOCAL_PUBLICATION_STATES.setdefault(
+            identity, _LocalPublicationState(lock=threading.Lock())
+        )
+        if state.owner == thread_id:
+            _refuse("reentrant publication cannot accept an in-progress report")
+    state.lock.acquire()
+    locked = False
+    try:
+        with _LOCAL_PUBLICATION_STATES_GUARD:
+            state.owner = thread_id
+        fcntl.flock(directory, fcntl.LOCK_EX)
+        locked = True
+        yield
+    finally:
+        if locked:
+            fcntl.flock(directory, fcntl.LOCK_UN)
+        with _LOCAL_PUBLICATION_STATES_GUARD:
+            if state.owner == thread_id:
+                state.owner = None
+        state.lock.release()
 
 
 def _write_all(descriptor: int, raw: bytes) -> None:
@@ -694,67 +865,70 @@ def publish_report(report: Mapping[str, object], repo_root: Path) -> Path:
     if run_sha256 != digest:
         _refuse("report run SHA-256 does not match its canonical identity")
     raw = canonical_bytes(report)
-    output = _output_directory(Path(repo_root))
-    destination = report_path(Path(repo_root), run_sha256)
-    if destination.parent != output:
-        _refuse("report destination escapes its output namespace")
-    directory = os.open(
-        output,
-        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-    )
-    temporary = f".{run_sha256}.tmp.{secrets.token_hex(12)}"
-    descriptor: int | None = None
-    identity: tuple[int, int] | None = None
-    temporary_created = False
-    published = False
-    try:
-        existing = _read_regular(directory, destination.name)
-        if existing is not None:
-            if existing == raw:
+    with _anchored_output_directory(Path(repo_root)) as chain:
+        destination = report_path(Path(repo_root), run_sha256)
+        if destination.parent != chain.output_path:
+            _refuse("report destination escapes its output namespace")
+        directory = chain.output
+        with _publication_guard(directory):
+            temporary = f".{run_sha256}.tmp.{secrets.token_hex(12)}"
+            descriptor: int | None = None
+            identity: tuple[int, int] | None = None
+            temporary_created = False
+            published = False
+            try:
+                existing = _read_regular(directory, destination.name)
+                if existing is not None:
+                    if existing == raw:
+                        _validate_directory_chain(chain)
+                        return destination
+                    _refuse("same run identity already exists with different bytes")
+                flags = (
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0)
+                )
+                try:
+                    descriptor = os.open(temporary, flags, 0o600, dir_fd=directory)
+                except FileExistsError as exc:
+                    _refuse("exclusive temporary report name collision", exc)
+                temporary_created = True
+                info = os.fstat(descriptor)
+                identity = (info.st_dev, info.st_ino)
+                os.fchmod(descriptor, 0o600)
+                _write_all(descriptor, raw)
+                os.fsync(descriptor)
+                os.close(descriptor)
+                descriptor = None
+                try:
+                    os.link(
+                        temporary,
+                        destination.name,
+                        src_dir_fd=directory,
+                        dst_dir_fd=directory,
+                        follow_symlinks=False,
+                    )
+                    published = True
+                except FileExistsError:
+                    existing = _read_regular(directory, destination.name)
+                    if existing != raw:
+                        _refuse("same run identity already exists with different bytes")
+                if not _unlink_owned(directory, temporary, identity):
+                    raise OSError("temporary report identity changed during publication")
+                temporary_created = False
+                os.fsync(directory)
+                _validate_directory_chain(chain)
                 return destination
-            _refuse("same run identity already exists with different bytes")
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        try:
-            descriptor = os.open(temporary, flags, 0o600, dir_fd=directory)
-        except FileExistsError as exc:
-            _refuse("exclusive temporary report name collision", exc)
-        temporary_created = True
-        info = os.fstat(descriptor)
-        identity = (info.st_dev, info.st_ino)
-        os.fchmod(descriptor, 0o600)
-        _write_all(descriptor, raw)
-        os.fsync(descriptor)
-        os.close(descriptor)
-        descriptor = None
-        try:
-            os.link(
-                temporary,
-                destination.name,
-                src_dir_fd=directory,
-                dst_dir_fd=directory,
-                follow_symlinks=False,
-            )
-            published = True
-        except FileExistsError:
-            existing = _read_regular(directory, destination.name)
-            if existing != raw:
-                _refuse("same run identity already exists with different bytes")
-        if not _unlink_owned(directory, temporary, identity):
-            raise OSError("temporary report identity changed during publication")
-        temporary_created = False
-        os.fsync(directory)
-        return destination
-    except Exception:
-        if descriptor is not None:
-            os.close(descriptor)
-        if identity is not None and published:
-            _unlink_owned(directory, destination.name, identity)
-        if identity is not None and temporary_created:
-            _unlink_owned(directory, temporary, identity)
-        try:
-            os.fsync(directory)
-        except OSError:
-            pass
-        raise
-    finally:
-        os.close(directory)
+            except Exception:
+                if descriptor is not None:
+                    os.close(descriptor)
+                if identity is not None and published:
+                    _unlink_owned(directory, destination.name, identity)
+                if identity is not None and temporary_created:
+                    _unlink_owned(directory, temporary, identity)
+                try:
+                    os.fsync(directory)
+                except OSError:
+                    pass
+                raise

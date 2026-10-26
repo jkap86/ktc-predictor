@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import stat
 import threading
 from copy import deepcopy
 from pathlib import Path
@@ -612,6 +614,39 @@ def test_publication_refuses_unsafe_paths_and_preserves_temp_collision(
     assert not report_path(root, report["run_sha256"]).exists()
 
 
+@pytest.mark.parametrize("component", ["backend", "predictor_v5", "artifacts"])
+def test_publication_refuses_static_ancestor_symlinks(
+    tmp_path: Path, component: str
+) -> None:
+    report = _report()
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    if component == "backend":
+        target = outside / "backend"
+        (target / "predictor_v5" / "artifacts").mkdir(parents=True)
+        (root / "backend").symlink_to(target, target_is_directory=True)
+    elif component == "predictor_v5":
+        (root / "backend").mkdir()
+        target = outside / "predictor_v5"
+        (target / "artifacts").mkdir(parents=True)
+        (root / "backend" / "predictor_v5").symlink_to(
+            target, target_is_directory=True
+        )
+    else:
+        (root / "backend" / "predictor_v5").mkdir(parents=True)
+        target = outside / "artifacts"
+        target.mkdir(parents=True)
+        (root / "backend" / "predictor_v5" / "artifacts").symlink_to(
+            target, target_is_directory=True
+        )
+
+    with pytest.raises(ContractRefusal):
+        publish_report(report, root)
+
+    assert not list(outside.rglob("development-*.json"))
+
+
 @pytest.mark.parametrize("failure", ["write", "file_fsync", "directory_fsync"])
 def test_publication_failure_removes_only_writer_owned_inodes(
     tmp_path: Path,
@@ -621,10 +656,11 @@ def test_publication_failure_removes_only_writer_owned_inodes(
     report = _report()
     root = _repo(tmp_path)
     before = _sentinels(root)
+    output = root / "backend" / "predictor_v5" / "artifacts" / "market_movement"
     module = __import__("predictor_v5.movement_evaluation.report", fromlist=["report"])
     real_write = module.os.write
     real_fsync = module.os.fsync
-    calls = 0
+    failed = False
 
     def write(descriptor: int, raw: bytes) -> int:
         if failure == "write":
@@ -633,11 +669,17 @@ def test_publication_failure_removes_only_writer_owned_inodes(
         return real_write(descriptor, raw)
 
     def fsync(descriptor: int) -> None:
-        nonlocal calls
-        calls += 1
-        if failure == "file_fsync" and calls == 1:
+        nonlocal failed
+        info = os.fstat(descriptor)
+        is_output = output.exists() and (info.st_dev, info.st_ino) == (
+            output.stat().st_dev,
+            output.stat().st_ino,
+        )
+        if not failed and failure == "file_fsync" and stat.S_ISREG(info.st_mode):
+            failed = True
             raise OSError("file fsync")
-        if failure == "directory_fsync" and calls == 2:
+        if not failed and failure == "directory_fsync" and is_output:
+            failed = True
             raise OSError("directory fsync")
         real_fsync(descriptor)
 
@@ -646,7 +688,6 @@ def test_publication_failure_removes_only_writer_owned_inodes(
     with pytest.raises(OSError):
         publish_report(report, root)
 
-    output = root / "backend" / "predictor_v5" / "artifacts" / "market_movement"
     assert not report_path(root, report["run_sha256"]).exists()
     assert not list(output.glob(".*.tmp.*"))
     assert _sentinels(root) == before
@@ -678,3 +719,208 @@ def test_concurrent_identical_publishers_converge_without_replacement(tmp_path: 
     assert results[0].read_bytes() == canonical_bytes(report)
     assert len(list(results[0].parent.glob("development-*.json"))) == 1
     assert not list(results[0].parent.glob(".*.tmp.*"))
+
+
+def test_reentrant_peer_cannot_accept_an_uncommitted_final_inode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    report = _report()
+    output = root / "backend" / "predictor_v5" / "artifacts" / "market_movement"
+    output.mkdir()
+    module = __import__("predictor_v5.movement_evaluation.report", fromlist=["report"])
+    real_fsync = module.os.fsync
+    nested_results: list[Path] = []
+    nested_errors: list[BaseException] = []
+    triggered = False
+    output_identity = (output.stat().st_dev, output.stat().st_ino)
+
+    def failing_after_peer_probe(descriptor: int) -> None:
+        nonlocal triggered
+        info = os.fstat(descriptor)
+        if (info.st_dev, info.st_ino) == output_identity and not triggered:
+            triggered = True
+            try:
+                nested_results.append(publish_report(report, root))
+            except (OSError, ContractRefusal) as exc:
+                nested_errors.append(exc)
+            raise OSError("original writer directory fsync failed")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(module.os, "fsync", failing_after_peer_probe)
+    with pytest.raises(OSError, match="original writer"):
+        publish_report(report, root)
+
+    assert nested_results == []
+    assert len(nested_errors) == 1
+    assert isinstance(nested_errors[0], ContractRefusal)
+    assert not report_path(root, report["run_sha256"]).exists()
+    assert not list(output.glob(".*.tmp.*"))
+
+
+def test_waiting_peer_publishes_only_after_failed_owner_rolls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    report = _report()
+    output = root / "backend" / "predictor_v5" / "artifacts" / "market_movement"
+    output.mkdir()
+    module = __import__("predictor_v5.movement_evaluation.report", fromlist=["report"])
+    real_fsync = module.os.fsync
+    peer_started = threading.Event()
+    peer_results: list[Path] = []
+    peer_errors: list[BaseException] = []
+    peer: threading.Thread | None = None
+    triggered = False
+    output_identity = (output.stat().st_dev, output.stat().st_ino)
+
+    def peer_publish() -> None:
+        peer_started.set()
+        try:
+            peer_results.append(publish_report(report, root))
+        except (OSError, ContractRefusal) as exc:  # pragma: no cover - assertion detail
+            peer_errors.append(exc)
+
+    def fail_owner_output_fsync(descriptor: int) -> None:
+        nonlocal peer, triggered
+        info = os.fstat(descriptor)
+        if (info.st_dev, info.st_ino) == output_identity and not triggered:
+            triggered = True
+            peer = threading.Thread(target=peer_publish)
+            peer.start()
+            assert peer_started.wait(timeout=5)
+            raise OSError("owner output fsync failed")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(module.os, "fsync", fail_owner_output_fsync)
+    with pytest.raises(OSError, match="owner output"):
+        publish_report(report, root)
+    assert peer is not None
+    peer.join(timeout=5)
+
+    expected = report_path(root, report["run_sha256"])
+    assert peer_errors == []
+    assert peer_results == [expected]
+    assert expected.read_bytes() == canonical_bytes(report)
+    assert not list(output.glob(".*.tmp.*"))
+
+
+def test_ancestor_swap_is_refused_without_writing_outside_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path / "inside")
+    report = _report()
+    backend = root / "backend"
+    moved_backend = root / "backend-original"
+    output = backend / "predictor_v5" / "artifacts" / "market_movement"
+    output.mkdir()
+    outside_backend = tmp_path / "outside" / "backend"
+    outside_output = outside_backend / "predictor_v5" / "artifacts" / "market_movement"
+    outside_output.mkdir(parents=True)
+    module = __import__("predictor_v5.movement_evaluation.report", fromlist=["report"])
+    real_open = module.os.open
+    swapped = False
+
+    def swapping_open(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal swapped
+        if not swapped and (
+            Path(path) == output or (path == "market_movement" and dir_fd is not None)
+        ):
+            swapped = True
+            backend.rename(moved_backend)
+            backend.symlink_to(outside_backend, target_is_directory=True)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(module.os, "open", swapping_open)
+    with pytest.raises(ContractRefusal):
+        publish_report(report, root)
+
+    assert swapped is True
+    assert not list(outside_output.glob("development-*.json"))
+    assert not list(
+        (moved_backend / "predictor_v5" / "artifacts" / "market_movement").glob(
+            "development-*.json"
+        )
+    )
+
+
+def test_first_publication_fsyncs_parent_then_file_then_output_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    report = _report()
+    artifacts = root / "backend" / "predictor_v5" / "artifacts"
+    output = artifacts / "market_movement"
+    artifacts_identity = (artifacts.stat().st_dev, artifacts.stat().st_ino)
+    module = __import__("predictor_v5.movement_evaluation.report", fromlist=["report"])
+    real_fsync = module.os.fsync
+    events: list[str] = []
+
+    def recording_fsync(descriptor: int) -> None:
+        info = os.fstat(descriptor)
+        identity = (info.st_dev, info.st_ino)
+        if identity == artifacts_identity:
+            events.append("artifacts")
+        elif stat.S_ISREG(info.st_mode):
+            events.append("file")
+        elif output.exists() and identity == (output.stat().st_dev, output.stat().st_ino):
+            events.append("output")
+        else:  # pragma: no cover - assertion below reports unexpected descriptors
+            events.append("other")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(module.os, "fsync", recording_fsync)
+    publish_report(report, root)
+
+    assert events == ["artifacts", "file", "output"]
+
+
+def test_peer_fsyncs_parent_before_using_an_existing_output_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    report = _report()
+    artifacts = root / "backend" / "predictor_v5" / "artifacts"
+    output = artifacts / "market_movement"
+    output.mkdir()
+    artifacts_identity = (artifacts.stat().st_dev, artifacts.stat().st_ino)
+    module = __import__("predictor_v5.movement_evaluation.report", fromlist=["report"])
+    real_fsync = module.os.fsync
+    directory_events: list[tuple[int, int]] = []
+
+    def recording_fsync(descriptor: int) -> None:
+        info = os.fstat(descriptor)
+        if stat.S_ISDIR(info.st_mode):
+            directory_events.append((info.st_dev, info.st_ino))
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(module.os, "fsync", recording_fsync)
+    publish_report(report, root)
+
+    assert directory_events[0] == artifacts_identity
+
+
+def test_parent_directory_fsync_failure_removes_only_new_output_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    report = _report()
+    before = _sentinels(root)
+    artifacts = root / "backend" / "predictor_v5" / "artifacts"
+    output = artifacts / "market_movement"
+    artifacts_identity = (artifacts.stat().st_dev, artifacts.stat().st_ino)
+    module = __import__("predictor_v5.movement_evaluation.report", fromlist=["report"])
+    real_fsync = module.os.fsync
+
+    def fail_parent_fsync(descriptor: int) -> None:
+        info = os.fstat(descriptor)
+        if (info.st_dev, info.st_ino) == artifacts_identity:
+            raise OSError("artifacts fsync failed")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(module.os, "fsync", fail_parent_fsync)
+    with pytest.raises(OSError, match="artifacts fsync"):
+        publish_report(report, root)
+
+    assert not output.exists()
+    assert _sentinels(root) == before
