@@ -1,0 +1,212 @@
+import math
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from predictor_v5.movement_evaluation.contract import FLAT_BAND, ContractRefusal
+from predictor_v5.movement_evaluation.metrics import (
+    direction,
+    macro_by_season,
+    score_contrast,
+    score_direction_baselines,
+    score_model,
+    score_slices,
+    target_diagnostics,
+    training_majority_class,
+)
+
+
+def _frame(rows=None):
+    if rows is None:
+        rows = [
+            (2020, "a", "QB", 24, 10, 100, 1000, 2000),
+            (2020, "b", "RB", 25, 12, 80, 1000, 500),
+            (2021, "c", "WR", 26, 8, 0, 1000, 1000),
+        ]
+    frame = pd.DataFrame(rows, columns=["season", "player_id", "position", "age", "games", "points", "S", "E"])
+    frame["r"] = np.log(frame["E"] / frame["S"])
+    frame["d"] = frame["E"] - frame["S"]
+    frame["start_trades_window"] = [5] * len(frame)
+    frame["end_trades_window"] = [10] * len(frame)
+    frame["start_evidence"] = [2] * len(frame)
+    frame["end_evidence"] = [3] * len(frame)
+    frame["production_E_hat"] = ([1800, 700, 900] * ((len(frame) + 2) // 3))[: len(frame)]
+    frame["no_production_E_hat"] = ([1600, 600, 1000] * ((len(frame) + 2) // 3))[: len(frame)]
+    for model in ("production", "no_production"):
+        frame[f"{model}_r_hat"] = np.log(frame[f"{model}_E_hat"] / frame["S"])
+        frame[f"{model}_d_hat"] = frame[f"{model}_E_hat"] - frame["S"]
+    frame["no_change_E_hat"] = frame["S"]
+    frame["no_change_r_hat"] = 0.0
+    frame["no_change_d_hat"] = 0.0
+    frame["production_value_tier"] = (["low", "mid", "high"] * ((len(frame) + 2) // 3))[: len(frame)]
+    return frame
+
+
+def test_direction_uses_exact_symmetric_flat_band_boundaries():
+    values = np.array([-FLAT_BAND, -FLAT_BAND - 1e-12, 0.0, FLAT_BAND, FLAT_BAND + 1e-12])
+    assert direction(values).tolist() == ["flat", "down", "flat", "flat", "up"]
+
+
+def test_hand_computed_error_and_skill_metrics_use_pooled_denominators():
+    frame = _frame()
+    result = score_model(frame, "production")
+    log_error = np.abs(frame["production_r_hat"] - frame["r"])
+    value_error = np.abs(frame["production_d_hat"] - frame["d"])
+    assert result["n"] == 3
+    assert result["mae_log"]["value"] == pytest.approx(log_error.mean())
+    assert result["rmse_log"]["value"] == pytest.approx(np.sqrt(np.mean(log_error**2)))
+    assert result["median_abs_log_error"]["value"] == pytest.approx(np.median(log_error))
+    assert result["p90_abs_log_error"]["value"] == pytest.approx(np.quantile(log_error, 0.9, method="linear"))
+    assert result["signed_bias_log"]["value"] == pytest.approx((frame["production_r_hat"] - frame["r"]).mean())
+    assert result["mean_actual_movement"]["value"] == pytest.approx(frame["r"].mean())
+    assert result["mean_predicted_movement"]["value"] == pytest.approx(frame["production_r_hat"].mean())
+    assert result["mae_value"]["value"] == pytest.approx(value_error.mean())
+    assert result["value_change_mae"]["value"] == result["mae_value"]["value"]
+    assert result["skill_log"]["value"] == pytest.approx(1 - log_error.mean() / np.mean(np.abs(frame["r"])))
+    assert result["skill_value"]["value"] == pytest.approx(1 - value_error.mean() / np.mean(np.abs(frame["d"])))
+
+
+def test_zero_denominators_empty_and_nonfinite_predictions_are_explicit():
+    frame = _frame([(2020, "a", "QB", 24, 10, 1, 1000, 1000)])
+    result = score_model(frame, "no_change")
+    assert result["skill_log"] == {"value": None, "reason": "zero_baseline_error"}
+    assert result["skill_value"] == {"value": None, "reason": "zero_baseline_error"}
+    empty = score_model(frame.iloc[0:0].copy(), "production")
+    assert empty["mae_log"] == {"value": None, "reason": "empty_cohort"}
+    bad = frame.copy()
+    bad["production_E_hat"] = bad["production_E_hat"].astype(float)
+    bad.loc[0, "production_E_hat"] = np.inf
+    with pytest.raises(ContractRefusal):
+        score_model(bad, "production")
+
+
+def test_metric_input_requires_sorted_unique_keys_and_finite_actuals():
+    frame = _frame()
+    with pytest.raises(ContractRefusal):
+        score_model(frame.iloc[::-1].reset_index(drop=True), "production")
+    bad = frame.copy()
+    bad["r"] = bad["r"].astype(float)
+    bad.loc[0, "r"] = np.nan
+    with pytest.raises(ContractRefusal):
+        score_model(bad, "production")
+
+
+def test_score_contrast_signs_and_common_endpoint_error_are_explicit():
+    result = score_contrast(_frame(), "production", "no_production")
+    assert result["mae_log_difference"]["value"] == pytest.approx(
+        result["left"]["mae_log"]["value"] - result["right"]["mae_log"]["value"]
+    )
+    assert result["positive_mae_log_improvement"]["value"] == pytest.approx(
+        result["right"]["mae_log"]["value"] - result["left"]["mae_log"]["value"]
+    )
+    assert "left - right" in result["sign_convention"]
+
+
+def test_direction_baselines_majority_ties_and_mover_accuracy():
+    actual = np.array([-2 * FLAT_BAND, 0, 2 * FLAT_BAND])
+    assert training_majority_class(np.array([-1, 1, 0])) == "flat"
+    assert training_majority_class(np.array([-1, -2 * FLAT_BAND, 2 * FLAT_BAND])) == "down"
+    frame = _frame()
+    frame["r"] = actual
+    frame["d"] = actual
+    result = score_direction_baselines(frame, "flat")
+    assert result["no_change"]["direction_accuracy"]["value"] == pytest.approx(1 / 3)
+    assert result["no_change"]["mover_accuracy"]["value"] == 0.0
+    assert result["majority"]["direction_accuracy"]["value"] == pytest.approx(1 / 3)
+
+
+def test_direction_confusion_and_supported_balanced_accuracy_have_absent_nulls():
+    frame = _frame()
+    frame["r"] = [-2 * FLAT_BAND, 0.0, 2 * FLAT_BAND]
+    frame["production_r_hat"] = [-2 * FLAT_BAND, 0.0, 2 * FLAT_BAND]
+    frame["production_d_hat"] = frame["production_r_hat"]
+    score = score_model(frame, "production")["direction"]
+    assert score["confusion_matrix"] == {"down": {"down": 1, "flat": 0, "up": 0}, "flat": {"down": 0, "flat": 1, "up": 0}, "up": {"down": 0, "flat": 0, "up": 1}}
+    assert score["balanced_accuracy"]["value"] == 1.0
+    absent = score_direction_baselines(frame.assign(r=[0.0, 0.0, 0.0]), "flat")["no_change"]
+    assert absent["class_recalls"]["down"] == {"value": None, "reason": "absent_class"}
+
+
+def test_calibration_bins_rank_and_tail_metrics_include_empty_cells_and_ties():
+    frame = _frame()
+    result = score_model(frame, "production")
+    assert len(result["calibration"]["bins"]) == 8
+    assert result["calibration"]["ols"]["slope"]["value"] is not None
+    assert result["rank"]["spearman"]["value"] is not None
+    assert "season_position" in result["rank"]
+    assert result["tail"]["largest_errors"] == sorted(
+        result["tail"]["largest_errors"], key=lambda row: (-row["absolute_log_error"], row["season"], row["player_id"])
+    )
+    assert result["tail"]["large_move"]["threshold"] == pytest.approx(math.log(1.5))
+
+
+def test_constant_prediction_rank_and_ols_are_nullable():
+    frame = _frame()
+    frame["production_E_hat"] = frame["S"]
+    frame["production_r_hat"] = 0.0
+    frame["production_d_hat"] = 0.0
+    result = score_model(frame, "production")
+    assert result["rank"]["spearman"] == {"value": None, "reason": "constant_prediction"}
+    assert result["calibration"]["ols"]["slope"] == {"value": None, "reason": "constant_prediction"}
+    assert result["tail"]["top_bottom"] == {"value": None, "reason": "constant_prediction"}
+
+
+def test_rank_uses_average_ties_and_top_k_uses_player_id_boundary_order():
+    frame = _frame([
+        (2020, "b", "QB", 24, 10, 100, 1000, 1200),
+        (2020, "a", "QB", 24, 10, 100, 1000, 1100),
+        (2020, "c", "QB", 24, 10, 100, 1000, 900),
+    ])
+    frame["production_E_hat"] = [1100.0, 1100.0, 900.0]
+    frame["production_r_hat"] = np.log(frame["production_E_hat"] / frame["S"])
+    frame["production_d_hat"] = frame["production_E_hat"] - frame["S"]
+    frame = frame.sort_values(["season", "player_id"]).reset_index(drop=True)
+    rank = score_model(frame, "production")["rank"]
+    assert rank["spearman"]["value"] == pytest.approx(np.corrcoef(pd.Series(frame["r"]).rank(method="average"), pd.Series(frame["production_r_hat"]).rank(method="average"))[0, 1])
+    cell = rank["top_bottom"]["cells"][0]
+    assert cell["k"] == 1 and cell["top_boundary_tie_count"] == 2
+    assert cell["top_mean_actual_movement"] == pytest.approx(np.log(1100 / 1000))
+
+
+def test_large_move_precision_recall_and_largest_error_limit_are_deterministic():
+    rows = [(2020, f"p{i:02d}", "QB", 24, 10, 100, 1000, 2000 if i == 0 else 500 if i == 1 else 1000) for i in range(25)]
+    frame = _frame(rows)
+    frame["production_E_hat"] = 1000.0
+    frame["production_r_hat"] = 0.0
+    frame["production_d_hat"] = 0.0
+    tail = score_model(frame, "production")["tail"]
+    assert tail["large_move"]["positive_recall"]["value"] == 0.0
+    assert tail["large_move"]["positive_precision"] == {"value": None, "reason": "no_predicted_positives"}
+    assert len(tail["largest_errors"]) == 20
+    assert tail["largest_errors"] == sorted(tail["largest_errors"], key=lambda x: (-x["absolute_log_error"], x["season"], x["player_id"]))
+
+
+def test_slices_emit_requested_empty_cells_and_support_descriptions():
+    frame = _frame()
+    result = score_slices(frame, ("production", "no_change"))
+    assert "overall" in result
+    assert "season" in result and "2022" in result["season"]["production"]
+    assert "position" in result and "TE" in result["position"]["production"]
+    assert "season_position" in result
+    assert "value_tier" in result
+    assert "start_liquidity" in result["production"]
+    assert result["production"]["position"]["TE"]["low_support"] is True
+    assert result["production"]["endpoint_liquidity"]["25+"]["retrospective"] is True
+
+
+def test_target_diagnostics_are_labeled_scale_drift_observations():
+    result = target_diagnostics(_frame())
+    assert result["interpretation"] == "scale_drift_observation_not_normalization_or_correction"
+    assert result["season"]["2020"]["start_median"]["value"] == 1000
+    assert result["season"]["2020"]["end_median"]["value"] == 1250
+
+
+def test_macro_by_season_does_not_average_undefined_values():
+    result = macro_by_season([
+        {"test_season": 2021, "skill_log": {"value": 0.2, "reason": None}},
+        {"test_season": 2022, "skill_log": {"value": None, "reason": "zero_baseline_error"}},
+    ])
+    assert result["skill_log"]["value"] == pytest.approx(0.2)
+    assert result["skill_log"]["n_defined"] == 1
+    assert result["skill_log"]["n_total"] == 2
