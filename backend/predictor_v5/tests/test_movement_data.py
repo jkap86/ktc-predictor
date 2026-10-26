@@ -196,16 +196,19 @@ def test_load_pinned_bundle_refuses_tampered_fixed_bytes(tmp_path, monkeypatch):
     specs, relative = _temporary_pinned_tree(tmp_path)
     monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
     labels_path = tmp_path / relative["labels"]
-    labels_path.write_bytes(labels_path.read_bytes() + b"\n")
+    original_labels = labels_path.read_bytes()
+    labels_path.write_bytes(original_labels + b"\n")
     messages = []
     for _ in range(2):
         with pytest.raises(ContractRefusal) as caught:
             load_pinned_bundle(tmp_path, ktc_mode="off")
         messages.append(str(caught.value))
     assert messages[0] == messages[1]
+    assert messages[0] == "pinned labels hash mismatch"
+    labels_path.write_bytes(original_labels)
     archive_path = tmp_path / relative["archive"]
     archive_path.write_bytes(archive_path.read_bytes()[:-1] + b"0")
-    with pytest.raises(ContractRefusal):
+    with pytest.raises(ContractRefusal, match="pinned archive hash mismatch"):
         load_pinned_bundle(tmp_path, ktc_mode="off")
 
 
@@ -229,11 +232,36 @@ def test_load_pinned_bundle_refuses_member_hash_and_sidecar_cross_hash(tmp_path,
     monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
     with pytest.raises(ContractRefusal, match="member"):
         load_pinned_bundle(tmp_path, ktc_mode="off")
-    provenance["training_data"]["sha256"] = "0" * 64
+
+
+@pytest.mark.parametrize(
+    "section,field,value",
+    [
+        ("label_file", "file", "wrong-label.csv"),
+        ("label_file", "sha256", "0" * 64),
+        ("training_data", "file", "wrong-training.zip"),
+        ("training_data", "sha256", "0" * 64),
+    ],
+)
+def test_load_pinned_bundle_refuses_each_sidecar_cross_hash(section, field, value, tmp_path, monkeypatch):
+    specs, relative = _temporary_pinned_tree(tmp_path)
+    provenance_path = tmp_path / relative["provenance"]
+    provenance = json.loads(provenance_path.read_text())
+    provenance[section][field] = value
     provenance_raw = json.dumps(provenance, indent=2).encode()
     provenance_path.write_bytes(provenance_raw)
     specs["provenance"]["sha256"] = hashlib.sha256(provenance_raw).hexdigest()
+    monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
     with pytest.raises(ContractRefusal, match="cross-hash"):
+        load_pinned_bundle(tmp_path, ktc_mode="off")
+
+
+def test_load_pinned_bundle_refuses_tampered_provenance_bytes(tmp_path, monkeypatch):
+    specs, relative = _temporary_pinned_tree(tmp_path)
+    monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
+    provenance_path = tmp_path / relative["provenance"]
+    provenance_path.write_bytes(provenance_path.read_bytes() + b"\n")
+    with pytest.raises(ContractRefusal, match="pinned provenance hash mismatch"):
         load_pinned_bundle(tmp_path, ktc_mode="off")
 
 
