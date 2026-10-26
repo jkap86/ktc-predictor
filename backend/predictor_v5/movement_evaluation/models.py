@@ -22,10 +22,12 @@ from .contract import (
     TARGET_ID,
     ContractRefusal,
     FoldSpec,
+    KtcMode,
     sorted_keys,
+    validate_ktc_mode,
 )
 from .data import EvaluationData
-from .metrics import training_majority_class
+from .metrics import score_model, training_majority_class
 
 _MODEL_COLUMNS = (
     "player_id",
@@ -49,6 +51,14 @@ _OUTPUT_COLUMNS = (
     "end_evidence",
     "start_trades_window",
     "end_trades_window",
+)
+_KTC_TARGET_ID = "archive-ktc-diagnostic-v1"
+_KTC_SCALE_MAX = 9999.0
+_KTC_MODEL_NAMES = (
+    "ktc_ratio_transplant",
+    "backchannel_production_refit",
+    "backchannel_no_production_refit",
+    "backchannel_no_change",
 )
 
 
@@ -448,3 +458,313 @@ def attach_start_observable_diagnostics(
             "primary_metrics_included": False,
         }
     return result
+
+
+def _off_ktc_payload() -> dict[str, object]:
+    return {
+        "status": "off",
+        "provenance_limits": {
+            "provenance_limited": True,
+            "reason": "diagnostic_off",
+        },
+        "cohorts": [],
+        "fits": [],
+        "scores": {"value": None, "reason": "diagnostic_off"},
+        "predictions": [],
+    }
+
+
+def _ktc_invalid_reason(row: pd.Series) -> str | None:
+    for column in ("start_ktc", "end_ktc"):
+        value = row[column]
+        if pd.isna(value):
+            return f"missing_{column}"
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return f"nonnumeric_{column}"
+        if not np.isfinite(numeric):
+            return f"nonfinite_{column}"
+        if numeric <= 0:
+            return f"nonpositive_{column}"
+        if numeric > _KTC_SCALE_MAX:
+            return f"above_max_{column}"
+    return None
+
+
+def _ktc_rows(data: EvaluationData) -> tuple[pd.DataFrame, pd.Series]:
+    if not isinstance(data, EvaluationData):
+        _refuse("expected EvaluationData")
+    if not isinstance(data.primary_scored, pd.DataFrame):
+        _refuse("primary scored rows must be a pandas DataFrame")
+    missing = sorted({"start_ktc", "end_ktc"} - set(data.primary_scored.columns))
+    if missing:
+        _refuse(f"archive KTC diagnostic rows are missing columns: {', '.join(missing)}")
+    ordered = _validate_rows(data.primary_scored)
+    reasons = ordered.apply(_ktc_invalid_reason, axis=1)
+    return ordered, reasons
+
+
+def _key_records(frame: pd.DataFrame) -> list[list[object]]:
+    return [
+        [int(season), str(player_id)]
+        for season, player_id in frame[["season", "player_id"]].itertuples(
+            index=False, name=None
+        )
+    ]
+
+
+def _ktc_attrition(frame: pd.DataFrame, reasons: pd.Series) -> dict[str, object]:
+    selected_reasons = reasons.loc[frame.index]
+    invalid = selected_reasons.notna()
+    invalid_frame = frame.loc[invalid]
+    counts = selected_reasons.loc[invalid].value_counts(sort=False).to_dict()
+    return {
+        "count": int(invalid.sum()),
+        "keys": _key_records(invalid_frame),
+        "reasons": {name: int(counts[name]) for name in sorted(counts)},
+    }
+
+
+def _ktc_model_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    model_frame = _model_frame(frame, zero_points=False)
+    model_frame["start_value"] = frame["start_ktc"].to_numpy(dtype=float)
+    model_frame["end_value"] = frame["end_ktc"].to_numpy(dtype=float)
+    return model_frame
+
+
+def _ktc_score_frame(
+    test: pd.DataFrame,
+    ktc_prediction: np.ndarray,
+    backchannel_production: np.ndarray,
+    backchannel_no_production: np.ndarray,
+) -> pd.DataFrame:
+    starts = test["start_value"].to_numpy(dtype=float)
+    ends = test["end_value"].to_numpy(dtype=float)
+    ktc_starts = test["start_ktc"].to_numpy(dtype=float)
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            ratio = np.divide(ktc_prediction, ktc_starts)
+            transplant = np.multiply(ratio, starts)
+    except FloatingPointError as exc:
+        _refuse("KTC ratio transplant must be finite and representable", exc)
+    if (
+        not np.isfinite(ratio).all()
+        or (ratio <= 0).any()
+        or not np.isfinite(transplant).all()
+        or (transplant <= 0).any()
+    ):
+        _refuse("KTC ratio transplant must be finite and representable")
+
+    present = [column for column in _OUTPUT_COLUMNS if column in test.columns]
+    frame = test.loc[:, present].copy(deep=True)
+    frame["S"] = starts
+    frame["E"] = ends
+    frame["r"] = _log_ratio(ends, starts, name="KTC diagnostic actual movement")
+    frame["d"] = ends - starts
+    predictions = {
+        "ktc_ratio_transplant": transplant,
+        "backchannel_production_refit": backchannel_production,
+        "backchannel_no_production_refit": backchannel_no_production,
+        "backchannel_no_change": starts,
+    }
+    for name, endpoint in predictions.items():
+        frame[f"{name}_E_hat"] = endpoint
+        frame[f"{name}_r_hat"] = _log_ratio(
+            endpoint, starts, name=f"{name} diagnostic movement"
+        )
+        frame[f"{name}_d_hat"] = endpoint - starts
+    frame["ktc_S"] = ktc_starts
+    frame["ktc_E"] = test["end_ktc"].to_numpy(dtype=float)
+    frame["ktc_E_hat"] = ktc_prediction
+    frame["ktc_ratio"] = ratio
+    return frame.reset_index(drop=True)
+
+
+def _ktc_prediction_records(frame: pd.DataFrame) -> list[dict[str, object]]:
+    columns = (
+        "season",
+        "player_id",
+        "position",
+        "S",
+        "E",
+        "ktc_S",
+        "ktc_E",
+        "ktc_E_hat",
+        "ktc_ratio",
+        "ktc_ratio_transplant_E_hat",
+        "backchannel_production_refit_E_hat",
+        "backchannel_no_production_refit_E_hat",
+        "backchannel_no_change_E_hat",
+    )
+    records: list[dict[str, object]] = []
+    for row in frame.loc[:, columns].itertuples(index=False, name=None):
+        record = dict(zip(columns, row, strict=True))
+        record["season"] = int(record["season"])
+        record["player_id"] = str(record["player_id"])
+        record["position"] = str(record["position"])
+        for column in columns[3:]:
+            record[column] = float(record[column])
+        records.append(record)
+    return records
+
+
+def _require_source_cap(predicted: np.ndarray, cap: float, name: str) -> None:
+    if (predicted > cap).any():
+        _refuse(f"{name} learned predictions exceed source cap")
+
+
+def _validate_primary_fold_keys(
+    ordered: pd.DataFrame, primary_folds: Sequence[FoldResult] | None
+) -> None:
+    if primary_folds is None:
+        return
+    if tuple(fold.spec for fold in primary_folds) != FOLDS:
+        _refuse("KTC diagnostic requires the complete fixed primary fold sequence")
+    for fold in primary_folds:
+        train = ordered.loc[ordered["season"].isin(fold.spec.train_seasons)]
+        test = ordered.loc[ordered["season"] == fold.spec.test_season]
+        if fold.train_keys != sorted_keys(train):
+            _refuse("primary fold train keys do not match primary scored rows")
+        if fold.test_keys != sorted_keys(test):
+            _refuse("primary fold test keys do not match primary scored rows")
+
+
+def run_ktc_diagnostic(
+    data: EvaluationData,
+    *,
+    mode: KtcMode = "off",
+    primary_folds: Sequence[FoldResult] | None = None,
+    model_factory: Callable[..., WhatIfModel] = WhatIfModel,
+) -> dict[str, object]:
+    """Run the synthetic-tested optional KTC diagnostic without affecting primary folds."""
+    validated_mode = validate_ktc_mode(mode)
+    if validated_mode == "off":
+        if not isinstance(data, EvaluationData):
+            _refuse("expected EvaluationData")
+        return _off_ktc_payload()
+
+    ordered, reasons = _ktc_rows(data)
+    _validate_primary_fold_keys(ordered, primary_folds)
+    valid = reasons.isna()
+    cohorts: list[dict[str, object]] = []
+    fits: list[dict[str, object]] = []
+    scores: list[dict[str, object]] = []
+    predictions: list[dict[str, object]] = []
+
+    for spec in FOLDS:
+        train_primary = ordered.loc[ordered["season"].isin(spec.train_seasons)]
+        test_primary = ordered.loc[ordered["season"] == spec.test_season]
+        train = train_primary.loc[valid.loc[train_primary.index]].reset_index(drop=True)
+        test = test_primary.loc[valid.loc[test_primary.index]].reset_index(drop=True)
+        missing_train_seasons = [
+            season for season in spec.train_seasons if not (train["season"] == season).any()
+        ]
+        unavailable_reason = None
+        if missing_train_seasons:
+            unavailable_reason = "empty_required_train_season"
+        elif test.empty:
+            unavailable_reason = "empty_test_intersection"
+        cohort: dict[str, object] = {
+            "test_season": spec.test_season,
+            "train_seasons": list(spec.train_seasons),
+            "status": "unavailable" if unavailable_reason else "available",
+            "unavailable_reason": unavailable_reason,
+            "missing_train_seasons": missing_train_seasons,
+            "primary_train_count": len(train_primary),
+            "primary_test_count": len(test_primary),
+            "train_intersection_count": len(train),
+            "test_intersection_count": len(test),
+            "train_intersection_keys": _key_records(train),
+            "test_intersection_keys": _key_records(test),
+            "train_attrition": _ktc_attrition(train_primary, reasons),
+            "test_attrition": _ktc_attrition(test_primary, reasons),
+        }
+        cohorts.append(cohort)
+        if unavailable_reason:
+            continue
+
+        train_keys = sorted_keys(train)
+        test_keys = sorted_keys(test)
+        ktc_model = _fit(
+            model_factory(label_source=_KTC_TARGET_ID, scale_max=_KTC_SCALE_MAX),
+            _ktc_model_frame(train),
+        )
+        backchannel_production_model = _fit(
+            model_factory(label_source=TARGET_ID, scale_max=SCALE_MAX),
+            _model_frame(train, zero_points=False),
+        )
+        backchannel_no_production_model = _fit(
+            model_factory(label_source=TARGET_ID, scale_max=SCALE_MAX),
+            _model_frame(train, zero_points=True),
+        )
+        ktc_prediction = _predict(ktc_model, _ktc_model_frame(test), test_keys)
+        _require_source_cap(ktc_prediction, _KTC_SCALE_MAX, "KTC")
+        backchannel_production = _predict(
+            backchannel_production_model,
+            _model_frame(test, zero_points=False),
+            test_keys,
+        )
+        backchannel_no_production = _predict(
+            backchannel_no_production_model,
+            _model_frame(test, zero_points=True),
+            test_keys,
+        )
+        _require_source_cap(
+            backchannel_production, SCALE_MAX, "Backchannel production"
+        )
+        _require_source_cap(
+            backchannel_no_production,
+            SCALE_MAX,
+            "Backchannel no-production",
+        )
+        for name, target, scale_max, points_mode in (
+            ("ktc_production", _KTC_TARGET_ID, _KTC_SCALE_MAX, "observed"),
+            ("backchannel_production_refit", TARGET_ID, SCALE_MAX, "observed"),
+            ("backchannel_no_production_refit", TARGET_ID, SCALE_MAX, "constant_zero"),
+        ):
+            fits.append(
+                {
+                    "test_season": spec.test_season,
+                    "name": name,
+                    "target": target,
+                    "scale_max": scale_max,
+                    "points_mode": points_mode,
+                    "train_keys": [list(key) for key in train_keys],
+                }
+            )
+
+        score_frame = _ktc_score_frame(
+            test,
+            ktc_prediction,
+            backchannel_production,
+            backchannel_no_production,
+        )
+        scores.append(
+            {
+                "test_season": spec.test_season,
+                "test_keys": [list(key) for key in test_keys],
+                "target": "backchannel_end_value",
+                "start": "backchannel_start_value",
+                "baseline": "backchannel_no_change",
+                "models": {
+                    name: score_model(score_frame, name) for name in _KTC_MODEL_NAMES
+                },
+                "cross_target_subtractions": [],
+            }
+        )
+        predictions.extend(_ktc_prediction_records(score_frame))
+
+    return {
+        "status": "diagnostic_only",
+        "provenance_limits": {
+            "provenance_limited": True,
+            "raw_observation_chain": "unverified_archive_fields",
+            "weekly_ktc_used": False,
+            "ratio_transplant": "uncalibrated_cross_market_comparability",
+        },
+        "cohorts": cohorts,
+        "fits": fits,
+        "scores": scores,
+        "predictions": predictions,
+    }
