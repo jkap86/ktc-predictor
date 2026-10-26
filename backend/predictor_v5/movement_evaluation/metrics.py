@@ -94,6 +94,8 @@ def _validate_frame(frame: pd.DataFrame, model: str | None = None) -> None:
         endpoint = _array(frame[f"{model}_E_hat"].to_numpy(), name=f"{model}_E_hat")
         if (endpoint <= 0).any():
             raise ContractRefusal(f"{model}_E_hat must be strictly positive")
+        if (endpoint > SCALE_MAX).any():
+            raise ContractRefusal(f"{model}_E_hat exceeds the scale cap")
         predicted_r = _array(frame[f"{model}_r_hat"].to_numpy(), name=f"{model}_r_hat")
         predicted_d = _array(frame[f"{model}_d_hat"].to_numpy(), name=f"{model}_d_hat")
         if not np.allclose(predicted_r, np.log(endpoint / starts), rtol=1e-10, atol=1e-12):
@@ -349,10 +351,12 @@ def score_model(frame: pd.DataFrame, model: str) -> dict[str, object]:
 
 
 def _distribution(values: Any) -> dict[str, object]:
-    present = pd.Series(values).dropna()
-    if len(present) == 0:
+    raw = pd.Series(values)
+    if raw.isna().any():
+        raise ContractRefusal("descriptive distribution contains a missing/nonfinite value")
+    if len(raw) == 0:
         return {"n": 0, "mean": _null("empty_cohort"), "median": _null("empty_cohort"), "min": _null("empty_cohort"), "max": _null("empty_cohort")}
-    arr = _array(present.to_numpy())
+    arr = _array(raw.to_numpy())
     return {"n": len(arr), "mean": _null(None, arr.mean()), "median": _null(None, np.median(arr)), "min": _null(None, arr.min()), "max": _null(None, arr.max())}
 
 
@@ -360,8 +364,8 @@ def _liquidity(frame: pd.DataFrame, endpoint: str) -> pd.Series:
     names = (f"{endpoint}_trades_window", f"{endpoint}_trades")
     for name in names:
         if name in frame:
-            return pd.to_numeric(frame[name], errors="coerce")
-    return pd.Series(np.nan, index=frame.index)
+            return frame[name]
+    return pd.Series(dtype=float)
 
 
 def _validate_slice_inputs(frame: pd.DataFrame) -> None:
@@ -378,8 +382,8 @@ def _validate_slice_inputs(frame: pd.DataFrame) -> None:
         raw = frame[name]
         numeric = pd.to_numeric(raw, errors="coerce")
         malformed = raw.notna() & numeric.isna()
-        if malformed.any() or numeric.isna().any() or (~np.isfinite(numeric.to_numpy(dtype=float))).any() or (numeric < 0).any():
-            raise ContractRefusal(f"{endpoint} liquidity must be finite and nonnegative")
+        if malformed.any() or numeric.isna().any() or (~np.isfinite(numeric.to_numpy(dtype=float))).any() or (numeric < 5).any():
+            raise ContractRefusal(f"{endpoint} liquidity must be finite and at least 5")
 
 
 def _liquidity_band(values: pd.Series) -> pd.Series:
@@ -449,8 +453,14 @@ def score_contrast(frame: pd.DataFrame, left: str, right: str) -> dict[str, obje
     rank_difference["n_cells"] = len(common_cells)
     per_position: dict[str, dict[str, object]] = {}
     for position in POSITIONS:
-        position_values = [value for key, value in zip(common_cells, rank_differences) if key.endswith(f":{position}")]
-        per_position[position] = _null("no_common_defined_cells" if not position_values else None, None if not position_values else float(np.mean(position_values)))
+        position_cells = [key for key in common_cells if key.endswith(f":{position}")]
+        position_values = [rank_differences[common_cells.index(key)] for key in position_cells]
+        position_metric = _null("no_common_defined_cells" if not position_values else None, None if not position_values else float(np.mean(position_values)))
+        per_position[position] = {
+            **position_metric,
+            "n_cells": len(position_cells),
+            "included_cells": position_cells,
+        }
     rank_difference["per_position"] = per_position
 
     out: dict[str, object] = {

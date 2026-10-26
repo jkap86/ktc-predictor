@@ -256,16 +256,86 @@ def test_slices_refuse_missing_or_malformed_tiers_and_liquidity():
         score_slices(bad_liquidity, ("production",))
 
 
+def test_liquidity_requires_primary_domain_and_keeps_exact_band_boundaries():
+    below = _frame()
+    below["value_tier"] = ["low", "mid", "high"]
+    below["start_trades_window"] = [4, 5, 9]
+    with pytest.raises(ContractRefusal):
+        score_slices(below, ("production",))
+    below = _frame()
+    below["value_tier"] = ["low", "mid", "high"]
+    below["end_trades_window"] = [4, 5, 9]
+    with pytest.raises(ContractRefusal):
+        score_slices(below, ("production",))
+    rows = [(2020, f"p{i}", "QB", 24, 10, 100, 1000, 1100 + i) for i in range(5)]
+    boundary = _frame(rows)
+    boundary["value_tier"] = ["low", "mid", "high", "low", "mid"]
+    boundary["start_trades_window"] = [5, 9, 10, 24, 25]
+    boundary["end_trades_window"] = [5, 9, 10, 24, 25]
+    sliced = score_slices(boundary, ("production",))["production"]["start_liquidity"]
+    assert [sliced[key]["n"] for key in ("5-9", "10-24", "25+")] == [2, 2, 1]
+
+
 def test_nonfinite_descriptive_values_and_macro_values_refuse_and_outputs_serialize():
     bad = _frame()
     bad["value_tier"] = ["low", "mid", "high"]
     bad["age"] = [24.0, np.inf, 26.0]
     with pytest.raises(ContractRefusal):
         score_model(bad, "production")
+    bad = _frame()
+    bad["age"] = [24.0, np.nan, 26.0]
+    with pytest.raises(ContractRefusal):
+        score_model(bad, "production")
+    bad = _frame()
+    bad["start_trades_window"] = [5, "malformed", 25]
+    with pytest.raises(ContractRefusal):
+        score_model(bad, "production")
     with pytest.raises(ContractRefusal):
         macro_by_season([{"mae_log": {"value": np.inf, "reason": None}}])
     result = score_model(_frame(), "production")
     json.dumps(result, allow_nan=False)
+
+
+def test_cap_count_requires_exact_cap_and_above_cap_prediction_refuses():
+    capped = _frame([(2020, "a", "QB", 24, 10, 1, 1000, 2000)])
+    capped["production_E_hat"] = float(10000)
+    capped["production_r_hat"] = np.log(capped["production_E_hat"] / capped["S"])
+    capped["production_d_hat"] = capped["production_E_hat"] - capped["S"]
+    assert score_model(capped, "production")["clipping"]["at_cap_count"] == 1
+    below = capped.copy()
+    below["production_E_hat"] = 9999.0
+    below["production_r_hat"] = np.log(below["production_E_hat"] / below["S"])
+    below["production_d_hat"] = below["production_E_hat"] - below["S"]
+    assert score_model(below, "production")["clipping"]["at_cap_count"] == 0
+    above = capped.copy()
+    above["production_E_hat"] = 10001.0
+    above["production_r_hat"] = np.log(above["production_E_hat"] / above["S"])
+    above["production_d_hat"] = above["production_E_hat"] - above["S"]
+    with pytest.raises(ContractRefusal):
+        score_model(above, "production")
+
+
+def test_per_position_rank_contrast_has_membership_and_numeric_aggregates():
+    rows = []
+    for position in ("QB", "RB", "TE", "WR"):
+        for suffix, end in (("a", 1200), ("b", 900)):
+            rows.append((2020, f"{position}-{suffix}", position, 24, 10, 100, 1000, end))
+    frame = _frame(rows)
+    frame["no_production_E_hat"] = frame["E"]
+    frame["no_production_r_hat"] = frame["r"]
+    frame["no_production_d_hat"] = frame["d"]
+    contrast = score_contrast(frame, "production", "no_production")
+    rank = contrast["movement_spearman_difference"]
+    assert rank["n_cells"] == 4
+    assert rank["included_cells"] == [f"2020:{position}" for position in ("QB", "RB", "TE", "WR")]
+    for position in ("QB", "RB", "TE", "WR"):
+        assert rank["per_position"][position]["n_cells"] == 1
+        assert rank["per_position"][position]["included_cells"] == [f"2020:{position}"]
+        expected = (
+            contrast["left"]["rank"]["season_position"][f"2020:{position}"]["spearman"]["value"]
+            - contrast["right"]["rank"]["season_position"][f"2020:{position}"]["spearman"]["value"]
+        )
+        assert rank["per_position"][position]["value"] == pytest.approx(expected)
 
 
 def test_target_diagnostics_are_labeled_scale_drift_observations():
