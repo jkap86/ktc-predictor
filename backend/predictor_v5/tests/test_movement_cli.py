@@ -414,6 +414,62 @@ def test_main_maps_real_publisher_enospc_to_exit_one_without_partial_output(
     assert not list(artifacts.rglob(".*.tmp.*"))
 
 
+def test_main_maps_removed_output_parent_race_to_exit_two_without_partial_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo_root = tmp_path / "repo"
+    artifacts = repo_root / "backend/predictor_v5/artifacts"
+    artifacts.mkdir(parents=True)
+    synthetic_cli = (
+        repo_root / "backend/predictor_v5/movement_evaluation/__main__.py"
+    )
+    bundle = SimpleNamespace()
+    data = SimpleNamespace(primary_scored="primary")
+    folds = ("folds",)
+    identity = {"synthetic": "removed-output-parent-race"}
+    digest = hashlib.sha256(report_module.canonical_bytes(identity)).hexdigest()
+    report = {"run_identity": identity, "run_sha256": digest}
+
+    monkeypatch.setattr(cli_module, "__file__", str(synthetic_cli))
+    monkeypatch.setattr(cli_module, "runtime_identity", dict)
+    monkeypatch.setattr(
+        cli_module,
+        "source_identities",
+        lambda _root: {"model.py": MODEL_SOURCE_SHA256},
+    )
+    monkeypatch.setattr(cli_module, "load_pinned_bundle", lambda *_args, **_kwargs: bundle)
+    monkeypatch.setattr(cli_module, "prepare_evaluation_data", lambda value: data)
+    monkeypatch.setattr(cli_module, "run_primary_folds", lambda _rows: folds)
+    monkeypatch.setattr(cli_module, "summarize_primary", lambda _folds: ((), {}))
+    monkeypatch.setattr(
+        cli_module, "attach_start_observable_diagnostics", lambda *_args: {}
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "run_ktc_diagnostic",
+        lambda *_args, **_kwargs: {"status": "off"},
+    )
+    monkeypatch.setattr(cli_module, "build_report", lambda **_kwargs: report)
+    real_mkdir = report_module.os.mkdir
+
+    def remove_parent_then_mkdir(
+        path: str, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> None:
+        if path == "market_movement":
+            artifacts.rmdir()
+        real_mkdir(path, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(report_module.os, "mkdir", remove_parent_then_mkdir)
+
+    assert main([]) == 2
+    assert "movement evaluation refused" in capsys.readouterr().err
+    assert not artifacts.exists()
+    assert not list(repo_root.rglob("development-*.json"))
+    assert not list(repo_root.rglob(".*.tmp.*"))
+
+
 def test_real_runtime_reads_only_pinned_inputs_and_source_identity_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

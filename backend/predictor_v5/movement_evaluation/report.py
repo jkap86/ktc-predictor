@@ -733,6 +733,10 @@ def _anchored_output_directory(repo_root: Path):
             created = True
         except FileExistsError:
             pass
+        except OSError as exc:
+            _raise_path_error(
+                "artifacts directory changed during output directory creation", exc
+            )
         output = _open_child_directory(
             artifacts, "market_movement", "market movement output"
         )
