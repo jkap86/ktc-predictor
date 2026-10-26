@@ -148,6 +148,13 @@ def parse_archive_bytes(raw: bytes, *, include_ktc: bool) -> tuple[pd.DataFrame,
         for season_data in seasons:
             if not isinstance(season_data, dict):
                 _refuse("archive season must be an object")
+            for required_field in ("age", "years_exp"):
+                if required_field not in season_data:
+                    _refuse(f"archive season is missing {required_field}")
+            if "fantasy_points" not in season_data and "points" not in season_data:
+                _refuse("archive season is missing fantasy_points")
+            if "games_played" not in season_data and "games" not in season_data:
+                _refuse("archive season is missing games_played")
             season = _check_year(season_data.get("year"))
             key = (season, player_id)
             if key in seen:
@@ -158,15 +165,17 @@ def parse_archive_bytes(raw: bytes, *, include_ktc: bool) -> tuple[pd.DataFrame,
             assert years_exp is not None
             if years_exp < -1:
                 _refuse("years_exp is outside its supported range")
-            games = _integer(season_data.get("games_played"), "games_played", allow_none=True)
+            games_key = "games_played" if "games_played" in season_data else "games"
+            points_key = "fantasy_points" if "fantasy_points" in season_data else "points"
+            games = _integer(season_data[games_key], games_key, allow_none=True)
             if games is not None and games < 0:
-                _refuse("games_played cannot be negative")
+                _refuse(f"{games_key} cannot be negative")
             row: dict[str, Any] = {
                 "player_id": player_id,
                 "season": season,
                 "position": position,
-                "age": _optional_float(season_data.get("age"), "age"),
-                "points": _optional_float(season_data.get("fantasy_points"), "fantasy_points"),
+                "age": _optional_float(season_data["age"], "age"),
+                "points": _optional_float(season_data[points_key], points_key),
                 "games": games if games is not None else float("nan"),
                 "years_exp": years_exp,
             }
@@ -224,7 +233,7 @@ def parse_label_bytes(raw: bytes) -> pd.DataFrame:
         values = frame[column].dropna().to_numpy()
         if not all(math.isfinite(float(value)) for value in values):
             _refuse(f"{column} must be finite")
-    for column in ("start_value", "end_value", "start_trades_window", "end_trades_window"):
+    for column in ("start_value", "end_value", "end_value_next_board", "start_trades_window", "end_trades_window"):
         if (frame[column].dropna() < 0).any():
             _refuse(f"{column} cannot be negative")
     for column in ("start_trades_window", "end_trades_window", "games"):
@@ -324,7 +333,7 @@ def _validate_bundle_frames(archive: pd.DataFrame, labels: pd.DataFrame) -> None
     for frame in (archive, labels):
         for value in frame["season"]:
             _check_year(value)
-        for column in ("start_value", "end_value", "start_trades_window", "end_trades_window"):
+        for column in ("start_value", "end_value", "end_value_next_board", "start_trades_window", "end_trades_window"):
             if column in frame and (pd.to_numeric(frame[column], errors="coerce").dropna() < 0).any():
                 _refuse(f"{column} cannot be negative")
 
@@ -360,6 +369,7 @@ def prepare_evaluation_data(bundle: HistoricalBundle) -> EvaluationData:
     joined.drop(columns=["_merge"], inplace=True)
     for column in ("position", "age", "points", "games", "years_exp"):
         joined[column] = joined[f"archive_{column}"]
+    joined["position"] = joined["archive_position"].where(joined["archive_position"].notna(), joined["label_position"])
     for column in labels.columns:
         if column not in ("season", "player_id", "position", "age", "points", "games"):
             joined[column] = joined[f"label_{column}"]
@@ -450,8 +460,8 @@ def prepare_evaluation_data(bundle: HistoricalBundle) -> EvaluationData:
         "negative_point_count": int((pd.to_numeric(joined["points"], errors="coerce") < 0).sum()),
         "observed_zero_end": {"count": len(zero_end), "absolute_inputs": ["start_value", "end_value", "points"]},
         "thin_endpoint": {"count": len(thin), "trades_range": [0, 4]},
-        "scored_rate_within_available_labels": (len(primary) / len(joined)) if len(joined) else None,
-        "start_eligible_rate_within_available_labels": (int(start_eligible.sum()) / len(joined)) if len(joined) else None,
+        "scored_rate_within_available_labels": (len(primary) / len(available_labels)) if len(available_labels) else None,
+        "start_eligible_rate_within_available_labels": (int(start_eligible.sum()) / len(available_labels)) if len(available_labels) else None,
         "full_preseason_population_count": {"value": None, "reason": "not_recoverable_from_historical_export"},
         "full_preseason_coverage": {"value": None, "reason": "not_recoverable_from_historical_export"},
     }
