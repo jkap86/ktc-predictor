@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import zipfile
@@ -6,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import predictor_v5.movement_evaluation.data as movement_data
 from predictor_v5.movement_evaluation.contract import ContractRefusal
 from predictor_v5.movement_evaluation.data import (
     HistoricalBundle,
@@ -48,8 +50,8 @@ def _labels(rows):
     return pd.DataFrame(rows, columns=columns).to_csv(index=False).encode()
 
 
-def _label_row(player_id, season, *, end=1200, end_trades=6, age=25.0, points=100.0, position="QB", games=10):
-    return [player_id, season, 1000, end, position, age, games, points, 1.0, 1.0, 6, end_trades, 0.0, 0.0]
+def _label_row(player_id, season, *, end=1200, start_trades=6, end_trades=6, age=25.0, points=100.0, position="QB", games=10):
+    return [player_id, season, 1000, end, position, age, games, points, 1.0, 1.0, start_trades, end_trades, 0.0, 0.0]
 
 
 def test_parse_archive_extracts_core_without_touching_optional_ktc_fields():
@@ -150,14 +152,166 @@ def test_common_primary_cohort_is_sorted_and_one_to_one():
 
 
 def test_available_label_rates_exclude_archive_only_and_preserve_label_only_position():
-    archive, _ = parse_archive_bytes(_archive_bytes(("archive-only", "RB", [_season(2020)])), include_ktc=False)
-    labels = parse_label_bytes(_labels([_label_row("label-only", 2020, position="QB")]))
+    archive, _ = parse_archive_bytes(_archive_bytes(("matched", "QB", [_season(2020)]), ("archive-only", "RB", [_season(2020)])), include_ktc=False)
+    labels = parse_label_bytes(_labels([_label_row("matched", 2020, position="QB")]))
     result = prepare_evaluation_data(HistoricalBundle(archive, labels, {}, {}))
     available = result.coverage["available_label_population"]
     assert available["count"] == 1
-    assert result.coverage["start_eligible_rate_within_available_labels"] == 0.0
+    assert result.coverage["start_eligible_rate_within_available_labels"] == 1.0
+    assert result.coverage["scored_rate_within_available_labels"] == 1.0
     assert available["by_position"]["QB"] == 1
     assert result.coverage["archive_only_key_count"] == 1
+
+
+def test_alias_only_archive_fields_refuse():
+    alias_season = _season(2020)
+    alias_season["points"] = alias_season.pop("fantasy_points")
+    alias_season["games"] = alias_season.pop("games_played")
+    with pytest.raises(ContractRefusal):
+        parse_archive_bytes(_archive_bytes(("p1", "QB", [alias_season])), include_ktc=False)
+
+
+def _temporary_pinned_tree(tmp_path):
+    source_root = Path(__file__).parents[3]
+    relative = {
+        "labels": "backend/predictor_v5/data/backchannel_labels_2019_2025_mfl.csv",
+        "provenance": "backend/predictor_v5/data/backchannel_labels_2019_2025_mfl.provenance.json",
+        "archive": "backend/data/training-data.zip",
+    }
+    specs = {}
+    for key, rel in relative.items():
+        source = source_root / rel
+        destination = tmp_path / rel
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        raw = source.read_bytes()
+        destination.write_bytes(raw)
+        specs[key] = {"path": rel, "sha256": hashlib.sha256(raw).hexdigest()}
+    with zipfile.ZipFile(tmp_path / relative["archive"]) as archive:
+        member = archive.read("training-data.json")
+    specs["archive"].update({"member": "training-data.json", "member_sha256": hashlib.sha256(member).hexdigest()})
+    return specs, relative
+
+
+def test_load_pinned_bundle_refuses_tampered_fixed_bytes(tmp_path, monkeypatch):
+    specs, relative = _temporary_pinned_tree(tmp_path)
+    monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
+    labels_path = tmp_path / relative["labels"]
+    labels_path.write_bytes(labels_path.read_bytes() + b"\n")
+    messages = []
+    for _ in range(2):
+        with pytest.raises(ContractRefusal) as caught:
+            load_pinned_bundle(tmp_path, ktc_mode="off")
+        messages.append(str(caught.value))
+    assert messages[0] == messages[1]
+    archive_path = tmp_path / relative["archive"]
+    archive_path.write_bytes(archive_path.read_bytes()[:-1] + b"0")
+    with pytest.raises(ContractRefusal):
+        load_pinned_bundle(tmp_path, ktc_mode="off")
+
+
+def test_load_pinned_bundle_refuses_member_hash_and_sidecar_cross_hash(tmp_path, monkeypatch):
+    specs, relative = _temporary_pinned_tree(tmp_path)
+    archive_path = tmp_path / relative["archive"]
+    with zipfile.ZipFile(archive_path) as archive:
+        member = archive.read("training-data.json")
+    changed_member = member.replace(b'"players"', b'"players"', 1) + b" "
+    changed_zip = io.BytesIO()
+    with zipfile.ZipFile(changed_zip, "w") as archive:
+        archive.writestr("training-data.json", changed_member)
+    archive_path.write_bytes(changed_zip.getvalue())
+    specs["archive"]["sha256"] = hashlib.sha256(changed_zip.getvalue()).hexdigest()
+    provenance_path = tmp_path / relative["provenance"]
+    provenance = json.loads(provenance_path.read_text())
+    provenance["training_data"]["sha256"] = specs["archive"]["sha256"]
+    provenance_raw = json.dumps(provenance, indent=2).encode()
+    provenance_path.write_bytes(provenance_raw)
+    specs["provenance"]["sha256"] = hashlib.sha256(provenance_raw).hexdigest()
+    monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
+    with pytest.raises(ContractRefusal, match="member"):
+        load_pinned_bundle(tmp_path, ktc_mode="off")
+    provenance["training_data"]["sha256"] = "0" * 64
+    provenance_raw = json.dumps(provenance, indent=2).encode()
+    provenance_path.write_bytes(provenance_raw)
+    specs["provenance"]["sha256"] = hashlib.sha256(provenance_raw).hexdigest()
+    with pytest.raises(ContractRefusal, match="cross-hash"):
+        load_pinned_bundle(tmp_path, ktc_mode="off")
+
+
+def test_load_pinned_bundle_refuses_duplicate_provenance_missing_and_symlink(tmp_path, monkeypatch):
+    specs, relative = _temporary_pinned_tree(tmp_path)
+    provenance_path = tmp_path / relative["provenance"]
+    duplicate = b'{"training_data": {}, "training_data": {}}'
+    provenance_path.write_bytes(duplicate)
+    specs["provenance"]["sha256"] = hashlib.sha256(duplicate).hexdigest()
+    monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
+    with pytest.raises(ContractRefusal, match="duplicate"):
+        load_pinned_bundle(tmp_path, ktc_mode="off")
+    specs, relative = _temporary_pinned_tree(tmp_path / "missing")
+    monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
+    (tmp_path / "missing" / relative["labels"]).unlink()
+    with pytest.raises(ContractRefusal, match="missing"):
+        load_pinned_bundle(tmp_path / "missing", ktc_mode="off")
+    specs, relative = _temporary_pinned_tree(tmp_path / "symlink")
+    monkeypatch.setattr(movement_data, "INPUT_IDENTITIES", specs)
+    symlink = tmp_path / "symlink" / relative["labels"]
+    real_copy = tmp_path / "symlink" / "label-copy.csv"
+    real_copy.write_bytes(symlink.read_bytes())
+    symlink.unlink()
+    symlink.symlink_to(real_copy)
+    with pytest.raises(ContractRefusal, match="regular"):
+        load_pinned_bundle(tmp_path / "symlink", ktc_mode="off")
+
+
+def test_overlapping_ledger_uses_fixed_first_failure_order_and_flags():
+    archive_rows = [
+        ("pre", "QB", [_season(2020, games=0, years_exp=0)]),
+        ("age", "QB", [_season(2020, age=None)]),
+        ("start_missing", "QB", [_season(2020)]),
+        ("start_nonpositive", "QB", [_season(2020)]),
+        ("start_liq_missing", "QB", [_season(2020)]),
+        ("start_liq_low", "QB", [_season(2020)]),
+        ("points_missing", "QB", [_season(2020, points=None)]),
+        ("end_missing", "QB", [_season(2020)]),
+        ("end_zero", "QB", [_season(2020)]),
+        ("end_liq_missing", "QB", [_season(2020)]),
+        ("end_liq_low", "QB", [_season(2020)]),
+    ]
+    archive, _ = parse_archive_bytes(_archive_bytes(*archive_rows), include_ktc=False)
+    label_rows = [
+        _label_row("pre", 2020, end=0, end_trades=1, games=0),
+        _label_row("age", 2020, age=None, start_trades=1),
+        _label_row("start_missing", 2020, end=0, end_trades=1),
+        _label_row("start_nonpositive", 2020, end=0, end_trades=1),
+        _label_row("start_liq_missing", 2020, end=0, end_trades=1),
+        _label_row("start_liq_low", 2020, end=0, start_trades=4, end_trades=1),
+        _label_row("points_missing", 2020, points=None, end=0, end_trades=1),
+        _label_row("end_missing", 2020, end=None),
+        _label_row("end_zero", 2020, end=0),
+        _label_row("end_liq_missing", 2020, end_trades=None),
+        _label_row("end_liq_low", 2020, end_trades=4),
+        _label_row("label_only", 2020),
+    ]
+    label_rows[2][2] = None
+    label_rows[3][2] = 0
+    label_rows[4][10] = None
+    labels = parse_label_bytes(_labels(label_rows))
+    result = prepare_evaluation_data(HistoricalBundle(archive, labels, {}, {}))
+    expected = ["not_joined_to_archive", "pre_nfl", "missing_age", "missing_start", "nonpositive_start", "missing_start_liquidity", "low_start_liquidity", "missing_points", "missing_end", "zero_end", "missing_end_liquidity", "low_end_liquidity"]
+    assert result.coverage["ledger"]["first_failure"] == {reason: 1 for reason in expected}
+    missing_start = result.joined.loc[result.joined["player_id"] == "start_missing"].iloc[0]
+    assert missing_start["missing_start"] and missing_start["zero_end"]
+
+
+@pytest.mark.parametrize("delta,refuses", [(1e-9 - 1e-12, False), (1.1e-9, True)])
+def test_archive_csv_float_tolerance_boundary(delta, refuses):
+    archive, _ = parse_archive_bytes(_archive_bytes(("p1", "QB", [_season(2020, age=25.0)])), include_ktc=False)
+    labels = parse_label_bytes(_labels([_label_row("p1", 2020, age=25.0 + delta)]))
+    if refuses:
+        with pytest.raises(ContractRefusal):
+            prepare_evaluation_data(HistoricalBundle(archive, labels, {}, {}))
+    else:
+        result = prepare_evaluation_data(HistoricalBundle(archive, labels, {}, {}))
+        assert len(result.primary_scored) == 1
 
 
 def test_full_preseason_coverage_is_explicitly_unrecoverable():

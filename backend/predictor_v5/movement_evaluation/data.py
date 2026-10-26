@@ -148,13 +148,9 @@ def parse_archive_bytes(raw: bytes, *, include_ktc: bool) -> tuple[pd.DataFrame,
         for season_data in seasons:
             if not isinstance(season_data, dict):
                 _refuse("archive season must be an object")
-            for required_field in ("age", "years_exp"):
+            for required_field in ("age", "fantasy_points", "games_played", "years_exp"):
                 if required_field not in season_data:
                     _refuse(f"archive season is missing {required_field}")
-            if "fantasy_points" not in season_data and "points" not in season_data:
-                _refuse("archive season is missing fantasy_points")
-            if "games_played" not in season_data and "games" not in season_data:
-                _refuse("archive season is missing games_played")
             season = _check_year(season_data.get("year"))
             key = (season, player_id)
             if key in seen:
@@ -165,17 +161,15 @@ def parse_archive_bytes(raw: bytes, *, include_ktc: bool) -> tuple[pd.DataFrame,
             assert years_exp is not None
             if years_exp < -1:
                 _refuse("years_exp is outside its supported range")
-            games_key = "games_played" if "games_played" in season_data else "games"
-            points_key = "fantasy_points" if "fantasy_points" in season_data else "points"
-            games = _integer(season_data[games_key], games_key, allow_none=True)
+            games = _integer(season_data["games_played"], "games_played", allow_none=True)
             if games is not None and games < 0:
-                _refuse(f"{games_key} cannot be negative")
+                _refuse("games_played cannot be negative")
             row: dict[str, Any] = {
                 "player_id": player_id,
                 "season": season,
                 "position": position,
                 "age": _optional_float(season_data["age"], "age"),
-                "points": _optional_float(season_data[points_key], points_key),
+                "points": _optional_float(season_data["fantasy_points"], "fantasy_points"),
                 "games": games if games is not None else float("nan"),
                 "years_exp": years_exp,
             }
