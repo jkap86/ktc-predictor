@@ -1,4 +1,6 @@
 import math
+import subprocess
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -17,6 +19,42 @@ from predictor_v5.movement_evaluation.contract import (
     key_sha256,
     sorted_keys,
     validate_ktc_mode,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PROTECTED_BASE = "c4270804379c26bcb340f32a07e507153b4c7342"
+PROTECTED_PATHS = (
+    "backend/data/training-data.zip",
+    "backend/predictor_v5/__init__.py",
+    "backend/predictor_v5/__main__.py",
+    "backend/predictor_v5/confirmation.py",
+    "backend/predictor_v5/data.py",
+    "backend/predictor_v5/data/backchannel_labels_2019_2025.csv",
+    "backend/predictor_v5/data/backchannel_labels_2019_2025_mfl.csv",
+    "backend/predictor_v5/data/backchannel_labels_2019_2025_mfl.provenance.json",
+    "backend/predictor_v5/data/ktc_replacement_2026_holdout_registry.json",
+    "backend/predictor_v5/data/ktc_replacement_2026_manifest.json",
+    "backend/predictor_v5/data/ktc_replacement_mapping_snapshot.csv",
+    "backend/predictor_v5/data/label_manifest.json",
+    "backend/predictor_v5/data/model_2026_confirmation_manifest.json",
+    "backend/predictor_v5/data/model_2026_holdout_registry.json",
+    "backend/predictor_v5/data/start_values_2026.csv",
+    "backend/predictor_v5/evaluate.py",
+    "backend/predictor_v5/ktc_replacement_2026.py",
+    "backend/predictor_v5/label_export.py",
+    "backend/predictor_v5/labels.py",
+    "backend/predictor_v5/model.py",
+    "backend/predictor_v5/replacement_cohort.py",
+    "backend/predictor_v5/replacement_contract.py",
+    "backend/predictor_v5/replacement_ktc.py",
+    "backend/predictor_v5/replacement_lifecycle.py",
+    "backend/predictor_v5/replacement_metrics.py",
+    "backend/predictor_v5/replacement_mfl.py",
+    "backend/predictor_v5/replacement_report.py",
+    "backend/predictor_v5/replacement_seal.py",
+    "backend/predictor_v5/replacement_starts.py",
+    "backend/predictor_v5/sql/backchannel_labels.sql",
+    "backend/predictor_v5/sql/ktc_replacement_end.sql",
 )
 
 
@@ -123,3 +161,24 @@ def test_key_sorting_and_hashing_are_canonical_and_refuse_duplicates_or_2026():
         key_sha256([(2020, "a"), (2020, "a")])
     with pytest.raises(ContractRefusal):
         key_sha256([(2026, "a")])
+
+
+def test_all_protected_paths_match_base_bytes_and_branch_diff_excludes_them() -> None:
+    protected = set(PROTECTED_PATHS)
+    for relative in PROTECTED_PATHS:
+        expected = subprocess.run(
+            ["git", "show", f"{PROTECTED_BASE}:{relative}"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        assert (REPO_ROOT / relative).read_bytes() == expected, relative
+
+    changed = subprocess.run(
+        ["git", "diff", "--name-only", f"{PROTECTED_BASE}...HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert protected.isdisjoint(changed)
