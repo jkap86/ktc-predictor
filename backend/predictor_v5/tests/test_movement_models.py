@@ -87,6 +87,15 @@ class SpyModel:
         )
 
 
+class StablePredictionModel(SpyModel):
+    def predict(self, frame: pd.DataFrame) -> np.ndarray:
+        self.predict_frames.append(frame.copy(deep=True))
+        return np.minimum(
+            frame["start_value"].to_numpy(dtype=float),
+            float(self.kwargs["scale_max"]),
+        )
+
+
 @pytest.fixture(autouse=True)
 def _clear_spies() -> None:
     SpyModel.instances.clear()
@@ -94,6 +103,10 @@ def _clear_spies() -> None:
 
 def _spy_factory(**kwargs: object) -> SpyModel:
     return SpyModel(**kwargs)
+
+
+def _stable_factory(**kwargs: object) -> StablePredictionModel:
+    return StablePredictionModel(**kwargs)
 
 
 def _fit_and_primary_predict_frames() -> list[tuple[pd.DataFrame, pd.DataFrame]]:
@@ -196,6 +209,57 @@ def test_invalid_learned_predictions_refuse_without_row_salvage(bad_prediction: 
 
     with pytest.raises(ContractRefusal, match="strictly positive and finite"):
         run_primary_folds(_rows(), model_factory=lambda **kwargs: InvalidModel(**kwargs))
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (float(np.finfo(float).max), float(np.nextafter(0.0, 1.0))),
+        (float(np.nextafter(0.0, 1.0)), float(np.finfo(float).max)),
+    ],
+)
+def test_ratio_underflow_or_overflow_in_primary_actual_movement_refuses(
+    start: float, end: float
+) -> None:
+    rows = _rows()
+    mask = (rows["season"] == 2025) & (rows["player_id"] == "p00")
+    rows.loc[mask, ["start_value", "end_value"]] = [start, end]
+    with pytest.raises(ContractRefusal, match="finite representable ratio"):
+        run_primary_folds(rows, model_factory=_stable_factory)
+
+
+def test_ratio_underflow_in_learned_movement_refuses() -> None:
+    class TinyPredictionModel(SpyModel):
+        def predict(self, frame: pd.DataFrame) -> np.ndarray:
+            super().predict(frame)
+            return np.full(len(frame), np.nextafter(0.0, 1.0))
+
+    with pytest.raises(ContractRefusal, match="finite representable ratio"):
+        run_primary_folds(
+            _rows(), model_factory=lambda **kwargs: TinyPredictionModel(**kwargs)
+        )
+
+
+def test_representable_extreme_primary_movements_remain_finite() -> None:
+    rows = _rows()
+    maximum = float(np.finfo(float).max)
+    minimum = float(np.nextafter(0.0, 1.0))
+    rows.loc[(rows["season"] == 2025) & (rows["player_id"] == "p00"), [
+        "start_value", "end_value",
+    ]] = [maximum, maximum]
+    rows.loc[(rows["season"] == 2025) & (rows["player_id"] == "p01"), [
+        "start_value", "end_value",
+    ]] = [minimum, minimum]
+    rows.loc[(rows["season"] == 2025) & (rows["player_id"] == "p02"), [
+        "start_value", "end_value",
+    ]] = [maximum, 1.0]
+    rows.loc[(rows["season"] == 2025) & (rows["player_id"] == "p03"), [
+        "start_value", "end_value",
+    ]] = [1.0, minimum]
+
+    final = run_primary_folds(rows, model_factory=_stable_factory)[-1].predictions
+    movement_columns = [column for column in final if column == "r" or column.endswith("_r_hat")]
+    assert np.isfinite(final[movement_columns].to_numpy(dtype=float)).all()
 
 
 def test_wrong_prediction_length_refuses() -> None:
@@ -390,4 +454,129 @@ def test_diagnostics_reuse_fitted_models_without_refitting_or_scoring_missing_en
     assert "r" not in diagnostics["observed_zero_end"]["predictions"][0]
     assert diagnostics["observed_zero_end"]["predictions"][0]["E"] == 0.0
     assert diagnostics["thin_endpoint"]["predictions"][0]["E"] > 0.0
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "factory"),
+    [
+        (
+            float(np.finfo(float).max),
+            float(np.nextafter(0.0, 1.0)),
+            _stable_factory,
+        ),
+        (
+            float(np.nextafter(0.0, 1.0)),
+            float(np.finfo(float).max),
+            _stable_factory,
+        ),
+    ],
+)
+def test_ratio_underflow_or_overflow_in_diagnostic_movement_refuses(
+    start: float,
+    end: float,
+    factory: Callable[..., SpyModel],
+) -> None:
+    primary = _rows()
+    folds = run_primary_folds(primary, model_factory=factory)
+    thin = primary.loc[(primary["season"] == 2021) & (primary["player_id"] == "p00")].copy()
+    thin.loc[:, ["start_value", "end_value"]] = [start, end]
+    data = EvaluationData(
+        joined=primary,
+        primary_scored=primary,
+        observed_zero_end=primary.iloc[0:0].copy(),
+        thin_endpoint=thin,
+        coverage={},
+    )
+    with pytest.raises(ContractRefusal, match="finite representable ratio"):
+        attach_start_observable_diagnostics(data, folds)
+
+
+def test_ratio_underflow_in_diagnostic_prediction_refuses() -> None:
+    class DiagnosticTinyModel(SpyModel):
+        def predict(self, frame: pd.DataFrame) -> np.ndarray:
+            normal = super().predict(frame)
+            if len(self.predict_frames) == 1:
+                return normal
+            return np.full(len(frame), np.nextafter(0.0, 1.0))
+
+    primary = _rows()
+    folds = run_primary_folds(
+        primary, model_factory=lambda **kwargs: DiagnosticTinyModel(**kwargs)
+    )
+    thin = primary.loc[(primary["season"] == 2021) & (primary["player_id"] == "p00")].copy()
+    data = EvaluationData(
+        joined=primary,
+        primary_scored=primary,
+        observed_zero_end=primary.iloc[0:0].copy(),
+        thin_endpoint=thin,
+        coverage={},
+    )
+    with pytest.raises(ContractRefusal, match="finite representable ratio"):
+        attach_start_observable_diagnostics(data, folds)
+
+
+@pytest.mark.parametrize("season", [2019, 2026])
+def test_out_of_contract_diagnostic_season_refuses_before_prediction(season: int) -> None:
+    primary = _rows()
+    folds = run_primary_folds(primary, model_factory=_spy_factory)
+    predict_calls_before = sum(len(model.predict_frames) for model in SpyModel.instances)
+    zero = primary.loc[(primary["season"] == 2020) & (primary["player_id"] == "p00")].copy()
+    zero.loc[:, "season"] = season
+    zero.loc[:, "end_value"] = 0.0
+    data = EvaluationData(
+        joined=primary,
+        primary_scored=primary,
+        observed_zero_end=zero,
+        thin_endpoint=primary.iloc[0:0].copy(),
+        coverage={},
+    )
+
+    with pytest.raises(ContractRefusal, match="outside the historical contract"):
+        attach_start_observable_diagnostics(data, folds)
+    assert sum(len(model.predict_frames) for model in SpyModel.instances) == predict_calls_before
+
+
+def test_duplicate_excluded_season_diagnostic_keys_refuse_before_prediction() -> None:
+    primary = _rows()
+    folds = run_primary_folds(primary, model_factory=_spy_factory)
+    predict_calls_before = sum(len(model.predict_frames) for model in SpyModel.instances)
+    zero = primary.loc[(primary["season"] == 2020) & (primary["player_id"] == "p00")].copy()
+    zero.loc[:, "end_value"] = 0.0
+    zero = pd.concat([zero, zero], ignore_index=True)
+    data = EvaluationData(
+        joined=primary,
+        primary_scored=primary,
+        observed_zero_end=zero,
+        thin_endpoint=primary.iloc[0:0].copy(),
+        coverage={},
+    )
+
+    with pytest.raises(ContractRefusal, match="duplicate"):
+        attach_start_observable_diagnostics(data, folds)
+    assert sum(len(model.predict_frames) for model in SpyModel.instances) == predict_calls_before
+
+
+def test_valid_2020_only_diagnostic_is_unavailable_without_prediction() -> None:
+    primary = _rows()
+    folds = run_primary_folds(primary, model_factory=_spy_factory)
+    predict_calls_before = sum(len(model.predict_frames) for model in SpyModel.instances)
+    zero = primary.loc[(primary["season"] == 2020) & (primary["player_id"] == "p00")].copy()
+    zero.loc[:, "end_value"] = 0.0
+    data = EvaluationData(
+        joined=primary,
+        primary_scored=primary,
+        observed_zero_end=zero,
+        thin_endpoint=primary.iloc[0:0].copy(),
+        coverage={},
+    )
+
+    diagnostics = attach_start_observable_diagnostics(data, folds)
+    assert diagnostics["observed_zero_end"] == {
+        "n": 0,
+        "unavailable_season_count": 1,
+        "predictions": [],
+        "primary_metrics_included": False,
+    }
+    assert diagnostics["thin_endpoint"]["n"] == 0
+    assert sum(len(model.predict_frames) for model in SpyModel.instances) == predict_calls_before
 

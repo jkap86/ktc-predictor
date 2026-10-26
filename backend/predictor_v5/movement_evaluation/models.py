@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -82,6 +81,20 @@ def _numeric(frame: pd.DataFrame, column: str) -> np.ndarray:
     return values
 
 
+def _log_ratio(end: np.ndarray, start: np.ndarray, *, name: str) -> np.ndarray:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with np.errstate(over="raise", under="ignore", invalid="raise", divide="raise"):
+                ratio = np.divide(end, start)
+                movement = np.log(ratio)
+    except (FloatingPointError, Warning) as exc:
+        _refuse(f"{name} requires a finite representable ratio", exc)
+    if not np.isfinite(ratio).all() or (ratio <= 0).any() or not np.isfinite(movement).all():
+        _refuse(f"{name} requires a finite representable ratio")
+    return movement
+
+
 def _validate_rows(rows: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(rows, pd.DataFrame):
         _refuse("primary rows must be a pandas DataFrame")
@@ -96,8 +109,11 @@ def _validate_rows(rows: pd.DataFrame) -> pd.DataFrame:
         _refuse("primary rows contain an unknown position")
     for column in ("age", "points", "start_value", "end_value"):
         _numeric(ordered, column)
-    if (_numeric(ordered, "start_value") <= 0).any() or (_numeric(ordered, "end_value") <= 0).any():
+    starts = _numeric(ordered, "start_value")
+    ends = _numeric(ordered, "end_value")
+    if (starts <= 0).any() or (ends <= 0).any():
         _refuse("primary start and end values must be strictly positive")
+    _log_ratio(ends, starts, name="primary movement")
     for spec in FOLDS:
         train = ordered["season"].isin(spec.train_seasons)
         test = ordered["season"] == spec.test_season
@@ -222,14 +238,22 @@ def _prediction_frame(
     result = test.loc[:, present].copy(deep=True)
     result["S"] = test["start_value"].to_numpy(dtype=float)
     result["E"] = test["end_value"].to_numpy(dtype=float)
-    result["r"] = np.log(result["E"] / result["S"])
+    result["r"] = _log_ratio(
+        result["E"].to_numpy(dtype=float),
+        result["S"].to_numpy(dtype=float),
+        name="actual movement",
+    )
     result["d"] = result["E"] - result["S"]
     result["value_tier"] = tiers.to_numpy()
     result["production_E_hat"] = production
     result["no_production_E_hat"] = no_production
     result["no_change_E_hat"] = result["S"]
     for name in ("production", "no_production", "no_change"):
-        result[f"{name}_r_hat"] = np.log(result[f"{name}_E_hat"] / result["S"])
+        result[f"{name}_r_hat"] = _log_ratio(
+            result[f"{name}_E_hat"].to_numpy(dtype=float),
+            result["S"].to_numpy(dtype=float),
+            name=f"{name} movement",
+        )
         result[f"{name}_d_hat"] = result[f"{name}_E_hat"] - result["S"]
     return result.reset_index(drop=True)
 
@@ -263,9 +287,10 @@ def run_primary_folds(
         edges = _tier_edges(train)
         tiers = _apply_tiers(test, edges)
         predictions = _prediction_frame(test, production, no_production, tiers)
-        training_r = np.log(
-            train["end_value"].to_numpy(dtype=float)
-            / train["start_value"].to_numpy(dtype=float)
+        training_r = _log_ratio(
+            train["end_value"].to_numpy(dtype=float),
+            train["start_value"].to_numpy(dtype=float),
+            name="training movement",
         )
         parameters = {
             "production": _parameters(production_model),
@@ -293,6 +318,36 @@ def run_primary_folds(
     return tuple(results)
 
 
+def _validate_diagnostic_rows(frame: pd.DataFrame, kind: str) -> pd.DataFrame:
+    if not isinstance(frame, pd.DataFrame):
+        _refuse("diagnostic rows must be a pandas DataFrame")
+    missing = sorted(set(_MODEL_COLUMNS) - set(frame.columns))
+    if missing:
+        _refuse(f"diagnostic rows are missing columns: {', '.join(missing)}")
+    ordered = frame.sort_values(["season", "player_id"], kind="mergesort").reset_index(
+        drop=True
+    ).copy(deep=True)
+    sorted_keys(ordered)
+    if not ordered["position"].isin(POSITIONS).all():
+        _refuse("diagnostic rows contain an unknown position")
+    for column in ("age", "points", "start_value", "end_value"):
+        _numeric(ordered, column)
+    starts = _numeric(ordered, "start_value")
+    ends = _numeric(ordered, "end_value")
+    if (starts <= 0).any():
+        _refuse("diagnostic starts must be strictly positive")
+    if kind == "thin_endpoint":
+        if (ends <= 0).any():
+            _refuse("thin diagnostic endpoints must be strictly positive")
+        _log_ratio(ends, starts, name="thin diagnostic actual movement")
+    elif kind == "observed_zero_end":
+        if (ends != 0).any():
+            _refuse("observed-zero diagnostic endpoints must equal zero")
+    else:
+        _refuse("unknown diagnostic cohort")
+    return ordered
+
+
 def _diagnostic_frame(frame: pd.DataFrame, fold: FoldResult, kind: str) -> list[dict[str, object]]:
     if fold._models is None:
         _refuse("fold does not retain fitted models for start-observable diagnostics")
@@ -301,19 +356,13 @@ def _diagnostic_frame(frame: pd.DataFrame, fold: FoldResult, kind: str) -> list[
         return []
     selected.sort_values(["season", "player_id"], kind="mergesort", inplace=True)
     selected.reset_index(drop=True, inplace=True)
-    missing = sorted(set(_MODEL_COLUMNS) - set(selected.columns))
-    if missing:
-        _refuse(f"diagnostic rows are missing columns: {', '.join(missing)}")
-    if not selected["position"].isin(POSITIONS).all():
-        _refuse("diagnostic rows contain an unknown position")
-    for column in ("age", "points", "start_value", "end_value"):
-        _numeric(selected, column)
-    if (_numeric(selected, "start_value") <= 0).any():
-        _refuse("diagnostic starts must be strictly positive")
-    if kind == "thin_endpoint" and (_numeric(selected, "end_value") <= 0).any():
-        _refuse("thin diagnostic endpoints must be strictly positive")
-    if kind == "observed_zero_end" and (_numeric(selected, "end_value") != 0).any():
-        _refuse("observed-zero diagnostic endpoints must equal zero")
+    actual_r = None
+    if kind == "thin_endpoint":
+        actual_r = _log_ratio(
+            selected["end_value"].to_numpy(dtype=float),
+            selected["start_value"].to_numpy(dtype=float),
+            name="thin diagnostic actual movement",
+        )
     keys = sorted_keys(selected)
     production_model, no_production_model = fold._models
     production = _predict(
@@ -322,6 +371,16 @@ def _diagnostic_frame(frame: pd.DataFrame, fold: FoldResult, kind: str) -> list[
     no_production = _predict(
         no_production_model, _model_frame(selected, zero_points=True), keys
     )
+    production_r = None
+    no_production_r = None
+    if kind == "thin_endpoint":
+        starts = selected["start_value"].to_numpy(dtype=float)
+        production_r = _log_ratio(
+            production, starts, name="thin diagnostic production movement"
+        )
+        no_production_r = _log_ratio(
+            no_production, starts, name="thin diagnostic no-production movement"
+        )
     records: list[dict[str, object]] = []
     for index, row in selected.iterrows():
         start = float(row["start_value"])
@@ -341,11 +400,14 @@ def _diagnostic_frame(frame: pd.DataFrame, fold: FoldResult, kind: str) -> list[
             "no_change_absolute_error": abs(start - end),
         }
         if kind == "thin_endpoint":
+            assert actual_r is not None
+            assert production_r is not None
+            assert no_production_r is not None
             record.update(
                 {
-                    "r": math.log(end / start),
-                    "production_r_hat": math.log(float(production[index]) / start),
-                    "no_production_r_hat": math.log(float(no_production[index]) / start),
+                    "r": float(actual_r[index]),
+                    "production_r_hat": float(production_r[index]),
+                    "no_production_r_hat": float(no_production_r[index]),
                     "no_change_r_hat": 0.0,
                 }
             )
@@ -367,10 +429,14 @@ def attach_start_observable_diagnostics(
         _refuse("diagnostics require the complete fixed fold sequence")
     available_seasons = {fold.spec.test_season for fold in folds}
     result: dict[str, object] = {}
-    for name, frame in (
-        ("observed_zero_end", data.observed_zero_end),
-        ("thin_endpoint", data.thin_endpoint),
-    ):
+    validated = tuple(
+        (name, _validate_diagnostic_rows(frame, name))
+        for name, frame in (
+            ("observed_zero_end", data.observed_zero_end),
+            ("thin_endpoint", data.thin_endpoint),
+        )
+    )
+    for name, frame in validated:
         predictions: list[dict[str, object]] = []
         for fold in folds:
             predictions.extend(_diagnostic_frame(frame, fold, name))
