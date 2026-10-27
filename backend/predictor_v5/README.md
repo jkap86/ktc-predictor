@@ -423,6 +423,37 @@ drift is not grounds for a rewrite, so `start_values_2026.csv` remains
 Verification: all 131 predictor tests passed, including marked scratch-DB
 SQL tests; Ruff passed. The optional-PyArrow warning remains non-fatal.
 
+## 2019 stats experiment (2026-10-27): 2019 lowers skill; nothing changed
+
+KTC labels start in 2020, so 2019 is the one season the MFL labels could add.
+`training-data.zip` had no 2019 stats, which is why 2019 never became a row.
+`scripts/add_2019_stats.py` writes `data/training-data-2019.zip`, a copy with a
+2019 season for the zip's own players from Sleeper's weekly `pts_ppr`. The
+sealed protocols hash the original zip, so it is untouched. The docstring
+says how each field matches the zip's own definitions.
+
+Built from the frozen refreshed v1 raw export, the labels gain 374 2019 rows
+(246 with 5+ trades), and 2020–2025 are byte-identical to
+`backchannel_labels_2019_2025_mfl.csv`. With 2019 present, the 5-season window
+becomes eligible in `compare-labels`, and it scores 44.4% on 2024 against the
+4-season window's 48.0%. Selection still picks 2021–24, so the gate result is
+the same as on 2026-10-24
+(`artifacts/backchannel_label_experiments_mfl_with2019.json`).
+
+A sweep over every test season, with skill on the MFL labels at 5+ trades,
+shows that adding 2019 lowers skill everywhere except 2021, where the window
+was only one season:
+
+| Test | 2019 added to the best window | Without 2019 | With 2019 |
+| --- | --- | --- | --- |
+| 2021 | 2020 | 25.2% | 26.1% |
+| 2022 | 2020–21 | 44.8% | 41.1% |
+| 2023 | 2020–22 | 52.2% | 46.3% |
+| 2024 | 2020–23 | 48.0% | 44.4% |
+| 2025 | 2021–24 / 2020–24 | 46.1% / 45.5% | 44.0% |
+
+The 2019 rows are not used anywhere, and no promotion follows from this.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
