@@ -645,6 +645,32 @@ bind the SHA-256 of `model.py`, `data.py`, `evaluate.py`, `labels.py` and
 the season. v2 imports from them and changes nothing in them, so the sealed
 checks still score v1, and `python -m predictor_v5 evaluate` is unchanged.
 
+## Pooled MFL + KTC relative-movement model does not beat v2 (2026-10-28)
+
+`scripts/pooled_relative_movement_eval.py` trains one model on both markets
+(KTC and the MFL-inclusive Backchannel labels with ≥5 trades) with the target
+measured relative to each market's season median change and a per-source
+drift estimate added back, and scores it on each source's own rows in value
+MAE on the 2022–25 folds. Variants: raw log start value, within-season
+percentile, or start relative to the season's 90th percentile; with and
+without a source flag; drift from the training seasons' mean, last three,
+last one, or the oracle.
+
+| Model | Backchannel MAE (n 1,290) | KTC MAE (n 1,401) |
+| --- | --- | --- |
+| No change | 295.1 | 606.2 |
+| **v2 per source** | **147.7** | **378.5** |
+| Single source, drift split out, log start | 147.3 | 379.2 |
+| Pooled + flag, log start | 149.9 | 391.1 |
+| Pooled + flag, start percentile | 152.0 | 425.5 |
+| Pooled + flag, start vs 90th percentile | 147.4 | 412.8 |
+
+Pooling never beats v2 on KTC and at best ties on Backchannel; the drift
+estimate choice moves results under 1%, and splitting drift out ties v2,
+which already learns each source's near-constant drift. A shared start
+scale costs KTC 9–12%: its absolute value level carries information. The
+season tool keeps v2 per source.
+
 ## Season tool (2026)
 
 Type a player's projected season points and games played and get their
