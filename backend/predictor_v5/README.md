@@ -514,6 +514,26 @@ Prediction-to-outcome correlation with points runs 0.76–0.81 for MFL and
 carry a similar points signal. MFL's is slightly stronger in 2024–2025, and
 its moves are larger (no-change error 0.35 against 0.24).
 
+## Pooled MFL + KTC training (2026-10-28)
+
+This uses the same drift-removed target as the section above. The start value
+is the player's within-season percentile, so both sources share one scale.
+Four models were trained on the same window: MFL only, KTC only, both pooled,
+and both pooled with a source flag. Each was scored as log-MAE on the matched
+players' own moves in each source.
+
+| Scored on | MFL only | KTC only | Pooled | Pooled + flag | No change |
+| --- | --- | --- | --- | --- | --- |
+| MFL moves, 2023–25 average | 0.238 | 0.277 | 0.245 | 0.238 | 0.363 |
+| KTC moves, 2023–25 average | 0.204 | 0.201 | 0.194 | 0.196 | 0.265 |
+
+Pooling with the flag matches MFL-only on MFL moves and beats KTC-only on KTC
+moves by about 2.5% (2.9% without the flag). The MFL-only model predicts KTC
+moves almost as well as KTC's own model, and better in 2023 and 2024. The KTC
+model does not transfer to MFL. With the drift and the scale removed, the
+two sources largely agree. The poor transfer in the head-to-head section came
+from MFL's drift, not from disagreement about players.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
