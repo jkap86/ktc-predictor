@@ -494,6 +494,26 @@ between the sources. A model trained on MFL predicts KTC's moves poorly
 Protocol #7 gates on own-target skill against no change, so MFL's drift
 favours it there. A pass there should be read with this in mind.
 
+## How much of each source's movement points explain (2026-10-28)
+
+The goal is to predict the movement in value from fantasy points, with either
+source as the measuring stick. This run used the same matched players as the
+section above. The target is each player's log change minus that season's
+median change, so league-wide drift is removed. The same model was fitted
+with and without the `points` feature. The test-season median comes from the
+outcome itself, so these scores measure relative movement only.
+
+| Test | n | MFL log-MAE, points / no points / no change | KTC log-MAE, points / no points / no change | Error cut by points, MFL / KTC |
+| --- | --- | --- | --- | --- |
+| 2023 | 235 | 0.253 / 0.345 / 0.383 | 0.218 / 0.323 / 0.305 | 26.6% / 32.7% |
+| 2024 | 305 | 0.236 / 0.352 / 0.355 | 0.181 / 0.257 / 0.254 | 32.9% / 29.5% |
+| 2025 | 352 | 0.229 / 0.350 / 0.351 | 0.174 / 0.244 / 0.233 | 34.6% / 28.9% |
+
+Prediction-to-outcome correlation with points runs 0.76–0.81 for MFL and
+0.71–0.78 for KTC. Without points it is 0.30–0.46 and 0.06–0.24. Both sources
+carry a similar points signal. MFL's is slightly stronger in 2024–2025, and
+its moves are larger (no-change error 0.35 against 0.24).
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
