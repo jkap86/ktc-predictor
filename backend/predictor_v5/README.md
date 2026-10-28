@@ -454,6 +454,22 @@ was only one season:
 
 The 2019 rows are not used anywhere, and no promotion follows from this.
 
+A follow-up on 2026-10-28 tested whether a shifting value scale explains
+this. Each season's values were re-scaled three ways: by the mean of its top
+30 start values, by the top 10 within each position, and as within-season
+percentiles. The sweep was then rerun. The scale does vary (top-30 means run
+3,271–4,822, with no steady trend), but re-scaling is not the fix:
+
+| Test | Best window, unscaled | Best window, re-scaled (best of three) | All seasons, unscaled | All seasons, re-scaled (best of three) |
+| --- | --- | --- | --- | --- |
+| 2022 | 44.8% | 42.6% | 41.1% | 37.1% |
+| 2023 | 52.2% | 50.4% | 46.3% | 46.7% |
+| 2024 | 48.0% | 51.2% | 44.4% | 46.4% |
+| 2025 | 46.1% | 44.5% | 44.0% | 44.5% |
+
+Re-scaling helps 2024 and hurts the other three seasons. Training on every
+season, 2019 included, never wins any season.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
