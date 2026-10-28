@@ -1,5 +1,5 @@
-"""Season tool: type a player's projected season points, get their predicted
-end-of-season value from their pre-season value.
+"""Season tool: type a player's projected season points (and games), get
+their predicted end-of-season value from their pre-season value.
 
 Start values are each player's value the day before kickoff, exported from
 the thelab database with ``sql/start_values.sql`` into
@@ -14,8 +14,10 @@ per label source, each starting from that source's own pre-season value:
 - ``ktc``: model trained on KTC values (2020-2025), shown beside it.
 
 The two scales differ, so compare each prediction with its own start value.
-Models are trained from the committed data on first use and cached in
-``artifacts/``.
+Models are the v2 what-if model (``whatif_v2.py``: points, games played,
+points per game and prior-year points). Prior-year points come from the
+stats archive; games default to a full 17-game season. Models are trained
+from the committed data on first use and cached in ``artifacts/``.
 """
 
 import math
@@ -26,9 +28,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from predictor_v5.data import POSITIONS, build_dataset, load_season_stats
+from predictor_v5.data import POSITIONS
 from predictor_v5.labels import CsvLabels, KtcLabels
-from predictor_v5.model import WhatIfModel
+from predictor_v5.whatif_v2 import FULL_SEASON_GAMES, WhatIfModelV2, build_dataset_v2, prior_points_for
 
 PACKAGE = Path(__file__).resolve().parent
 DATA = PACKAGE / "data"
@@ -67,18 +69,18 @@ def label_source(name: str):
     raise ValueError(f"Unknown source {name!r}")
 
 
-def train_source_model(name: str, seasons: list[int] | None = None) -> WhatIfModel:
+def train_source_model(name: str, seasons: list[int] | None = None) -> WhatIfModelV2:
     source = label_source(name)
-    df = build_dataset(load_season_stats(), source)
+    df = build_dataset_v2(source)
     df = df[df["season"].isin(seasons or SOURCES[name]["train_seasons"])]
-    return WhatIfModel(label_source=source.name, scale_max=source.scale_max).fit(df)
+    return WhatIfModelV2(label_source=source.name, scale_max=source.scale_max).fit(df)
 
 
-def load_or_train(name: str, artifacts: Path = ARTIFACTS) -> WhatIfModel:
+def load_or_train(name: str, artifacts: Path = ARTIFACTS) -> WhatIfModelV2:
     """The saved season-tool model for a source, trained and saved if missing."""
-    path = artifacts / f"season_{name}.joblib"
+    path = artifacts / f"season_{name}_v2.joblib"
     if path.exists():
-        return WhatIfModel.load(path)
+        return WhatIfModelV2.load(path)
     model = train_source_model(name)
     model.save(path)
     return model
@@ -123,8 +125,13 @@ class SeasonTool:
         return df.reset_index(drop=True)
 
     @cached_property
-    def models(self) -> dict[str, WhatIfModel]:
+    def models(self) -> dict[str, WhatIfModelV2]:
         return {name: load_or_train(name, self.artifacts) for name in SOURCES}
+
+    @cached_property
+    def prior_points(self) -> dict[str, float]:
+        """Each player's points in the season before this one, from the stats archive."""
+        return prior_points_for(self.season)
 
     def search(self, query: str = "", position: str | None = None, limit: int = 25) -> list[dict]:
         df = self.players
@@ -164,10 +171,24 @@ class SeasonTool:
         out["backchannel"]["trades"] = _num(row.get("bc_trades"))
         return out
 
-    def predict(self, player_id: str, points: list[float], age: float | None = None) -> dict:
-        """Predicted end-of-season value per source for each points total."""
+    def predict(
+        self,
+        player_id: str,
+        points: list[float],
+        age: float | None = None,
+        games: float | None = None,
+    ) -> dict:
+        """Predicted end-of-season value per source for each points total.
+
+        ``games`` is the projected games played behind those points (a full
+        season when omitted); prior-year points come from the stats archive.
+        """
         info = self.player(player_id)
         age = info["age"] if age is None else age
+        games = FULL_SEASON_GAMES if games is None else float(games)
+        if games < 0:
+            raise ValueError("games must be >= 0")
+        prior_points = self.prior_points.get(str(player_id), 0.0)
         for name in SOURCES:
             src = info[name]
             start = src["start_value"]
@@ -185,7 +206,16 @@ class SeasonTool:
                     f"The model needs at least {MIN_TRADES}."
                 )
                 continue
-            rows = pd.DataFrame({"start_value": start, "age": age, "position": info["position"], "points": points})
+            rows = pd.DataFrame(
+                {
+                    "start_value": start,
+                    "age": age,
+                    "position": info["position"],
+                    "points": points,
+                    "games": games,
+                    "prior_points": prior_points,
+                }
+            )
             values = self.models[name].predict(rows)
             src["predictions"] = [
                 {"points": float(p), "value": round(float(v)), "change": round(float(v) - start)}
@@ -194,6 +224,8 @@ class SeasonTool:
             src["train_seasons"] = self.models[name].train_seasons
             src["note"] = None
         info["age"] = age
+        info["games"] = games
+        info["prior_points"] = prior_points
         info["season"] = self.season
         info["cutoff"] = self.cutoff.isoformat()
         return info

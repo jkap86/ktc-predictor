@@ -18,6 +18,7 @@ const SEASON = 2026;
 const POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE'];
 const SWEEP = Array.from({ length: 46 }, (_, i) => i * 10); // 0..450 pts
 const DEFAULT_POINTS = 250;
+const DEFAULT_GAMES = 17;
 
 function fmt(v?: number | null): string {
   return v == null ? '—' : Math.round(v).toLocaleString();
@@ -80,6 +81,7 @@ export default function SeasonPage() {
   const [players, setPlayers] = useState<SeasonPlayer[]>([]);
   const [selected, setSelected] = useState<SeasonPlayer | null>(null);
   const [points, setPoints] = useState<string>(String(DEFAULT_POINTS));
+  const [games, setGames] = useState<string>(String(DEFAULT_GAMES));
   const [result, setResult] = useState<SeasonPrediction | null>(null);
   const [curve, setCurve] = useState<SeasonPrediction | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,33 +103,36 @@ export default function SeasonPage() {
     return () => clearTimeout(t);
   }, [query, position]);
 
-  // The full points curve, once per player.
+  const gamesValue = Number(games);
+  const gamesOk = games !== '' && Number.isFinite(gamesValue) && gamesValue >= 0 && gamesValue <= 17;
+
+  // The full points curve, once per player and games count.
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || !gamesOk) return;
     let stale = false;
     setCurve(null);
-    predictSeason(selected.player_id, SWEEP, SEASON)
+    predictSeason(selected.player_id, SWEEP, SEASON, null, gamesValue)
       .then((r) => !stale && setCurve(r))
       .catch(() => !stale && setCurve(null));
     return () => {
       stale = true;
     };
-  }, [selected]);
+  }, [selected, gamesOk, gamesValue]);
 
   // The typed points total.
   useEffect(() => {
     if (!selected) return;
     if (debounce.current) clearTimeout(debounce.current);
     const pts = Number(points);
-    if (points === '' || !Number.isFinite(pts) || pts < 0 || pts > 600) {
+    if (points === '' || !Number.isFinite(pts) || pts < 0 || pts > 600 || !gamesOk) {
       setResult(null);
       return;
     }
-    // Responses from a superseded player or points total are dropped.
+    // Responses from a superseded player, points total or games count are dropped.
     let stale = false;
     debounce.current = setTimeout(() => {
       setLoading(true);
-      predictSeason(selected.player_id, [pts], SEASON)
+      predictSeason(selected.player_id, [pts], SEASON, null, gamesValue)
         .then((r) => {
           if (stale) return;
           setResult(r);
@@ -140,7 +145,7 @@ export default function SeasonPage() {
       stale = true;
       setLoading(false);
     };
-  }, [selected, points]);
+  }, [selected, points, gamesOk, gamesValue]);
 
   const chartData = useMemo(() => {
     if (!curve) return [];
@@ -161,8 +166,9 @@ export default function SeasonPage() {
           {SEASON} Season: Points to Value
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-400/80">
-          Type a player&apos;s projected {SEASON} fantasy points (full PPR) to see their predicted end-of-season
-          dynasty superflex value, starting from their value on {info?.cutoff ?? 'the day before kickoff'}.
+          Type a player&apos;s projected {SEASON} fantasy points (full PPR) and games played to see their predicted
+          end-of-season dynasty superflex value, starting from their value on{' '}
+          {info?.cutoff ?? 'the day before kickoff'}.
         </p>
       </div>
 
@@ -242,6 +248,9 @@ export default function SeasonPage() {
                   <div className="text-lg font-bold text-gray-900 dark:text-white truncate">{selected.name}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     {selected.position} · {selected.team ?? 'FA'} · age {selected.age ?? '?'} on {info?.cutoff}
+                    {result && result.player_id === selected.player_id && (
+                      <> · {Math.round(result.prior_points)} pts in {SEASON - 1}</>
+                    )}
                   </div>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
@@ -254,6 +263,18 @@ export default function SeasonPage() {
                     value={points}
                     onChange={(e) => setPoints(e.target.value)}
                     className="w-24 px-3 py-2 rounded-lg border border-gray-200/60 dark:border-white/10 bg-white/80 dark:bg-white/5 text-gray-900 dark:text-white text-right focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  Games
+                  <input
+                    type="number"
+                    min={0}
+                    max={17}
+                    step={1}
+                    value={games}
+                    onChange={(e) => setGames(e.target.value)}
+                    className="w-20 px-3 py-2 rounded-lg border border-gray-200/60 dark:border-white/10 bg-white/80 dark:bg-white/5 text-gray-900 dark:text-white text-right focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   />
                 </label>
                 {loading && (

@@ -5,9 +5,9 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from predictor_v5.model import WhatIfModel
 from predictor_v5.season import SeasonTool, age_on
-from predictor_v5.tests.test_predictor_v5 import _synthetic
+from predictor_v5.whatif_v2 import FULL_SEASON_GAMES, WhatIfModelV2
+from predictor_v5.tests.test_whatif_v2 import _synthetic_v2
 
 
 @pytest.fixture(scope="module")
@@ -29,8 +29,9 @@ def tool(tmp_path_factory):
         }
     ).to_csv(path, index=False)
     tool = SeasonTool(season=2026, start_values_path=path)
-    model = WhatIfModel(label_source="test", scale_max=9999).fit(_synthetic())
+    model = WhatIfModelV2(label_source="test", scale_max=9999).fit(_synthetic_v2())
     tool.models = {"backchannel": model, "ktc": model}
+    tool.prior_points = {"1": 210.0}
     return tool
 
 
@@ -53,6 +54,7 @@ def test_find_by_id_exact_name_or_substring(tool):
 def test_predict_uses_each_sources_own_start_value(tool):
     out = tool.predict("1", [100, 300])
     assert out["age"] == 25.0 and out["cutoff"] == "2026-09-09"
+    assert out["games"] == FULL_SEASON_GAMES and out["prior_points"] == 210.0
     for name, start in (("backchannel", 6000), ("ktc", 7000)):
         preds = out[name]["predictions"]
         assert [p["points"] for p in preds] == [100, 300]
@@ -75,3 +77,13 @@ def test_predict_needs_an_age_unless_given(tool):
 def test_unknown_player_raises(tool):
     with pytest.raises(KeyError):
         tool.predict("999", [100])
+
+
+def test_predict_takes_projected_games(tool):
+    full = tool.predict("1", [200])["ktc"]["predictions"][0]["value"]
+    short = tool.predict("1", [200], games=10)["ktc"]["predictions"][0]["value"]
+    assert short > full  # the synthetic market prices points per game
+    assert tool.predict("1", [200], games=10)["games"] == 10.0
+    assert tool.predict("3", [200], age=27)["prior_points"] == 0.0  # no prior season on file
+    with pytest.raises(ValueError):
+        tool.predict("1", [200], games=-1)

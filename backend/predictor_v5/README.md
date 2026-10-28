@@ -603,16 +603,63 @@ allowed only for an independently proven pre-outcome, pre-fit failure; an exit
 2 from confirmation alone does not prove that no outcomes were opened. Keep an
 external durable execution/exposure log for the confirmation command.
 
-## Season tool (2026)
+## v2 what-if model: games played and prior-year points (2026-10-28)
 
-Type a player's projected season points and get their predicted
-end-of-season value, starting from their value on 2026-09-09 (the day before
-kickoff). It's on the app's **2026 Season** page (`/season`, API under
-`/api/v5/season`) and on the command line:
+`whatif_v2.py` keeps v1's target, loss and parameters and adds three inputs
+known at season start or part of the what-if: games played, points per game
+and the player's points in the prior season. Position, age and start value
+are unchanged. The market prices per-game production, so a 200-point season
+in 12 games moves value more than 200 in 17; v1 could not tell them apart.
+
+Season folds (train on seasons < Y, test on Y), skill versus no-change:
+
+| Labels | Rows | v1 skill | v2 skill | v1 MAE | v2 MAE |
+| --- | --- | --- | --- | --- | --- |
+| KTC 2021–25 | 1,582 | 0.275 | 0.337 | 453 | 414 |
+| Backchannel ≥5 trades, 2022–25 | 1,272 | 0.437 | 0.460 | 170 | 163 |
+
+KTC by season (v1 → v2): 2021 0.10 → 0.10, 2022 0.24 → 0.32, 2023 0.26 →
+0.39, 2024 0.31 → 0.38, 2025 0.37 → 0.39. Every position improves. Points
+per game is most of the gain on its own (0.326); start-value percentile,
+draft pick and years of experience were also tried and do not help.
+Reports: `artifacts/ktc_v2_eval.json`, `artifacts/backchannel_v2_eval.json`.
 
 ```bash
-python -m predictor_v5 season --player "Ja'Marr Chase" --sweep 150,250,350
+python -m predictor_v5.whatif_v2 evaluate
+python -m predictor_v5.whatif_v2 --labels backchannel:predictor_v5/data/backchannel_labels_2019_2025.csv \
+    --min-trades 5 evaluate --min-season 2021
+python -m predictor_v5.whatif_v2 season --player "Bijan Robinson" --points 300 --games 12
 ```
+
+Prior-year points come from the stats archive's own previous-season row
+(the same points definition as the season being predicted, and what the
+season tool uses for 2026), falling back to the archive's `prior_year_fp`
+field for 2020, whose previous season is not in the archive. Rookies get 0.
+
+The monotone sweep moves points and points per game together at the row's
+games, so a what-if curve never falls as points rise at a fixed games count.
+
+**Why a new module.** The sealed 2026 confirmation and replacement protocols
+bind the SHA-256 of `model.py`, `data.py`, `evaluate.py`, `labels.py` and
+`__main__.py`. Changing them would make those protocols refuse to run after
+the season. v2 imports from them and changes nothing in them, so the sealed
+checks still score v1, and `python -m predictor_v5 evaluate` is unchanged.
+
+## Season tool (2026)
+
+Type a player's projected season points and games played and get their
+predicted end-of-season value, starting from their value on 2026-09-09 (the
+day before kickoff). It's on the app's **2026 Season** page (`/season`, API
+under `/api/v5/season`, `games` query parameter) and on the command line:
+
+```bash
+python -m predictor_v5.whatif_v2 season --player "Ja'Marr Chase" --sweep 150,250,350 --games 16
+python -m predictor_v5 season --player "Ja'Marr Chase" --sweep 150,250,350   # full 17-game season
+```
+
+The tool uses the v2 model (section above). Games default to 17 and the
+player's 2025 points come from the stats archive. Cached models are
+`artifacts/season_<source>_v2.joblib`.
 
 Each player gets two predictions, each from its own source's start value:
 

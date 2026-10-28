@@ -170,6 +170,8 @@ export interface SeasonPlayer {
 export interface SeasonPrediction extends SeasonPlayer {
   season: number;
   cutoff: string;
+  games: number;
+  prior_points: number;
 }
 
 export interface SeasonInfo {
