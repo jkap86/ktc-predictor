@@ -470,6 +470,30 @@ percentiles. The sweep was then rerun. The scale does vary (top-30 means run
 Re-scaling helps 2024 and hurts the other three seasons. Training on every
 season, 2019 included, never wins any season.
 
+## Informational MFL-versus-KTC head-to-head (2026-10-28)
+
+This ran on matched players with 5+ MFL trades and KTC values between 0 and
+9,999. Both sources were trained on the same window from the original zip
+(2020–2025) and scored on their own targets, as protocol #7 scores them. 2025
+is reused, so this is informational only.
+
+| Test | Window | n | MFL skill | KTC skill | MFL, drift-adjusted |
+| --- | --- | --- | --- | --- | --- |
+| 2023 | 2020–22 | 235 | 51.7% | 27.9% | 41.8% |
+| 2024 | 2020–23 | 305 | 47.7% | 33.6% | 34.7% |
+| 2025 | 2021–24 | 352 | 45.6% | 36.7% | 34.7% |
+
+MFL values drift down by a median of about 10% a season, against 1–4% for KTC
+on the same players. The no-change baseline misses that drift, and the model
+learns it. Measured against start × the training median change, MFL's lead
+is +13.9 points in 2023, +1.1 in 2024 and −2.0 in 2025. KTC's figures barely
+move, since its drift is near zero. Player moves correlate at 0.69–0.74
+between the sources. A model trained on MFL predicts KTC's moves poorly
+(−2% to 21% skill), so the two do not agree on which players rose.
+
+Protocol #7 gates on own-target skill against no change, so MFL's drift
+favours it there. A pass there should be read with this in mind.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
