@@ -1,4 +1,4 @@
-"""v5 season tool: pre-season value + projected season points -> end-of-season value."""
+"""v5 season tool: pre-season value + projected season points and games -> end-of-season value."""
 
 import asyncio
 from functools import lru_cache
@@ -10,6 +10,7 @@ from predictor_v5.season import SOURCES, SeasonTool
 router = APIRouter(prefix="/api/v5/season", tags=["season"])
 
 MAX_POINTS = 600.0
+MAX_GAMES = 17.0
 MAX_SWEEP = 100
 
 
@@ -53,6 +54,7 @@ async def predict(
     player_id: str = Query(..., max_length=32),
     points: str = Query(..., description="season points, or a comma-separated list"),
     age: float | None = Query(None, ge=18, le=45),
+    games: float | None = Query(None, ge=0, le=MAX_GAMES, description="projected games played; a full season if omitted"),
     season: int = Query(2026),
 ):
     try:
@@ -64,6 +66,6 @@ async def predict(
     tool = _tool(season)
     try:
         # The first call trains the models (a few seconds); keep it off the event loop.
-        return await asyncio.to_thread(tool.predict, player_id, values, age)
+        return await asyncio.to_thread(tool.predict, player_id, values, age, games)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))

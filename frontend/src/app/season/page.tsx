@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Area,
   CartesianGrid,
   Line,
   LineChart,
@@ -18,6 +19,7 @@ const SEASON = 2026;
 const POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE'];
 const SWEEP = Array.from({ length: 46 }, (_, i) => i * 10); // 0..450 pts
 const DEFAULT_POINTS = 250;
+const DEFAULT_GAMES = 17;
 
 function fmt(v?: number | null): string {
   return v == null ? '—' : Math.round(v).toLocaleString();
@@ -59,6 +61,10 @@ function SourceCard({
               {fmt(pred.change)} ({pct(pred.change, src.start_value)})
             </span>
           </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {src.band?.coverage ?? '80%'} band {fmt(pred.low)} to {fmt(pred.high)} ({pct(pred.low - src.start_value, src.start_value)} to{' '}
+            {pct(pred.high - src.start_value, src.start_value)})
+          </div>
           {src.trades != null && (
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {Math.round(src.trades)} trades in the start window
@@ -80,6 +86,7 @@ export default function SeasonPage() {
   const [players, setPlayers] = useState<SeasonPlayer[]>([]);
   const [selected, setSelected] = useState<SeasonPlayer | null>(null);
   const [points, setPoints] = useState<string>(String(DEFAULT_POINTS));
+  const [games, setGames] = useState<string>(String(DEFAULT_GAMES));
   const [result, setResult] = useState<SeasonPrediction | null>(null);
   const [curve, setCurve] = useState<SeasonPrediction | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,33 +108,36 @@ export default function SeasonPage() {
     return () => clearTimeout(t);
   }, [query, position]);
 
-  // The full points curve, once per player.
+  const gamesValue = Number(games);
+  const gamesOk = games !== '' && Number.isFinite(gamesValue) && gamesValue >= 0 && gamesValue <= 17;
+
+  // The full points curve, once per player and games count.
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || !gamesOk) return;
     let stale = false;
     setCurve(null);
-    predictSeason(selected.player_id, SWEEP, SEASON)
+    predictSeason(selected.player_id, SWEEP, SEASON, null, gamesValue)
       .then((r) => !stale && setCurve(r))
       .catch(() => !stale && setCurve(null));
     return () => {
       stale = true;
     };
-  }, [selected]);
+  }, [selected, gamesOk, gamesValue]);
 
   // The typed points total.
   useEffect(() => {
     if (!selected) return;
     if (debounce.current) clearTimeout(debounce.current);
     const pts = Number(points);
-    if (points === '' || !Number.isFinite(pts) || pts < 0 || pts > 600) {
+    if (points === '' || !Number.isFinite(pts) || pts < 0 || pts > 600 || !gamesOk) {
       setResult(null);
       return;
     }
-    // Responses from a superseded player or points total are dropped.
+    // Responses from a superseded player, points total or games count are dropped.
     let stale = false;
     debounce.current = setTimeout(() => {
       setLoading(true);
-      predictSeason(selected.player_id, [pts], SEASON)
+      predictSeason(selected.player_id, [pts], SEASON, null, gamesValue)
         .then((r) => {
           if (stale) return;
           setResult(r);
@@ -140,16 +150,21 @@ export default function SeasonPage() {
       stale = true;
       setLoading(false);
     };
-  }, [selected, points]);
+  }, [selected, points, gamesOk, gamesValue]);
 
   const chartData = useMemo(() => {
     if (!curve) return [];
     const bc = curve.backchannel;
     const ktc = curve.ktc;
+    const rel = (v: number, start: number) => (100 * (v - start)) / start;
     return SWEEP.map((p, i) => ({
       points: p,
       backchannel:
         bc.predictions && bc.start_value ? (100 * bc.predictions[i].change) / bc.start_value : null,
+      backchannelBand:
+        bc.predictions && bc.start_value
+          ? [rel(bc.predictions[i].low, bc.start_value), rel(bc.predictions[i].high, bc.start_value)]
+          : null,
       ktc: ktc.predictions && ktc.start_value ? (100 * ktc.predictions[i].change) / ktc.start_value : null,
     }));
   }, [curve]);
@@ -161,8 +176,9 @@ export default function SeasonPage() {
           {SEASON} Season: Points to Value
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-400/80">
-          Type a player&apos;s projected {SEASON} fantasy points (full PPR) to see their predicted end-of-season
-          dynasty superflex value, starting from their value on {info?.cutoff ?? 'the day before kickoff'}.
+          Type a player&apos;s projected {SEASON} fantasy points (full PPR) and games played to see their predicted
+          end-of-season dynasty superflex value, starting from their value on{' '}
+          {info?.cutoff ?? 'the day before kickoff'}.
         </p>
       </div>
 
@@ -242,6 +258,9 @@ export default function SeasonPage() {
                   <div className="text-lg font-bold text-gray-900 dark:text-white truncate">{selected.name}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     {selected.position} · {selected.team ?? 'FA'} · age {selected.age ?? '?'} on {info?.cutoff}
+                    {result && result.player_id === selected.player_id && (
+                      <> · {Math.round(result.prior_points)} pts in {SEASON - 1}</>
+                    )}
                   </div>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
@@ -254,6 +273,18 @@ export default function SeasonPage() {
                     value={points}
                     onChange={(e) => setPoints(e.target.value)}
                     className="w-24 px-3 py-2 rounded-lg border border-gray-200/60 dark:border-white/10 bg-white/80 dark:bg-white/5 text-gray-900 dark:text-white text-right focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  Games
+                  <input
+                    type="number"
+                    min={0}
+                    max={17}
+                    step={1}
+                    value={games}
+                    onChange={(e) => setGames(e.target.value)}
+                    className="w-20 px-3 py-2 rounded-lg border border-gray-200/60 dark:border-white/10 bg-white/80 dark:bg-white/5 text-gray-900 dark:text-white text-right focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   />
                 </label>
                 {loading && (
@@ -274,7 +305,8 @@ export default function SeasonPage() {
                     Predicted change by season points
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                    Percent change from each source&apos;s own start value, since the two scales differ.
+                    Percent change from each source&apos;s own start value, since the two scales differ. The shaded area
+                    is the Backchannel 80% band: in past seasons about 8 in 10 outcomes landed inside it.
                   </p>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -283,10 +315,24 @@ export default function SeasonPage() {
                         <XAxis dataKey="points" tick={{ fontSize: 11 }} stroke="#94a3b8" />
                         <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} stroke="#94a3b8" width={45} />
                         <Tooltip
-                          formatter={(v, name) => [`${Number(v).toFixed(0)}%`, name === 'ktc' ? 'KTC' : 'Backchannel']}
+                          formatter={(v, name) => {
+                            if (name === 'backchannelBand') {
+                              const [lo, hi] = v as [number, number];
+                              return [`${lo.toFixed(0)}% to ${hi.toFixed(0)}%`, 'Backchannel 80% band'];
+                            }
+                            return [`${Number(v).toFixed(0)}%`, name === 'ktc' ? 'KTC' : 'Backchannel'];
+                          }}
                           labelFormatter={(p) => `${p} pts`}
                         />
                         <ReferenceLine y={0} stroke="#94a3b8" />
+                        <Area
+                          type="monotone"
+                          dataKey="backchannelBand"
+                          stroke="none"
+                          fill="#3b82f6"
+                          fillOpacity={0.12}
+                          isAnimationActive={false}
+                        />
                         {Number.isFinite(Number(points)) && points !== '' && (
                           <ReferenceLine x={Math.round(Number(points) / 10) * 10} stroke="#3b82f6" strokeDasharray="4 4" />
                         )}

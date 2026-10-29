@@ -603,16 +603,140 @@ allowed only for an independently proven pre-outcome, pre-fit failure; an exit
 2 from confirmation alone does not prove that no outcomes were opened. Keep an
 external durable execution/exposure log for the confirmation command.
 
-## Season tool (2026)
+## v2 what-if model: games played and prior-year points (2026-10-28)
 
-Type a player's projected season points and get their predicted
-end-of-season value, starting from their value on 2026-09-09 (the day before
-kickoff). It's on the app's **2026 Season** page (`/season`, API under
-`/api/v5/season`) and on the command line:
+`whatif_v2.py` keeps v1's target, loss and parameters and adds three inputs
+known at season start or part of the what-if: games played, points per game
+and the player's points in the prior season. Position, age and start value
+are unchanged. The market prices per-game production, so a 200-point season
+in 12 games moves value more than 200 in 17; v1 could not tell them apart.
+
+Season folds (train on seasons < Y, test on Y), skill versus no-change:
+
+| Labels | Rows | v1 skill | v2 skill | v1 MAE | v2 MAE |
+| --- | --- | --- | --- | --- | --- |
+| KTC 2021–25 | 1,582 | 0.275 | 0.337 | 453 | 414 |
+| Backchannel ≥5 trades, 2022–25 | 1,272 | 0.437 | 0.460 | 170 | 163 |
+
+KTC by season (v1 → v2): 2021 0.10 → 0.10, 2022 0.24 → 0.32, 2023 0.26 →
+0.39, 2024 0.31 → 0.38, 2025 0.37 → 0.39. Every position improves. Points
+per game is most of the gain on its own (0.326); start-value percentile,
+draft pick and years of experience were also tried and do not help.
+Reports: `artifacts/ktc_v2_eval.json`, `artifacts/backchannel_v2_eval.json`.
 
 ```bash
-python -m predictor_v5 season --player "Ja'Marr Chase" --sweep 150,250,350
+python -m predictor_v5.whatif_v2 evaluate
+python -m predictor_v5.whatif_v2 --labels backchannel:predictor_v5/data/backchannel_labels_2019_2025.csv \
+    --min-trades 5 evaluate --min-season 2021
+python -m predictor_v5.whatif_v2 season --player "Bijan Robinson" --points 300 --games 12
 ```
+
+Prior-year points come from the stats archive's own previous-season row
+(the same points definition as the season being predicted, and what the
+season tool uses for 2026), falling back to the archive's `prior_year_fp`
+field for 2020, whose previous season is not in the archive. Rookies get 0.
+
+The monotone sweep moves points and points per game together at the row's
+games, so a what-if curve never falls as points rise at a fixed games count.
+
+**Why a new module.** The sealed 2026 confirmation and replacement protocols
+bind the SHA-256 of `model.py`, `data.py`, `evaluate.py`, `labels.py` and
+`__main__.py`. Changing them would make those protocols refuse to run after
+the season. v2 imports from them and changes nothing in them, so the sealed
+checks still score v1, and `python -m predictor_v5 evaluate` is unchanged.
+
+## Pooled MFL + KTC relative-movement model does not beat v2 (2026-10-28)
+
+`scripts/pooled_relative_movement_eval.py` trains one model on both markets
+(KTC and the MFL-inclusive Backchannel labels with ≥5 trades) with the target
+measured relative to each market's season median change and a per-source
+drift estimate added back, and scores it on each source's own rows in value
+MAE on the 2022–25 folds. Variants: raw log start value, within-season
+percentile, or start relative to the season's 90th percentile; with and
+without a source flag; drift from the training seasons' mean, last three,
+last one, or the oracle.
+
+| Model | Backchannel MAE (n 1,290) | KTC MAE (n 1,401) |
+| --- | --- | --- |
+| No change | 295.1 | 606.2 |
+| **v2 per source** | **147.7** | **378.5** |
+| Single source, drift split out, log start | 147.3 | 379.2 |
+| Pooled + flag, log start | 149.9 | 391.1 |
+| Pooled + flag, start percentile | 152.0 | 425.5 |
+| Pooled + flag, start vs 90th percentile | 147.4 | 412.8 |
+
+Pooling never beats v2 on KTC and at best ties on Backchannel; the drift
+estimate choice moves results under 1%, and splitting drift out ties v2,
+which already learns each source's near-constant drift. A shared start
+scale costs KTC 9–12%: its absolute value level carries information. The
+season tool keeps v2 per source.
+
+## Tuning v2 does not move it (2026-10-29)
+
+`scripts/tune_whatif_v2.py` swept the v2 model's parameters, selecting on
+the 2022–24 folds of both sources (mean of the two skills) and reporting
+2025 separately. Stage 1: learning rate {0.03, 0.05, 0.1} × iterations
+{150, 300, 600} × leaves {7, 15, 31} × min samples per leaf {10, 20, 40}.
+Stage 2: L2 {0, 1, 5, 20} × loss {absolute, squared} × training window
+{all, last 3, last 4 seasons} × one model or one per position, plus max
+depth {3, 4, 6}.
+
+| Variant | Selection skill (2022–24, KTC / Backchannel) | 2025 skill (KTC / Backchannel) |
+| --- | --- | --- |
+| **current** (lr 0.05, 300 iters, 15 leaves, 20/leaf, L2 1, absolute) | 0.370 / 0.501 | 0.389 / 0.493 |
+| best of stage 1 (600 iters) | 0.376 / 0.500 | 0.389 / 0.491 |
+| squared-error loss | 0.26–0.28 / 0.50 | 0.35 / 0.48 |
+| one model per position | 0.269 / 0.435 | 0.352 / 0.469 |
+| last-3-season window | 0.363 / 0.491 | 0.422 / 0.458 |
+| max depth 3 | 0.338 / 0.490 | 0.394 / 0.492 |
+
+Nothing beats the current parameters by more than 0.3 skill points on the
+selection folds, and that gain does not show on 2025. Squared error and
+per-position models are clearly worse; a shorter window trades Backchannel
+for KTC. The parameters stay as they are; with these seven inputs the model
+is at its ceiling, and further gains need new information, not tuning.
+
+## 80% bands around v2 (2026-10-29)
+
+Every v2 prediction now carries a low and high value: the 10th and 90th
+percentiles of the outcome, an 80% band. The band is a fixed log offset per
+quantile around the median curve, so it is monotone in points and ordered.
+The offsets are the residual quantiles of a model trained on all but the
+last training season and scored on that season (held-out residuals; the
+same model's in-sample residuals give a band that holds only 60-75%).
+
+Fold check (train < Y, test Y), share of outcomes inside the band and the
+band's median width as a share of start value:
+
+| Labels | Inside | Below / above | Median width | By season (inside) |
+| --- | --- | --- | --- | --- |
+| KTC 2021-25 | 81.5% | 8.8% / 9.7% | 62% of start | 2021 74%, 2022 82%, 2023 82%, 2024 82%, 2025 84% |
+| Backchannel >=5 trades, 2022-25 | 77.9% | 11.7% / 10.4% | 69% of start | 2022 67%, 2023 80%, 2024 82%, 2025 81% |
+
+QBs are the least covered (74% KTC, 71% Backchannel) and TEs/WRs the most
+(85-86% KTC); the band is one offset for all positions. Quantile-loss trees
+(``loss="quantile"``) were tried first and under-cover badly (64-67% inside
+for the same nominal 80%), because they overfit the small training set.
+Reports: the ``band`` block of ``artifacts/ktc_v2_eval.json`` and
+``artifacts/backchannel_v2_eval.json``. The season tool, its API
+(``low``/``high`` on each prediction, a ``band`` block per source) and the
+2026 Season page show the band.
+
+## Season tool (2026)
+
+Type a player's projected season points and games played and get their
+predicted end-of-season value, starting from their value on 2026-09-09 (the
+day before kickoff). It's on the app's **2026 Season** page (`/season`, API
+under `/api/v5/season`, `games` query parameter) and on the command line:
+
+```bash
+python -m predictor_v5.whatif_v2 season --player "Ja'Marr Chase" --sweep 150,250,350 --games 16
+python -m predictor_v5 season --player "Ja'Marr Chase" --sweep 150,250,350   # full 17-game season
+```
+
+The tool uses the v2 model with its 80% band (sections above). Games
+default to 17 and the player's 2025 points come from the stats archive. Cached models are
+`artifacts/season_<source>_v2.joblib`.
 
 Each player gets two predictions, each from its own source's start value:
 
