@@ -20,7 +20,8 @@ def _synthetic_v2(n_per_season: int = 120, seasons=range(2020, 2025), seed: int 
     df["games"] = rng.integers(4, 18, len(df)).astype(float)
     df["prior_points"] = rng.uniform(0, 300, len(df))
     ppg = df["points"] / df["games"]
-    df["end_value"] = df["start_value"] * np.exp(0.06 * (ppg - 12) + rng.normal(0, 0.1, len(df)))
+    # Capped at the scale like a real market, so predictions clipped at 9999 are not "misses".
+    df["end_value"] = np.minimum(df["start_value"] * np.exp(0.06 * (ppg - 12) + rng.normal(0, 0.1, len(df))), 9999)
     return df
 
 
@@ -133,3 +134,37 @@ def test_v2_leaves_the_sealed_v1_model_alone():
     assert v1.FEATURES == ["log_start", "age", "points", "position_code"]
     assert v1.MONOTONIC == [0, 0, 1, 0]
     assert len(v2.FEATURES_V2) == len(v2.MONOTONIC_V2) == 7
+
+
+def test_band_is_ordered_monotone_and_calibrated_on_held_out_season(model):
+    df = _synthetic_v2(seed=1)
+    points = np.arange(0, 452, 0.7)
+    for games in (8.0, 17.0):
+        rows = pd.DataFrame({"start_value": 4000, "age": 25, "position": "WR", "points": points, "games": games, "prior_points": 150})
+        band = model.predict_band(rows)
+        low, high, mid = band[0.1], band[0.9], model.predict(rows)
+        assert np.all(low <= mid) and np.all(mid <= high)
+        assert all(b >= a for a, b in pairwise(low)) and all(b >= a for a, b in pairwise(high))
+    # Calibrated on the last training season (2024), so the offsets are held-out residual quantiles.
+    assert model.band_season == 2024 and model.band_n == 120
+    assert set(model.band_offsets) == {0.1, 0.9} and model.band_offsets[0.1] < 0 < model.band_offsets[0.9]
+    # On fresh data from the same process about 80% of outcomes fall inside the band.
+    band = model.predict_band(df)
+    inside = np.mean((df["end_value"] >= band[0.1]) & (df["end_value"] <= band[0.9]))
+    assert 0.65 <= inside <= 0.92
+
+
+def test_band_falls_back_to_in_sample_residuals_with_one_training_season():
+    one = v2.WhatIfModelV2(label_source="test", scale_max=9999).fit(_synthetic_v2(seasons=[2024]))
+    assert one.band_season is None and one.band_offsets and one.band_n == 120
+
+
+def test_evaluate_reports_band_coverage():
+    result = v2.evaluate_v2(_synthetic_v2(), "test", 9999)
+    band = result["band"]
+    assert band["quantiles"] == [0.1, 0.9]
+    overall = band["overall"]
+    assert overall["n"] == 4 * 120
+    assert abs(overall["below"] + overall["inside"] + overall["above"] - 1) < 0.002  # rounded to 3 places
+    assert 0.6 <= overall["inside"] <= 0.95
+    assert overall["median_width_pct_of_start"] > 0

@@ -16,7 +16,8 @@ per label source, each starting from that source's own pre-season value:
 The two scales differ, so compare each prediction with its own start value.
 Models are the v2 what-if model (``whatif_v2.py``: points, games played,
 points per game and prior-year points). Prior-year points come from the
-stats archive; games default to a full 17-game season. Models are trained
+stats archive; games default to a full 17-game season. Each prediction
+carries an 80% band (10th to 90th percentile) around the median. Models are trained
 from the committed data on first use and cached in ``artifacts/``.
 """
 
@@ -80,7 +81,10 @@ def load_or_train(name: str, artifacts: Path = ARTIFACTS) -> WhatIfModelV2:
     """The saved season-tool model for a source, trained and saved if missing."""
     path = artifacts / f"season_{name}_v2.joblib"
     if path.exists():
-        return WhatIfModelV2.load(path)
+        model = WhatIfModelV2.load(path)
+        if getattr(model, "band_offsets", None):
+            return model
+        # A cache from before bands existed: retrain below.
     model = train_source_model(name)
     model.save(path)
     return model
@@ -216,12 +220,27 @@ class SeasonTool:
                     "prior_points": prior_points,
                 }
             )
-            values = self.models[name].predict(rows)
+            model = self.models[name]
+            values = model.predict(rows)
+            band = model.predict_band(rows)
+            low_q, high_q = min(band), max(band)
             src["predictions"] = [
-                {"points": float(p), "value": round(float(v)), "change": round(float(v) - start)}
-                for p, v in zip(points, values)
+                {
+                    "points": float(p),
+                    "value": round(float(v)),
+                    "change": round(float(v) - start),
+                    "low": round(float(lo)),
+                    "high": round(float(hi)),
+                }
+                for p, v, lo, hi in zip(points, values, band[low_q], band[high_q])
             ]
-            src["train_seasons"] = self.models[name].train_seasons
+            src["train_seasons"] = model.train_seasons
+            src["band"] = {
+                "low_quantile": low_q,
+                "high_quantile": high_q,
+                "coverage": f"{round((high_q - low_q) * 100)}%",
+                "calibration_season": model.band_season,
+            }
             src["note"] = None
         info["age"] = age
         info["games"] = games

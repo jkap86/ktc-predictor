@@ -69,5 +69,78 @@
       "skill": 0.477
     }
   },
+  "band": {
+    "quantiles": [
+      0.1,
+      0.9
+    ],
+    "overall": {
+      "n": 1272,
+      "below": 0.117,
+      "inside": 0.779,
+      "above": 0.104,
+      "median_width_pct_of_start": 69.4
+    },
+    "by_season": {
+      "2022": {
+        "n": 273,
+        "below": 0.15,
+        "inside": 0.674,
+        "above": 0.176,
+        "median_width_pct_of_start": 48.5
+      },
+      "2023": {
+        "n": 297,
+        "below": 0.101,
+        "inside": 0.795,
+        "above": 0.104,
+        "median_width_pct_of_start": 80.2
+      },
+      "2024": {
+        "n": 341,
+        "below": 0.132,
+        "inside": 0.815,
+        "above": 0.053,
+        "median_width_pct_of_start": 85.2
+      },
+      "2025": {
+        "n": 361,
+        "below": 0.091,
+        "inside": 0.812,
+        "above": 0.097,
+        "median_width_pct_of_start": 61.7
+      }
+    },
+    "by_position": {
+      "QB": {
+        "n": 232,
+        "below": 0.177,
+        "inside": 0.711,
+        "above": 0.112,
+        "median_width_pct_of_start": 73.6
+      },
+      "RB": {
+        "n": 363,
+        "below": 0.096,
+        "inside": 0.796,
+        "above": 0.107,
+        "median_width_pct_of_start": 70.8
+      },
+      "TE": {
+        "n": 194,
+        "below": 0.082,
+        "inside": 0.789,
+        "above": 0.129,
+        "median_width_pct_of_start": 68.7
+      },
+      "WR": {
+        "n": 483,
+        "below": 0.118,
+        "inside": 0.795,
+        "above": 0.087,
+        "median_width_pct_of_start": 67.3
+      }
+    }
+  },
   "beats_no_change": true
 }

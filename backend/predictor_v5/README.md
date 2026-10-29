@@ -696,6 +696,32 @@ per-position models are clearly worse; a shorter window trades Backchannel
 for KTC. The parameters stay as they are; with these seven inputs the model
 is at its ceiling, and further gains need new information, not tuning.
 
+## 80% bands around v2 (2026-10-29)
+
+Every v2 prediction now carries a low and high value: the 10th and 90th
+percentiles of the outcome, an 80% band. The band is a fixed log offset per
+quantile around the median curve, so it is monotone in points and ordered.
+The offsets are the residual quantiles of a model trained on all but the
+last training season and scored on that season (held-out residuals; the
+same model's in-sample residuals give a band that holds only 60-75%).
+
+Fold check (train < Y, test Y), share of outcomes inside the band and the
+band's median width as a share of start value:
+
+| Labels | Inside | Below / above | Median width | By season (inside) |
+| --- | --- | --- | --- | --- |
+| KTC 2021-25 | 81.5% | 8.8% / 9.7% | 62% of start | 2021 74%, 2022 82%, 2023 82%, 2024 82%, 2025 84% |
+| Backchannel >=5 trades, 2022-25 | 77.9% | 11.7% / 10.4% | 69% of start | 2022 67%, 2023 80%, 2024 82%, 2025 81% |
+
+QBs are the least covered (74% KTC, 71% Backchannel) and TEs/WRs the most
+(85-86% KTC); the band is one offset for all positions. Quantile-loss trees
+(``loss="quantile"``) were tried first and under-cover badly (64-67% inside
+for the same nominal 80%), because they overfit the small training set.
+Reports: the ``band`` block of ``artifacts/ktc_v2_eval.json`` and
+``artifacts/backchannel_v2_eval.json``. The season tool, its API
+(``low``/``high`` on each prediction, a ``band`` block per source) and the
+2026 Season page show the band.
+
 ## Season tool (2026)
 
 Type a player's projected season points and games played and get their
@@ -708,8 +734,8 @@ python -m predictor_v5.whatif_v2 season --player "Ja'Marr Chase" --sweep 150,250
 python -m predictor_v5 season --player "Ja'Marr Chase" --sweep 150,250,350   # full 17-game season
 ```
 
-The tool uses the v2 model (section above). Games default to 17 and the
-player's 2025 points come from the stats archive. Cached models are
+The tool uses the v2 model with its 80% band (sections above). Games
+default to 17 and the player's 2025 points come from the stats archive. Cached models are
 `artifacts/season_<source>_v2.joblib`.
 
 Each player gets two predictions, each from its own source's start value:

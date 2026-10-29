@@ -7,6 +7,13 @@ season's points to the same gradient-boosted log-ratio model. On the KTC
 season folds (train < Y, test Y, 2021-25) skill versus no-change rises from
 0.275 to about 0.34; on Backchannel labels from 0.44 to 0.47.
 
+Each model also carries an 80% band (10th and 90th percentiles). The band
+is a fixed log offset per quantile around the median prediction, taken from
+the residuals of a model trained on all but the last training season and
+scored on that season (held-out residuals; in-sample ones are far too
+tight). On the 2022-25 folds the band holds 80-81% of outcomes in both
+sources. Quantile-loss trees were tried and under-cover (64-67%).
+
 ``model.py``, ``data.py``, ``evaluate.py`` and ``__main__.py`` are bound by
 the sealed 2026 confirmation and replacement protocols (their SHA-256s sit
 in the manifests), so this module imports from them and changes nothing in
@@ -23,7 +30,7 @@ and new evaluations.
 import argparse
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +51,8 @@ FEATURES_V2 = ["log_start", "age", "points", "games", "ppg", "prior_points", "po
 MONOTONIC_V2 = [0, 0, 1, 0, 1, 0, 0]
 # A full regular season, and the default when a caller gives only points.
 FULL_SEASON_GAMES = 17
+# The band around the median: 10th to 90th percentile, an 80% interval.
+BAND_QUANTILES = (0.1, 0.9)
 
 
 def points_per_game(points, games) -> np.ndarray:
@@ -122,14 +131,59 @@ def make_features_v2(df: pd.DataFrame) -> np.ndarray:
 
 @dataclass
 class WhatIfModelV2(WhatIfModel):
-    """v1's model with the v2 feature set. Same target, loss and parameters."""
+    """v1's model with the v2 feature set. Same target, loss and parameters.
+
+    ``band_offsets`` maps each quantile in ``BAND_QUANTILES`` to a log-ratio
+    offset from the median prediction; ``band_season`` is the training
+    season those offsets were calibrated on (``None`` when there was only
+    one training season, in which case in-sample residuals were used).
+    """
+
+    band_offsets: dict[float, float] = field(default_factory=dict)
+    band_season: int | None = None
+    band_n: int = 0
 
     def fit(self, df: pd.DataFrame) -> "WhatIfModelV2":
-        self.estimator = HistGradientBoostingRegressor(monotonic_cst=MONOTONIC_V2, **HGB_PARAMS)
-        y = np.log(df["end_value"] / df["start_value"])
-        self.estimator.fit(make_features_v2(df), y)
+        self.estimator = self._fit_estimator(df)
         self.train_seasons = sorted(int(s) for s in df["season"].unique())
+        self._calibrate_band(df)
         return self
+
+    @staticmethod
+    def _fit_estimator(df: pd.DataFrame) -> HistGradientBoostingRegressor:
+        estimator = HistGradientBoostingRegressor(monotonic_cst=MONOTONIC_V2, **HGB_PARAMS)
+        return estimator.fit(make_features_v2(df), np.log(df["end_value"] / df["start_value"]))
+
+    def _calibrate_band(self, df: pd.DataFrame) -> None:
+        """Band offsets from held-out residuals: train on all but the last season, score that season."""
+        last = max(self.train_seasons)
+        earlier = df[df["season"] < last]
+        if len(earlier):
+            held_out = df[df["season"] == last]
+            inner = WhatIfModelV2(label_source=self.label_source, scale_max=self.scale_max)
+            inner.estimator = self._fit_estimator(earlier)
+            inner.train_seasons = sorted(int(s) for s in earlier["season"].unique())
+            self.band_season = int(last)
+        else:
+            held_out, inner, self.band_season = df, self, None
+        residuals = self._log_residuals(inner, held_out)
+        self.band_offsets = {float(q): float(np.quantile(residuals, q)) for q in BAND_QUANTILES}
+        self.band_n = int(len(residuals))
+
+    @staticmethod
+    def _log_residuals(model: "WhatIfModelV2", df: pd.DataFrame) -> np.ndarray:
+        actual = np.log(df["end_value"].to_numpy(float) / df["start_value"].to_numpy(float))
+        return actual - model._monotone_log_ratio(make_features_v2(df))
+
+    def predict_band(self, df: pd.DataFrame) -> dict[float, np.ndarray]:
+        """Each band quantile's value for every row: the median curve shifted by a fixed log offset."""
+        if self.estimator is None:
+            raise RuntimeError("Model is not fitted")
+        if not self.band_offsets:
+            raise RuntimeError("Model has no calibrated band")
+        log_ratio = self._monotone_log_ratio(make_features_v2(df))
+        start = df["start_value"].to_numpy(float)
+        return {q: np.clip(start * np.exp(log_ratio + offset), 0.0, self.scale_max) for q, offset in self.band_offsets.items()}
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
         if self.estimator is None:
@@ -193,6 +247,18 @@ def build_dataset_v2(labels: LabelSource, zip_path: Path | str = DEFAULT_ZIP) ->
     return build_dataset(load_season_stats_v2(zip_path), labels)
 
 
+def band_summary(g: pd.DataFrame) -> dict:
+    """How often the outcome fell below, inside and above the band, and the band's width relative to start."""
+    low, high, end, start = (g[c].to_numpy(float) for c in ("band_low", "band_high", "end_value", "start_value"))
+    return {
+        "n": int(len(g)),
+        "below": round(float(np.mean(end < low)), 3),
+        "inside": round(float(np.mean((end >= low) & (end <= high))), 3),
+        "above": round(float(np.mean(end > high)), 3),
+        "median_width_pct_of_start": round(float(np.median((high - low) / start) * 100), 1),
+    }
+
+
 def evaluate_v2(df: pd.DataFrame, label_source: str, scale_max: float, min_train_seasons: int = 1) -> dict:
     """The same chronological folds as ``evaluate.evaluate`` with the v2 model."""
     preds = []
@@ -201,6 +267,8 @@ def evaluate_v2(df: pd.DataFrame, label_source: str, scale_max: float, min_train
         test = df[df["season"] == test_season].copy()
         model = WhatIfModelV2(label_source=label_source, scale_max=scale_max).fit(train)
         test["pred_value"] = model.predict(test)
+        band = model.predict_band(test)
+        test["band_low"], test["band_high"] = band[min(band)], band[max(band)]
         preds.append(test)
     out = pd.concat(preds, ignore_index=True)
     return {
@@ -211,6 +279,12 @@ def evaluate_v2(df: pd.DataFrame, label_source: str, scale_max: float, min_train
         "overall": summarize(out),
         "by_season": {int(s): summarize(g) for s, g in out.groupby("season")},
         "by_position": {p: summarize(g) for p, g in out.groupby("position")},
+        "band": {
+            "quantiles": list(BAND_QUANTILES),
+            "overall": band_summary(out),
+            "by_season": {int(s): band_summary(g) for s, g in out.groupby("season")},
+            "by_position": {p: band_summary(g) for p, g in out.groupby("position")},
+        },
         "beats_no_change": bool(_mae(out["end_value"], out["pred_value"]) < _mae(out["end_value"], out["start_value"])),
         "predictions": out,
     }
@@ -254,7 +328,7 @@ def cmd_season(args) -> None:
             continue
         print(f"  {cfg['label']}: start {src['start_value']:.0f} on {src['start_date']}")
         for p in src["predictions"]:
-            print(f"    {p['points']:g} pts -> {p['value']} ({p['change']:+d})")
+            print(f"    {p['points']:g} pts -> {p['value']} ({p['change']:+d}), 80% band {p['low']}-{p['high']}")
 
 
 def main(argv=None) -> int:

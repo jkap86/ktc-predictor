@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Area,
   CartesianGrid,
   Line,
   LineChart,
@@ -59,6 +60,10 @@ function SourceCard({
               {pred.change >= 0 ? '+' : ''}
               {fmt(pred.change)} ({pct(pred.change, src.start_value)})
             </span>
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {src.band?.coverage ?? '80%'} band {fmt(pred.low)} to {fmt(pred.high)} ({pct(pred.low - src.start_value, src.start_value)} to{' '}
+            {pct(pred.high - src.start_value, src.start_value)})
           </div>
           {src.trades != null && (
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -151,10 +156,15 @@ export default function SeasonPage() {
     if (!curve) return [];
     const bc = curve.backchannel;
     const ktc = curve.ktc;
+    const rel = (v: number, start: number) => (100 * (v - start)) / start;
     return SWEEP.map((p, i) => ({
       points: p,
       backchannel:
         bc.predictions && bc.start_value ? (100 * bc.predictions[i].change) / bc.start_value : null,
+      backchannelBand:
+        bc.predictions && bc.start_value
+          ? [rel(bc.predictions[i].low, bc.start_value), rel(bc.predictions[i].high, bc.start_value)]
+          : null,
       ktc: ktc.predictions && ktc.start_value ? (100 * ktc.predictions[i].change) / ktc.start_value : null,
     }));
   }, [curve]);
@@ -295,7 +305,8 @@ export default function SeasonPage() {
                     Predicted change by season points
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                    Percent change from each source&apos;s own start value, since the two scales differ.
+                    Percent change from each source&apos;s own start value, since the two scales differ. The shaded area
+                    is the Backchannel 80% band: in past seasons about 8 in 10 outcomes landed inside it.
                   </p>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -304,10 +315,24 @@ export default function SeasonPage() {
                         <XAxis dataKey="points" tick={{ fontSize: 11 }} stroke="#94a3b8" />
                         <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} stroke="#94a3b8" width={45} />
                         <Tooltip
-                          formatter={(v, name) => [`${Number(v).toFixed(0)}%`, name === 'ktc' ? 'KTC' : 'Backchannel']}
+                          formatter={(v, name) => {
+                            if (name === 'backchannelBand') {
+                              const [lo, hi] = v as [number, number];
+                              return [`${lo.toFixed(0)}% to ${hi.toFixed(0)}%`, 'Backchannel 80% band'];
+                            }
+                            return [`${Number(v).toFixed(0)}%`, name === 'ktc' ? 'KTC' : 'Backchannel'];
+                          }}
                           labelFormatter={(p) => `${p} pts`}
                         />
                         <ReferenceLine y={0} stroke="#94a3b8" />
+                        <Area
+                          type="monotone"
+                          dataKey="backchannelBand"
+                          stroke="none"
+                          fill="#3b82f6"
+                          fillOpacity={0.12}
+                          isAnimationActive={false}
+                        />
                         {Number.isFinite(Number(points)) && points !== '' && (
                           <ReferenceLine x={Math.round(Number(points) / 10) * 10} stroke="#3b82f6" strokeDasharray="4 4" />
                         )}

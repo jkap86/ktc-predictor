@@ -60,6 +60,8 @@ def test_predict_uses_each_sources_own_start_value(tool):
         assert [p["points"] for p in preds] == [100, 300]
         assert preds[0]["value"] <= preds[1]["value"]
         assert all(p["change"] == p["value"] - start for p in preds)
+        assert all(p["low"] <= p["value"] <= p["high"] for p in preds)
+        assert out[name]["band"] == {"low_quantile": 0.1, "high_quantile": 0.9, "coverage": "80%", "calibration_season": 2024}
     assert out["backchannel"]["note"] is None
 
 

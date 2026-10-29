@@ -152,8 +152,9 @@ export interface SeasonSourceValue {
   start_value: number | null;
   start_date: string | null;
   trades?: number | null;
-  predictions?: { points: number; value: number; change: number }[] | null;
+  predictions?: { points: number; value: number; change: number; low: number; high: number }[] | null;
   train_seasons?: number[];
+  band?: { low_quantile: number; high_quantile: number; coverage: string; calibration_season: number | null };
   note?: string | null;
 }
 
