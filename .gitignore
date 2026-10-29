@@ -50,3 +50,4 @@ catboost_info/
 backend/predictor_v5/artifacts/*.joblib
 backend/predictor_v5/artifacts/*_predictions.csv
 scripts/pooled_relative_movement_results.csv
+backend/scripts/tune_whatif_v2_results*.csv

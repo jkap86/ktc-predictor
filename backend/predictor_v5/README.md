@@ -671,6 +671,31 @@ which already learns each source's near-constant drift. A shared start
 scale costs KTC 9–12%: its absolute value level carries information. The
 season tool keeps v2 per source.
 
+## Tuning v2 does not move it (2026-10-29)
+
+`scripts/tune_whatif_v2.py` swept the v2 model's parameters, selecting on
+the 2022–24 folds of both sources (mean of the two skills) and reporting
+2025 separately. Stage 1: learning rate {0.03, 0.05, 0.1} × iterations
+{150, 300, 600} × leaves {7, 15, 31} × min samples per leaf {10, 20, 40}.
+Stage 2: L2 {0, 1, 5, 20} × loss {absolute, squared} × training window
+{all, last 3, last 4 seasons} × one model or one per position, plus max
+depth {3, 4, 6}.
+
+| Variant | Selection skill (2022–24, KTC / Backchannel) | 2025 skill (KTC / Backchannel) |
+| --- | --- | --- |
+| **current** (lr 0.05, 300 iters, 15 leaves, 20/leaf, L2 1, absolute) | 0.370 / 0.501 | 0.389 / 0.493 |
+| best of stage 1 (600 iters) | 0.376 / 0.500 | 0.389 / 0.491 |
+| squared-error loss | 0.26–0.28 / 0.50 | 0.35 / 0.48 |
+| one model per position | 0.269 / 0.435 | 0.352 / 0.469 |
+| last-3-season window | 0.363 / 0.491 | 0.422 / 0.458 |
+| max depth 3 | 0.338 / 0.490 | 0.394 / 0.492 |
+
+Nothing beats the current parameters by more than 0.3 skill points on the
+selection folds, and that gain does not show on 2025. Squared error and
+per-position models are clearly worse; a shorter window trades Backchannel
+for KTC. The parameters stay as they are; with these seven inputs the model
+is at its ceiling, and further gains need new information, not tuning.
+
 ## Season tool (2026)
 
 Type a player's projected season points and games played and get their
