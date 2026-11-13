@@ -1,0 +1,146 @@
+{
+  "label_source": "backchannel",
+  "model": "whatif_v2",
+  "features": [
+    "log_start",
+    "age",
+    "points",
+    "games",
+    "ppg",
+    "prior_points",
+    "position_code"
+  ],
+  "folds": "train on seasons < Y, test on Y",
+  "overall": {
+    "n": 1272,
+    "model_mae": 163.2,
+    "no_change_mae": 302.4,
+    "skill": 0.46
+  },
+  "by_season": {
+    "2022": {
+      "n": 273,
+      "model_mae": 222.0,
+      "no_change_mae": 381.4,
+      "skill": 0.418
+    },
+    "2023": {
+      "n": 297,
+      "model_mae": 187.6,
+      "no_change_mae": 375.6,
+      "skill": 0.501
+    },
+    "2024": {
+      "n": 341,
+      "model_mae": 153.6,
+      "no_change_mae": 274.9,
+      "skill": 0.441
+    },
+    "2025": {
+      "n": 361,
+      "model_mae": 107.9,
+      "no_change_mae": 208.5,
+      "skill": 0.482
+    }
+  },
+  "by_position": {
+    "QB": {
+      "n": 232,
+      "model_mae": 246.8,
+      "no_change_mae": 467.7,
+      "skill": 0.472
+    },
+    "RB": {
+      "n": 363,
+      "model_mae": 162.6,
+      "no_change_mae": 278.9,
+      "skill": 0.417
+    },
+    "TE": {
+      "n": 194,
+      "model_mae": 111.4,
+      "no_change_mae": 213.5,
+      "skill": 0.478
+    },
+    "WR": {
+      "n": 483,
+      "model_mae": 144.5,
+      "no_change_mae": 276.4,
+      "skill": 0.477
+    }
+  },
+  "band": {
+    "quantiles": [
+      0.1,
+      0.9
+    ],
+    "overall": {
+      "n": 1272,
+      "below": 0.117,
+      "inside": 0.779,
+      "above": 0.104,
+      "median_width_pct_of_start": 69.4
+    },
+    "by_season": {
+      "2022": {
+        "n": 273,
+        "below": 0.15,
+        "inside": 0.674,
+        "above": 0.176,
+        "median_width_pct_of_start": 48.5
+      },
+      "2023": {
+        "n": 297,
+        "below": 0.101,
+        "inside": 0.795,
+        "above": 0.104,
+        "median_width_pct_of_start": 80.2
+      },
+      "2024": {
+        "n": 341,
+        "below": 0.132,
+        "inside": 0.815,
+        "above": 0.053,
+        "median_width_pct_of_start": 85.2
+      },
+      "2025": {
+        "n": 361,
+        "below": 0.091,
+        "inside": 0.812,
+        "above": 0.097,
+        "median_width_pct_of_start": 61.7
+      }
+    },
+    "by_position": {
+      "QB": {
+        "n": 232,
+        "below": 0.177,
+        "inside": 0.711,
+        "above": 0.112,
+        "median_width_pct_of_start": 73.6
+      },
+      "RB": {
+        "n": 363,
+        "below": 0.096,
+        "inside": 0.796,
+        "above": 0.107,
+        "median_width_pct_of_start": 70.8
+      },
+      "TE": {
+        "n": 194,
+        "below": 0.082,
+        "inside": 0.789,
+        "above": 0.129,
+        "median_width_pct_of_start": 68.7
+      },
+      "WR": {
+        "n": 483,
+        "below": 0.118,
+        "inside": 0.795,
+        "above": 0.087,
+        "median_width_pct_of_start": 67.3
+      }
+    }
+  },
+  "beats_no_change": true
+}

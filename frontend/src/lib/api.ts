@@ -327,9 +327,11 @@ export async function predictSeason(
   points: number[],
   season = 2026,
   age?: number | null,
+  games?: number | null,
 ): Promise<SeasonPrediction> {
   const params = new URLSearchParams({ player_id: playerId, points: points.join(','), season: String(season) });
   if (age != null) params.set('age', String(age));
+  if (games != null) params.set('games', String(games));
   const key = `season-predict:${params}`;
   const cached = getCached<SeasonPrediction>(key);
   if (cached) return cached;
