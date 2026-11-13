@@ -534,6 +534,35 @@ model does not transfer to MFL. With the drift and the scale removed, the
 two sources largely agree. The poor transfer in the head-to-head section came
 from MFL's drift, not from disagreement about players.
 
+## Wider MFL load (2026-11-03 to 11-13): older seasons stop hurting
+
+The first MFL loads read only two 1,500-league slices of each season's search
+hits. Loading the rest for 2019–2021, plus 2018 from nothing, took the MFL
+corpus in local thelab to 744 / 1,093 / 1,693 / 2,101 league-seasons for
+2018–2021 (15.8k / 25.3k / 30.9k / 39.6k trades). v1 history was revised to
+revision 4 for 2019–2021 and created for 2018 (2017-12-01 to 2019-01-15).
+
+`data/backchannel_labels_2019_2025_mfl_wide.csv` is the v1 export of that
+corpus (raw SHA-256
+`9a61216f3f8d227e8fe506a647e53ff850d02400c6b797122a1d918b825291b8`), built
+against `training-data-2019.zip`. 2022–2025 rows are unchanged. Trades behind
+a 2019–2021 start value roughly doubled (medians 34/46/65 → 63/82/103), and the
+rows with 5+ trades went 246/281/320 → 267/320/349.
+
+Leave-one-season-out skill with drift removed, old labels → wide labels:
+2019 −2.2% → 10.0%, 2020 30.2% → 33.4%, 2021 20.3% → 20.2%, 2024 31.1% →
+34.7%, 2025 33.8% → 36.0%. In the window sweep a 2020-start window is now
+the best for both 2024 (49.7% vs 48.0% old) and 2025 (47.5% vs 46.1%), and
+adding 2019 costs 2–4 points instead of 4–6. 2018 has no stats row and no
+label export yet.
+
+`compare-labels` on the wide labels
+(`artifacts/backchannel_label_experiments_mfl_wide.json`) selects 2021–24 on
+2024 validation (49.75% vs 47.84% for 3 seasons and 45.39% for 5) and gains
+2.86 / 3.06 points over the control on the two targets, against +2.51 / +2.59
+on 2026-10-24. Final own-target skill 46.39% vs 43.61%. `promotion_authorized`
+stays false: 2025 is reused.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
