@@ -1,0 +1,273 @@
+{
+  "coverage": {
+    "by_season": {
+      "2019": {
+        "below_min_trades": 492,
+        "end_board_rows": 1329,
+        "labelled_below_min_trades": 57,
+        "labelled_by_position": {
+          "QB": 56,
+          "RB": 84,
+          "TE": 71,
+          "WR": 137
+        },
+        "labelled_rows": 348,
+        "market_rows": 1154,
+        "next_board_missing": 1108,
+        "no_nfl_stats": 801,
+        "pre_nfl_excluded": 5,
+        "start_board_rows": 1279,
+        "training_archive_has_season": true
+      },
+      "2020": {
+        "below_min_trades": 571,
+        "end_board_rows": 1386,
+        "labelled_below_min_trades": 85,
+        "labelled_by_position": {
+          "QB": 57,
+          "RB": 111,
+          "TE": 76,
+          "WR": 157
+        },
+        "labelled_rows": 401,
+        "market_rows": 1190,
+        "next_board_missing": 1145,
+        "no_nfl_stats": 781,
+        "pre_nfl_excluded": 8,
+        "start_board_rows": 1335,
+        "training_archive_has_season": true
+      },
+      "2021": {
+        "below_min_trades": 641,
+        "end_board_rows": 1450,
+        "labelled_below_min_trades": 127,
+        "labelled_by_position": {
+          "QB": 74,
+          "RB": 130,
+          "TE": 88,
+          "WR": 176
+        },
+        "labelled_rows": 468,
+        "market_rows": 1257,
+        "next_board_missing": 1212,
+        "no_nfl_stats": 776,
+        "pre_nfl_excluded": 13,
+        "start_board_rows": 1378,
+        "training_archive_has_season": true
+      },
+      "2022": {
+        "below_min_trades": 1619,
+        "end_board_rows": 1753,
+        "labelled_below_min_trades": 530,
+        "labelled_by_position": {
+          "QB": 78,
+          "RB": 154,
+          "TE": 105,
+          "WR": 236
+        },
+        "labelled_rows": 573,
+        "market_rows": 1675,
+        "next_board_missing": 1613,
+        "no_nfl_stats": 1087,
+        "pre_nfl_excluded": 15,
+        "start_board_rows": 1686,
+        "training_archive_has_season": true
+      },
+      "2023": {
+        "below_min_trades": 2539,
+        "end_board_rows": 2664,
+        "labelled_below_min_trades": 532,
+        "labelled_by_position": {
+          "QB": 95,
+          "RB": 167,
+          "TE": 125,
+          "WR": 239
+        },
+        "labelled_rows": 626,
+        "market_rows": 2645,
+        "next_board_missing": 2377,
+        "no_nfl_stats": 1981,
+        "pre_nfl_excluded": 38,
+        "start_board_rows": 2655,
+        "training_archive_has_season": true
+      },
+      "2024": {
+        "below_min_trades": 2112,
+        "end_board_rows": 2320,
+        "labelled_below_min_trades": 482,
+        "labelled_by_position": {
+          "QB": 95,
+          "RB": 168,
+          "TE": 133,
+          "WR": 260
+        },
+        "labelled_rows": 656,
+        "market_rows": 2305,
+        "next_board_missing": 2165,
+        "no_nfl_stats": 1625,
+        "pre_nfl_excluded": 24,
+        "start_board_rows": 2312,
+        "training_archive_has_season": true
+      },
+      "2025": {
+        "below_min_trades": 2481,
+        "end_board_rows": 2944,
+        "labelled_below_min_trades": 472,
+        "labelled_by_position": {
+          "QB": 98,
+          "RB": 170,
+          "TE": 138,
+          "WR": 259
+        },
+        "labelled_rows": 665,
+        "market_rows": 2690,
+        "next_board_missing": 1891,
+        "no_nfl_stats": 2025,
+        "pre_nfl_excluded": 0,
+        "start_board_rows": 2698,
+        "training_archive_has_season": true
+      }
+    },
+    "labelled_rows": 3737,
+    "market_rows": 12916,
+    "min_trades_reported": 5,
+    "status": "warnings",
+    "warnings": [
+      "2019: more market rows lack NFL stats (801) than joined",
+      "2020: more market rows lack NFL stats (781) than joined",
+      "2021: more market rows lack NFL stats (776) than joined",
+      "2022: more market rows lack NFL stats (1087) than joined",
+      "2023: more market rows lack NFL stats (1981) than joined",
+      "2024: more market rows lack NFL stats (1625) than joined",
+      "2025: more market rows lack NFL stats (2025) than joined"
+    ]
+  },
+  "expected_seasons": [
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "exported_at": "2026-11-15T18:37:05Z",
+  "generations": {
+    "2019": {
+      "end": {
+        "id": 15800,
+        "revision": 5
+      },
+      "next": {
+        "id": 2397,
+        "revision": 1
+      },
+      "start": {
+        "id": 15685,
+        "revision": 5
+      }
+    },
+    "2020": {
+      "end": {
+        "id": 16151,
+        "revision": 5
+      },
+      "next": {
+        "id": 1991,
+        "revision": 1
+      },
+      "start": {
+        "id": 16036,
+        "revision": 5
+      }
+    },
+    "2021": {
+      "end": {
+        "id": 16498,
+        "revision": 5
+      },
+      "next": {
+        "id": 1586,
+        "revision": 1
+      },
+      "start": {
+        "id": 16376,
+        "revision": 5
+      }
+    },
+    "2022": {
+      "end": {
+        "id": 10148,
+        "revision": 3
+      },
+      "next": {
+        "id": 1174,
+        "revision": 1
+      },
+      "start": {
+        "id": 10026,
+        "revision": 3
+      }
+    },
+    "2023": {
+      "end": {
+        "id": 10472,
+        "revision": 3
+      },
+      "next": {
+        "id": 761,
+        "revision": 1
+      },
+      "start": {
+        "id": 10350,
+        "revision": 3
+      }
+    },
+    "2024": {
+      "end": {
+        "id": 10787,
+        "revision": 3
+      },
+      "next": {
+        "id": 5755,
+        "revision": 2
+      },
+      "start": {
+        "id": 10665,
+        "revision": 3
+      }
+    },
+    "2025": {
+      "end": {
+        "id": 11105,
+        "revision": 3
+      },
+      "next": {
+        "id": 277,
+        "revision": 1
+      },
+      "start": {
+        "id": 10983,
+        "revision": 3
+      }
+    }
+  },
+  "label_file": {
+    "file": "backchannel_labels_2019_2025_mfl_standard.csv",
+    "rows": 3737,
+    "sha256": "fd9f295cde064e52d430847684df5d390b9d97709d2a7762d537233c77e8b3cd"
+  },
+  "market_export": {
+    "file": "raw-v1-std-2026-11-15.csv",
+    "rows": 12916,
+    "sha256": "d04cf21b3376da8ee66afc49e8c2db9f8ec7259a2f0b649792e6239fd9756230"
+  },
+  "model_version": "baseline-hl28-v1",
+  "model_version_source": "export",
+  "schema_version": 1,
+  "trade_threshold": "none applied; thin rows are kept and filtered at training time (--min-trades)",
+  "training_data": {
+    "file": "training-data-2019.zip",
+    "sha256": "780c9ad9c30403c10a111f90987a435e1525f41f21fd877371889404914c30ee"
+  }
+}

@@ -563,6 +563,45 @@ label export yet.
 on 2026-10-24. Final own-target skill 46.39% vs 43.61%. `promotion_authorized`
 stays false: 2025 is reused.
 
+## Standard-board (1QB) MFL load (2026-11-13 to 11-15)
+
+The first MFL loads were superflex only (`mfl:load` defaults to
+`--lineups=superflex`). Loading the standard-board dynasty leagues for
+2019–2021 took the corpus to 4,192 / 4,767 / 5,118 league-seasons (84k / 88k /
+89k trades) and v1 history to revision 5. The standard board, which had six
+evidenced players on 2019-09-09 before, now has about 750 a season.
+
+`sql/backchannel_labels_standard.sql` is the label export with
+`board = 'standard'`; `data/backchannel_labels_2019_2025_mfl_standard.csv`
+is its v1 build (raw SHA-256
+`d04cf21b3376da8ee66afc49e8c2db9f8ec7259a2f0b649792e6239fd9756230`).
+`data/backchannel_labels_2019_2025_mfl_full.csv` is the superflex export
+from the same revision (raw
+`8fc3d0554d285ad3f4541697709bc16193510548543924ed7d4458cbe7fce783`); it is
+row-for-row identical to the 11-13 `_wide` file, so the boards are fitted
+apart and the superflex results above stand.
+
+| Standard board | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Rows with 5+ trades | 291 | 316 | 341 | 43 | 94 | 174 | 193 |
+| Median trades behind a start | 157 | 132 | 110 | 6 | 7 | 9 | 9 |
+| LOSO skill, drift removed | 17% | 17% | 11% | −16% | 14% | 3% | 13% |
+| Superflex LOSO skill | 10% | 33% | 20% | 23% | 43% | 35% | 36% |
+
+The standard board is thin after 2021 (MFL's 120-league samples, few Sleeper
+1QB dynasty trades), and its moves are harder to predict from points
+everywhere. On matched players the boards agree on where a player starts
+(percentile correlation 0.81–0.95) but only loosely on how they move (0.27–
+0.69); QBs are 5–24% of the standard top 50 against 5–36% superflex.
+
+Pooled training (percentile start, source flag, 4-season window, matched
+players with 5+ trades on both boards and a KTC value; log-MAE, 2023–25
+average): on superflex moves sf-only 0.176, sf+std 0.173, sf+std+ktc 0.176;
+on KTC moves ktc-only 0.166, sf+std 0.162, sf+std+ktc 0.158; on standard
+moves std-only 0.270, sf+std 0.288, no change 0.281. Adding the standard
+board gains a point or two on the superflex and KTC tasks and nothing on its
+own; the standard market is a separate, noisier target.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
