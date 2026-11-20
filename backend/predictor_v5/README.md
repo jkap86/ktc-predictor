@@ -602,6 +602,30 @@ moves std-only 0.270, sf+std 0.288, no change 0.281. Adding the standard
 board gains a point or two on the superflex and KTC tasks and nothing on its
 own; the standard market is a separate, noisier target.
 
+## Drift-split model (2026-11-20): the split is clean, the drift forecast is the hard part
+
+`drift_model.py` fits v2's relative model on `log(end / start) - season
+median` and adds one drift per fitted model (the mean of the training
+seasons' medians, or the last season's), so `end = start * exp(drift +
+relative)`. `evaluate` runs v2's folds for both and an oracle that swaps the
+estimated drift for the season's best single shift. Skill against no change:
+
+| Source, folds | v2 | split, mean drift | split, last drift | oracle shift |
+| --- | --- | --- | --- | --- |
+| MFL superflex, 2020–25 | 0.393 | 0.389 | 0.400 | 0.474 |
+| KTC, 2021–25 | 0.337 | 0.335 | 0.337 | 0.346 |
+
+On MFL the median log change by season was +0.08 (2019), −0.12, −0.08,
+−0.12, −0.14, −0.15, −0.11 (2020–25); the best shift once the relative part
+is in runs −0.04 to −0.13 and does not track the previous season. v2's trees
+already absorb an average drift through the start-value intercept, so
+splitting it out changes little on its own; the oracle says a drift forecast
+that was right would be worth about 8 points on MFL and 1 on KTC. The split
+is kept for what it makes explicit (the per-source slide, the portable
+relative part) and for cross-source comparison, not for accuracy. The
+season tool stays on v2. Artifacts:
+`artifacts/{mfl_sf,ktc}_drift_split_{mean,last}_eval.json`.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.

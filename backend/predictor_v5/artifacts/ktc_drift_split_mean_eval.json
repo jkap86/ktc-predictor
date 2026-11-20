@@ -1,0 +1,145 @@
+{
+  "label_source": "ktc",
+  "model": "drift_split",
+  "drift_how": "mean",
+  "folds": "train on seasons < Y, test on Y",
+  "by_season": [
+    {
+      "season": 2021,
+      "n": 181,
+      "drift_estimated": 0.0,
+      "drift_actual": -0.0046,
+      "oracle_shift": -0.0556,
+      "skill_v2": 0.1019,
+      "skill_drift_split": 0.1019,
+      "skill_oracle_drift": 0.1484
+    },
+    {
+      "season": 2022,
+      "n": 241,
+      "drift_estimated": -0.0023,
+      "drift_actual": 0.0033,
+      "oracle_shift": 0.0399,
+      "skill_v2": 0.3231,
+      "skill_drift_split": 0.2927,
+      "skill_oracle_drift": 0.2811
+    },
+    {
+      "season": 2023,
+      "n": 313,
+      "drift_estimated": -0.0004,
+      "drift_actual": 0.0,
+      "oracle_shift": 0.0313,
+      "skill_v2": 0.3939,
+      "skill_drift_split": 0.3954,
+      "skill_oracle_drift": 0.3908
+    },
+    {
+      "season": 2024,
+      "n": 384,
+      "drift_estimated": -0.0003,
+      "drift_actual": 0.0055,
+      "oracle_shift": 0.0436,
+      "skill_v2": 0.3809,
+      "skill_drift_split": 0.3804,
+      "skill_oracle_drift": 0.3781
+    },
+    {
+      "season": 2025,
+      "n": 463,
+      "drift_estimated": 0.0009,
+      "drift_actual": -0.0194,
+      "oracle_shift": 0.0773,
+      "skill_v2": 0.3892,
+      "skill_drift_split": 0.3998,
+      "skill_oracle_drift": 0.4291
+    }
+  ],
+  "overall": {
+    "skill_v2": 0.3372,
+    "skill_drift_split": 0.3351,
+    "skill_oracle_drift": 0.3456,
+    "drift_split": {
+      "n": 1582,
+      "model_mae": 415.2,
+      "no_change_mae": 624.4,
+      "skill": 0.335
+    }
+  },
+  "by_position": {
+    "QB": {
+      "n": 270,
+      "model_mae": 527.4,
+      "no_change_mae": 744.0,
+      "skill": 0.291
+    },
+    "RB": {
+      "n": 413,
+      "model_mae": 417.0,
+      "no_change_mae": 633.9,
+      "skill": 0.342
+    },
+    "TE": {
+      "n": 284,
+      "model_mae": 408.0,
+      "no_change_mae": 587.2,
+      "skill": 0.305
+    },
+    "WR": {
+      "n": 615,
+      "model_mae": 368.0,
+      "no_change_mae": 582.8,
+      "skill": 0.369
+    }
+  },
+  "band": {
+    "quantiles": [
+      0.1,
+      0.9
+    ],
+    "overall": {
+      "n": 1582,
+      "below": 0.087,
+      "inside": 0.819,
+      "above": 0.094,
+      "median_width_pct_of_start": 62.0
+    },
+    "by_season": {
+      "2021": {
+        "n": 181,
+        "below": 0.138,
+        "inside": 0.74,
+        "above": 0.122,
+        "median_width_pct_of_start": 60.7
+      },
+      "2022": {
+        "n": 241,
+        "below": 0.058,
+        "inside": 0.813,
+        "above": 0.129,
+        "median_width_pct_of_start": 74.7
+      },
+      "2023": {
+        "n": 313,
+        "below": 0.115,
+        "inside": 0.827,
+        "above": 0.058,
+        "median_width_pct_of_start": 65.9
+      },
+      "2024": {
+        "n": 384,
+        "below": 0.06,
+        "inside": 0.82,
+        "above": 0.12,
+        "median_width_pct_of_start": 61.0
+      },
+      "2025": {
+        "n": 463,
+        "below": 0.086,
+        "inside": 0.847,
+        "above": 0.067,
+        "median_width_pct_of_start": 56.8
+      }
+    }
+  }
+}
