@@ -626,6 +626,22 @@ relative part) and for cross-source comparison, not for accuracy. The
 season tool stays on v2. Artifacts:
 `artifacts/{mfl_sf,ktc}_drift_split_{mean,last}_eval.json`.
 
+## Features and tuning (2026-11-21): a point or two each, not the lever
+
+Added one at a time to v2's feature set on the 2022–25 folds. Trade values
+(superflex): `last_4_vs_season` +1.3 points of skill, a 90-day market
+momentum feature (`log(start / value 90 days earlier)` from the local history)
++0.9, `boom_rate` +0.4, together +0.9; snap share, targets, draft slot,
+experience, weekly consistency and the KTC trend fields are zero or negative.
+KTC: `positional_competition` +1.1, `years_exp` +0.6, `receptions` +0.5, the
+best four together +0.5. A 162-setting grid over learning rate, leaves,
+rounds, leaf size and loss finds +1.6 on each source as the best of 162 on
+the test years, with opposite directions (trade values: 31 leaves, squared
+error; KTC: 7 leaves, 600 rounds), so the honest gain is under a point. The
+window test on the same folds gives 2–4 points per clean season from 2020
+on, and −1 to −2 for 2019. Per-season data depth and a weekly-sequence
+model are the remaining levers; the feature and tuning scripts are not kept.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
