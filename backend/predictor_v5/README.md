@@ -673,6 +673,26 @@ entered directly) would have to come first. `--value-weeks k --value-path
 update, a different task not yet evaluated. Artifacts:
 `artifacts/{mfl_sf,ktc}_weekly_{quarters,weeks}_eval.json`.
 
+### Quarters from a total alone (2026-11-23): the gain needs the real line
+
+Before wiring quarters into the season tool, the folds were rerun with the
+test rows' quarters replaced by quarters derived from the total only, the
+way the tool would have to: the position's mean quarter shares, shares by
+position and games bucket, and an average over the 25 nearest training
+players' actual shares (by position, points and games) applied to this total.
+
+| 2022–25 folds | v2 | actual quarters | pos shares | pos × games shares | 25-nearest profiles |
+| --- | --- | --- | --- | --- | --- |
+| Trade values | 0.498 | 0.524 | 0.486 | 0.494 | 0.501 |
+| KTC | 0.366 | 0.370 | 0.362 | 0.365 | 0.374 |
+
+The gain is the timing itself; a profile guessed from the total gives it
+back (+0.2 and +0.8 for the nearest-profile ensemble, inside the noise). So
+the quarters model is not promoted behind the one-number interface. Where it
+earns its place is a tool that asks when the points come (quarters, or a
+shape preset such as fast start, late surge, even, or a missed stretch) and
+shows how the timing moves the value; the season tool stays on v2.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
