@@ -1,0 +1,151 @@
+{
+  "label_source": "ktc",
+  "model": "weekly[weeks]",
+  "sequence": "weeks",
+  "features": [
+    "log_start",
+    "age",
+    "points",
+    "games",
+    "ppg",
+    "prior_points",
+    "position_code",
+    "wk_1",
+    "wk_2",
+    "wk_3",
+    "wk_4",
+    "wk_5",
+    "wk_6",
+    "wk_7",
+    "wk_8",
+    "wk_9",
+    "wk_10",
+    "wk_11",
+    "wk_12",
+    "wk_13",
+    "wk_14",
+    "wk_15",
+    "wk_16",
+    "wk_17",
+    "wk_18"
+  ],
+  "folds": "train on seasons < Y, test on Y",
+  "by_season": [
+    {
+      "season": 2021,
+      "n": 181,
+      "skill_v2": 0.1019,
+      "skill_weekly": 0.1335
+    },
+    {
+      "season": 2022,
+      "n": 241,
+      "skill_v2": 0.3231,
+      "skill_weekly": 0.3066
+    },
+    {
+      "season": 2023,
+      "n": 313,
+      "skill_v2": 0.3939,
+      "skill_weekly": 0.3554
+    },
+    {
+      "season": 2024,
+      "n": 384,
+      "skill_v2": 0.3809,
+      "skill_weekly": 0.3376
+    },
+    {
+      "season": 2025,
+      "n": 463,
+      "skill_v2": 0.3892,
+      "skill_weekly": 0.3807
+    }
+  ],
+  "overall": {
+    "skill_v2": 0.3372,
+    "skill_weekly": 0.3186,
+    "weekly": {
+      "n": 1582,
+      "model_mae": 425.5,
+      "no_change_mae": 624.4,
+      "skill": 0.319
+    }
+  },
+  "by_position": {
+    "QB": {
+      "n": 270,
+      "model_mae": 532.1,
+      "no_change_mae": 744.0,
+      "skill": 0.285
+    },
+    "RB": {
+      "n": 413,
+      "model_mae": 414.4,
+      "no_change_mae": 633.9,
+      "skill": 0.346
+    },
+    "TE": {
+      "n": 284,
+      "model_mae": 445.1,
+      "no_change_mae": 587.2,
+      "skill": 0.242
+    },
+    "WR": {
+      "n": 615,
+      "model_mae": 377.1,
+      "no_change_mae": 582.8,
+      "skill": 0.353
+    }
+  },
+  "band": {
+    "quantiles": [
+      0.1,
+      0.9
+    ],
+    "overall": {
+      "n": 1582,
+      "below": 0.086,
+      "inside": 0.81,
+      "above": 0.104,
+      "median_width_pct_of_start": 63.7
+    },
+    "by_season": {
+      "2021": {
+        "n": 181,
+        "below": 0.149,
+        "inside": 0.691,
+        "above": 0.16,
+        "median_width_pct_of_start": 54.3
+      },
+      "2022": {
+        "n": 241,
+        "below": 0.066,
+        "inside": 0.801,
+        "above": 0.133,
+        "median_width_pct_of_start": 75.4
+      },
+      "2023": {
+        "n": 313,
+        "below": 0.121,
+        "inside": 0.799,
+        "above": 0.08,
+        "median_width_pct_of_start": 72.9
+      },
+      "2024": {
+        "n": 384,
+        "below": 0.044,
+        "inside": 0.854,
+        "above": 0.102,
+        "median_width_pct_of_start": 63.8
+      },
+      "2025": {
+        "n": 463,
+        "below": 0.082,
+        "inside": 0.832,
+        "above": 0.086,
+        "median_width_pct_of_start": 56.2
+      }
+    }
+  }
+}

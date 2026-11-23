@@ -642,6 +642,37 @@ window test on the same folds gives 2–4 points per clean season from 2020
 on, and −1 to −2 for 2019. Per-season data depth and a weekly-sequence
 model are the remaining levers; the feature and tuning scripts are not kept.
 
+## Weekly-sequence model (2026-11-23): quarter sums beat the season total
+
+`weekly_model.py` gives v2's learner the shape of the season on top of v2's
+features. Four encodings were tried on v2's folds (`--sequence`): the raw 18
+weekly totals, three shape summaries (`late_form`, `trend`, `boom_weeks`),
+four quarter sums (weeks 1-4, 5-8, 9-13, 14-18), and quarters plus shape.
+Every weekly or quarter total is monotone increasing, so more points in any
+stretch never lowers the prediction (to within the ~0.05% that
+`absolute_error`'s leaf refit allows).
+
+| Source, folds | v2 | quarters | raw 18 weeks |
+| --- | --- | --- | --- |
+| Trade values, superflex, 2020–25 | 0.393 | **0.410** | 0.387 |
+| Trade values, 2023 / 2024 / 2025 | 0.531 / 0.506 / 0.493 | 0.536 / 0.556 / 0.530 | 0.515 / 0.534 / 0.517 |
+| KTC, 2021–25 | 0.337 | **0.349** | 0.319 |
+| KTC, 2023 / 2024 / 2025 | 0.394 / 0.381 / 0.389 | 0.398 / 0.371 / 0.419 | 0.355 / 0.338 / 0.381 |
+
+On the 2022–25 folds alone (the same cut as the feature ablation) quarters
+add 2.6 points on the trade values (0.498 → 0.524), shape summaries 2.5, and
+the two together 2.2; on KTC none of them help (0.365 → 0.363 quarters) and
+the raw weeks cost 3 points on both. Stronger regularisation did not rescue
+the raw sequence. So the market reads when the points came, at a coarse
+grain, and roughly 1,000 training rows cannot support finer.
+
+Quarters are the default. The season tool is unchanged: its user gives one
+projected total, so a weekly profile sampled from the total (or quarters
+entered directly) would have to come first. `--value-weeks k --value-path
+<csv>` adds the player's own value path through week k for a mid-season
+update, a different task not yet evaluated. Artifacts:
+`artifacts/{mfl_sf,ktc}_weekly_{quarters,weeks}_eval.json`.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
