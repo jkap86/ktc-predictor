@@ -693,6 +693,80 @@ earns its place is a tool that asks when the points come (quarters, or a
 shape preset such as fast start, late surge, even, or a missed stretch) and
 shows how the timing moves the value; the season tool stays on v2.
 
+## Short windows: 3 and 6 games (2026-11-25)
+
+`short_window.py` asks the season tool's question over the next 3 or 6
+games: value on the Tuesday before week `w`, age, position, recent form
+(season-to-date and last-3-week points per game, prior-season points, the
+value's 3-week momentum) and the points scored in weeks `w .. w+k-1` (the
+what-if), predicting the value on the Tuesday after the window. Same learner
+as v2, monotone in window points and points per game. Every start week is
+a row, so windows overlap. Folds train on seasons before the test season
+(Backchannel from 2020, KTC from 2021); 2022-24 is selection, 2025 the
+check. Nothing was tuned on 2025.
+
+Labels: Backchannel from `sql/weekly_values.sql` (`baseline-hl28-v1`
+superflex, reference value, newest revision: 5 for 2019-21, 3 for 2022-25;
+`data/weekly_values_v1_sf.csv.gz`), windows with 5+ trades at both ends;
+KTC from the zip's `weekly_ktc` (Tuesdays, weeks 1-18, so KTC windows end
+before week 18).
+
+Skill against no change, selection folds / 2025:
+
+| | Backchannel 3 games | Backchannel 6 | KTC 3 games | KTC 6 |
+| --- | --- | --- | --- | --- |
+| Windows (selection) | 16,297 | 13,007 | 13,227 | 10,557 |
+| Median move | 8.8% | 15.1% | 6.8% | 10.8% |
+| Short model | 0.317 / 0.420 | 0.391 / 0.467 | 0.227 / 0.201 | 0.281 / 0.314 |
+| Same, no window points | 0.273 / 0.353 | 0.279 / 0.335 | -0.003 / 0.045 | -0.041 / 0.014 |
+| Season model scaled to the window | 0.083 / 0.074 | 0.170 / 0.159 | 0.145 / 0.147 | 0.199 / 0.248 |
+| One league-wide drift | 0.024 / 0.015 | 0.053 / 0.036 | 0.006 / 0.010 | 0.005 / 0.011 |
+| Value swing, 25th to 75th pct window ppg | 5% | 16% | 16% | 29% |
+
+The season model on its own task, same folds and weekly labels: 0.507 /
+0.496 Backchannel, 0.342 / 0.406 KTC. Relative MAE, short model vs no
+change: Backchannel 12.3% vs 15.2% (3 games), 17.8% vs 23.9% (6); KTC 12.0%
+vs 14.2%, 18.0% vs 22.0%. The season tool asked about a window (its pace
+over a full season, the log change scaled to the window's share) gets less
+than half the dedicated model's skill, so a short tool needs its own model.
+
+The two sources fail differently:
+
+- **KTC** prices news at once. Without the window's points the model has no
+  skill at all; with them it cuts error by a fifth (3 games) to under a
+  third (6), and the points move the answer a lot (16% / 29% between a weak
+  and a strong window). Consecutive windows show no reversal (correlation
+  0.05 / -0.02), so there is no sign of label noise.
+- **Backchannel** lags. A 28-day half-life on trades means the value is
+  still catching up on earlier weeks, and that catch-up is most of the
+  skill: 0.27-0.35 without the window's points. The window's points add 4-7
+  skill points over 3 games and 11-13 over 6; over 3 games the what-if
+  barely moves the answer (5%).
+
+Backchannel noise. The median window starts on 79 trades in the 150-day
+window but ends on 6 trades in the last 14 days; 45% of 3-game labels end
+on fewer than 5. Skill rises steeply with liquidity (3 games: 0.17 at 5-19
+trades at the start, 0.21 at 20-49, 0.31 at 50-149, 0.45 at 150+; 6 games:
+0.23 / 0.29 / 0.41 / 0.49). Consecutive 6-game moves reverse for thin
+players (correlation -0.08 at 5-19 trades, -0.17 at 20-49, and -0.12 for
+windows ending on 0-4 recent trades), which puts at least 15-33% of their
+move variance down to noise; for 50+ trades they persist (+0.09 / +0.17), the
+smoother's lag. Liquid players' short moves are real; thin players' are
+partly noise and should be shown with a wide band or not at all.
+
+**Verdict.** A 6-game tool is worth building: on KTC it reaches 0.28-0.31
+skill (the season model is 0.34-0.41) with a large, monotone response to the
+points entered, and on Backchannel it works for players with 50+ trades. A
+3-game tool is weaker: KTC's moves are small (median 7%) and the model's
+gain is 0.20-0.23; Backchannel's 3-game value barely reacts to the points.
+3 games is fine as a preset of the 6-game tool's model family on KTC, not as
+a Backchannel feature. Nothing was promoted; the sealed checks are untouched.
+
+```bash
+python -m predictor_v5.short_window evaluate --source bc    # artifacts/short_window_bc_eval.json
+python -m predictor_v5.short_window evaluate --source ktc   # artifacts/short_window_ktc_eval.json
+```
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.
