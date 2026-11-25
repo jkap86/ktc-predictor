@@ -7,6 +7,9 @@ import type {
   EOSBatchResponse,
   HistoricalResponse,
   SeasonInfo,
+  WindowInfo,
+  WindowPlayer,
+  WindowPrediction,
   SeasonPlayer,
   SeasonPrediction,
 } from '../types/player';
@@ -336,6 +339,47 @@ export async function predictSeason(
   const cached = getCached<SeasonPrediction>(key);
   if (cached) return cached;
   const result = await fetchApi<SeasonPrediction>(`/v5/season/predict?${params}`);
+  setCache(key, result);
+  return result;
+}
+
+// ── v5 short-window tool ─────────────────────────────────────────────────
+
+export async function getWindowInfo(season = 2026): Promise<WindowInfo> {
+  return fetchApi<WindowInfo>(`/v5/window?season=${season}`);
+}
+
+export async function searchWindowPlayers(query = '', position?: string, limit = 50, season = 2026): Promise<WindowPlayer[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit), season: String(season) });
+  if (position) params.set('position', position);
+  const key = `window-search:${params}`;
+  const cached = getCached<WindowPlayer[]>(key);
+  if (cached) return cached;
+  const result = (await fetchApi<{ players: WindowPlayer[] }>(`/v5/window/players?${params}`)).players;
+  setCache(key, result);
+  return result;
+}
+
+export async function predictWindow(
+  playerId: string,
+  games: number,
+  startWeek: number,
+  points?: number[] | null,
+  windowGames?: number | null,
+  season = 2026,
+): Promise<WindowPrediction> {
+  const params = new URLSearchParams({
+    player_id: playerId,
+    games: String(games),
+    start_week: String(startWeek),
+    season: String(season),
+  });
+  if (points?.length) params.set('points', points.join(','));
+  if (windowGames != null) params.set('window_games', String(windowGames));
+  const key = `window-predict:${params}`;
+  const cached = getCached<WindowPrediction>(key);
+  if (cached) return cached;
+  const result = await fetchApi<WindowPrediction>(`/v5/window/predict?${params}`);
   setCache(key, result);
   return result;
 }

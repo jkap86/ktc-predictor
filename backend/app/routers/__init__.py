@@ -2,5 +2,6 @@ from .players import router as players_router
 from .predictions import router as predictions_router
 from .models import router as models_router
 from .season import router as season_router
+from .window import router as window_router
 
-__all__ = ["players_router", "predictions_router", "models_router", "season_router"]
+__all__ = ["players_router", "predictions_router", "models_router", "season_router", "window_router"]

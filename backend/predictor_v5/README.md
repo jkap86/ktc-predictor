@@ -767,6 +767,57 @@ python -m predictor_v5.short_window evaluate --source bc    # artifacts/short_wi
 python -m predictor_v5.short_window evaluate --source ktc   # artifacts/short_window_ktc_eval.json
 ```
 
+### Late season on its own (2026-11-25)
+
+Skill against no change on every fold (2022-25), by the week of the window's
+last game (`by_last_game_week_all_folds` in the reports):
+
+| Last game in week | 8 | 10 | 12 | 13 | 14 | 15 | 16 | 17 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| KTC, 3 games | 0.20 | 0.25 | 0.25 | 0.23 | 0.19 | 0.14 | 0.12 | 0.04 |
+| KTC, 6 games | 0.30 | 0.29 | 0.30 | 0.30 | 0.29 | 0.26 | 0.24 | 0.19 |
+| Backchannel, 3 games (no points) | 0.26 (0.21) | 0.13 (0.06) | 0.17 (0.12) | 0.14 (0.09) | 0.12 (0.06) | 0.22 (0.18) | 0.36 (0.36) | 0.46 (0.46) |
+| Backchannel trades in the last 14 days, median | 11 | 11 | 10 | 7 | 5 | 3 | 2 | 1 |
+
+Windows played entirely in weeks 14+ do behave differently. On KTC, 3-game
+skill is 0.08 there against 0.23 for the rest of the season, with moves of
+4% instead of 7%: once fantasy playoffs start, the market barely reprices on
+points. On Backchannel, trades dry up after fantasy trade deadlines (1-5 in
+the last 14 days), and the late "skill" (0.44) is the smoother settling,
+with the window's points adding nothing (0.45 without them). Looking back
+from week 14 at weeks 11-13 is a normal window: 0.23 on KTC for 3 games,
+0.30 for 6.
+
+## Short-window tool (2026)
+
+`window_tool.py`: pick a player, 3 or 6 games and the week the window
+starts. A finished window defaults to what the player scored and shows the
+predicted value, the value at their own pace (points per game so far, shrunk
+toward last season's with 3 games' weight) and the actual value after the
+window, so the gap from pace is what those games did. A window still to come
+takes the points as a what-if. Models are the study's full feature set per
+source and length, trained on every season (KTC 2021-25, Backchannel
+2020-25), with an 80% band from the last season's held-out residuals and the
+same monotone grid as v2. KTC is the main source; Backchannel shows only for
+players with 50+ trades in the 150-day window. Windows starting week 14 or
+later carry a note that points move value much less then.
+
+Inputs are exported from the thelab database with `sql/window_inputs.sql`
+into `data/window_inputs_2026.csv` (KTC: the latest value within 7 days on
+or before each Tuesday; Backchannel `baseline-hl28-v1`; Sleeper full-PPR
+points). Local v1 history ends on 2026-10-09, so 2026 windows that start
+after week 5 have no Backchannel value until v1 is extended.
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v season=2026 -v week1=2026-09-08 \
+  -f predictor_v5/sql/window_inputs.sql --csv -o predictor_v5/data/window_inputs_2026.csv
+python -m predictor_v5.window_tool --player "Ja'Marr Chase" --games 3                 # latest finished 3 games
+python -m predictor_v5.window_tool --player "Ja'Marr Chase" --games 6 --start-week 12 --sweep 60,90,120
+```
+
+It is also on the app's **3 / 6 Games** page (`/window`, API under
+`/api/v5/window`). Cached models are `artifacts/window_<source>_<games>.joblib`.
+
 ## Independent 2026 MFL-versus-KTC replacement protocol
 
 `predictor_v5.ktc_replacement_2026` is a separate, pre-outcome protocol.

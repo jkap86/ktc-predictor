@@ -181,3 +181,52 @@ export interface SeasonInfo {
   players: number;
   sources: Record<string, string>;
 }
+
+// ── v5 short-window tool ─────────────────────────────────────────────────
+
+export interface WindowSourceValue {
+  label: string;
+  start_value: number | null;
+  start_date: string | null;
+  actual_value: number | null;
+  actual_change: number | null;
+  trades?: number | null;
+  predictions: { points: number; value: number; change: number; low: number; high: number }[] | null;
+  pace?: { ppg: number; points: number; value: number };
+  train_seasons?: number[];
+  note: string | null;
+}
+
+export interface WindowPlayer {
+  player_id: string;
+  name: string;
+  position: string;
+  team: string | null;
+  ktc_value: number | null;
+}
+
+export interface WindowPrediction {
+  player_id: string;
+  name: string;
+  position: string;
+  team: string | null;
+  season: number;
+  games: number;
+  start_week: number;
+  last_game_week: number;
+  finished: boolean;
+  window_games: number;
+  actual_points: number | null;
+  late_season: boolean;
+  note: string | null;
+  ktc: WindowSourceValue;
+  backchannel: WindowSourceValue;
+}
+
+export interface WindowInfo {
+  season: number;
+  games: number[];
+  last_played_week: number;
+  sources: Record<string, string>;
+  backchannel_min_trades: number;
+}

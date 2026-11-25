@@ -74,6 +74,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
               <ModelSelector />
               <NavLink href="/">Search</NavLink>
               <NavLink href="/season">2026 Season</NavLink>
+              <NavLink href="/window">3 / 6 Games</NavLink>
               <ThemeToggle />
             </div>
           </div>

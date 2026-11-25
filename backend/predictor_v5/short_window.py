@@ -104,6 +104,23 @@ def read_bc_values(path: Path) -> pd.DataFrame:
     return v[["player_id", "season", "week", "value", "trades_window", "trades_recent", "uncertainty"]]
 
 
+def window_inputs(P: np.ndarray, G: np.ndarray, val: dict, w: int, k: int) -> dict:
+    """The window's points and the form known at its start. ``P``/``G`` are
+    weekly points and games played (index 0 = week 1), ``val`` week -> value."""
+    win = slice(w - 1, w - 1 + k)
+    std = slice(0, w - 1)
+    rec = slice(max(0, w - 1 - RECENT), w - 1)
+    std_g, rec_g, win_g = G[std].sum(), G[rec].sum(), G[win].sum()
+    back = max(1, w - RECENT)
+    return {
+        "win_points": P[win].sum(), "win_games": win_g,
+        "win_ppg": P[win].sum() / win_g if win_g else 0.0,
+        "std_ppg": P[std].sum() / std_g if std_g else 0.0, "std_games": std_g,
+        "recent_ppg": P[rec].sum() / rec_g if rec_g else 0.0,
+        "momentum": float(np.log(val[w] / val[back])) if (val.get(back) or 0) > 0 else 0.0,
+    }
+
+
 def build_windows(pts: pd.DataFrame, values: pd.DataFrame, k: int, min_trades: int, last_value_week: int | None) -> pd.DataFrame:
     """One row per (player, season, start week) with a value at both ends."""
     wide_pts = pts.pivot_table(index=["player_id", "season"], columns="week", values="points", aggfunc="sum").fillna(0.0)
@@ -131,23 +148,14 @@ def build_windows(pts: pd.DataFrame, values: pd.DataFrame, k: int, min_trades: i
                 continue
             if min_trades and (trades.get(w, 0) < min_trades or trades.get(end, 0) < min_trades):
                 continue
-            win = slice(w - 1, w - 1 + k)
-            std = slice(0, w - 1)
-            rec = slice(max(0, w - 1 - RECENT), w - 1)
-            std_g, rec_g, win_g = G[std].sum(), G[rec].sum(), G[win].sum()
-            back = max(1, w - RECENT)
             rows.append({
                 "player_id": pid, "name": meta["name"], "season": season, "week": w, "k": k,
                 "position": meta["position"], "age": meta["age"] + (w - 1) / 52.0,
                 "start_value": val[w], "end_value": val[end],
                 "start_trades": trades.get(w), "end_trades": trades.get(end),
                 "end_trades_recent": recent.get(end), "start_unc": unc.get(w), "end_unc": unc.get(end),
-                "win_points": P[win].sum(), "win_games": win_g,
-                "win_ppg": P[win].sum() / win_g if win_g else 0.0,
-                "std_ppg": P[std].sum() / std_g if std_g else 0.0, "std_games": std_g,
-                "recent_ppg": P[rec].sum() / rec_g if rec_g else 0.0,
+                **window_inputs(P, G, val, w, k),
                 "prior_points": meta["prior_points"],
-                "momentum": float(np.log(val[w] / val[back])) if val.get(back, 0) > 0 else 0.0,
             })
     df = pd.DataFrame(rows)
     df["log_start"] = np.log(df["start_value"])
@@ -302,6 +310,20 @@ def evaluate(source: str, values_path: Path, min_trades: int, train_from: int, k
         w["by_position_all_folds"] = {p: block(g) for p, g in res.groupby("position")}
         w["by_start_week_all_folds"] = {
             label: block(g) for label, g in res.groupby(pd.cut(res["week"], [0, 4, 8, 12, 19], labels=["1-4", "5-8", "9-12", "13+"]), observed=True)
+        }
+        # Late season on its own: by the week of the window's last game.
+        last_game = res["week"] + res["k"] - 1
+        w["by_last_game_week_all_folds"] = {
+            str(int(lg)): {**block(g), **({"end_trades_recent_median": float(g["end_trades_recent"].median())} if source == "bc" else {})}
+            for lg, g in res.groupby(last_game)
+        }
+        late = res[res["week"] >= 14]
+        w["late_season"] = {
+            "rule": "every game of the window in week 14 or later",
+            "all_folds": block(late) if len(late) else None,
+            "selection": block(late[late["season"].isin(SELECTION)]) if len(late) else None,
+            "check": block(late[late["season"] == CHECK]) if (late["season"] == CHECK).any() else None,
+            "rest_all_folds": block(res[res["week"] < 14]),
         }
         # How much the what-if input moves the answer: 25th vs 75th percentile window points, same player.
         swing = []

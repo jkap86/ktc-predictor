@@ -464,6 +464,619 @@
           "no_change_rel_mae": 0.075
         }
       },
+      "by_last_game_week_all_folds": {
+        "3": {
+          "n": 1333,
+          "player_seasons": 1333,
+          "no_change_mae": 331.0,
+          "median_abs_move": 0.1006,
+          "drift": {
+            "mae": 327.4,
+            "skill": 0.0111
+          },
+          "season_scaled": {
+            "mae": 274.7,
+            "skill": 0.1702
+          },
+          "full": {
+            "mae": 242.8,
+            "skill": 0.2667
+          },
+          "no_window_points": {
+            "mae": 328.6,
+            "skill": 0.0073
+          },
+          "no_momentum": {
+            "mae": 238.7,
+            "skill": 0.2788
+          },
+          "points_only": {
+            "mae": 240.6,
+            "skill": 0.2731
+          },
+          "full_rel_mae": 0.1416,
+          "no_change_rel_mae": 0.177
+        },
+        "4": {
+          "n": 1335,
+          "player_seasons": 1335,
+          "no_change_mae": 340.2,
+          "median_abs_move": 0.105,
+          "drift": {
+            "mae": 336.8,
+            "skill": 0.0101
+          },
+          "season_scaled": {
+            "mae": 288.0,
+            "skill": 0.1534
+          },
+          "full": {
+            "mae": 242.5,
+            "skill": 0.2873
+          },
+          "no_window_points": {
+            "mae": 325.3,
+            "skill": 0.0437
+          },
+          "no_momentum": {
+            "mae": 239.6,
+            "skill": 0.2958
+          },
+          "points_only": {
+            "mae": 255.5,
+            "skill": 0.2491
+          },
+          "full_rel_mae": 0.2461,
+          "no_change_rel_mae": 0.2833
+        },
+        "5": {
+          "n": 1336,
+          "player_seasons": 1336,
+          "no_change_mae": 296.5,
+          "median_abs_move": 0.0863,
+          "drift": {
+            "mae": 293.6,
+            "skill": 0.0097
+          },
+          "season_scaled": {
+            "mae": 249.2,
+            "skill": 0.1593
+          },
+          "full": {
+            "mae": 222.5,
+            "skill": 0.2494
+          },
+          "no_window_points": {
+            "mae": 289.8,
+            "skill": 0.0225
+          },
+          "no_momentum": {
+            "mae": 222.1,
+            "skill": 0.2508
+          },
+          "points_only": {
+            "mae": 231.5,
+            "skill": 0.2193
+          },
+          "full_rel_mae": 0.1827,
+          "no_change_rel_mae": 0.21
+        },
+        "6": {
+          "n": 1338,
+          "player_seasons": 1338,
+          "no_change_mae": 251.8,
+          "median_abs_move": 0.0657,
+          "drift": {
+            "mae": 249.9,
+            "skill": 0.0076
+          },
+          "season_scaled": {
+            "mae": 214.4,
+            "skill": 0.1486
+          },
+          "full": {
+            "mae": 201.2,
+            "skill": 0.2011
+          },
+          "no_window_points": {
+            "mae": 249.4,
+            "skill": 0.0095
+          },
+          "no_momentum": {
+            "mae": 200.6,
+            "skill": 0.2031
+          },
+          "points_only": {
+            "mae": 207.4,
+            "skill": 0.1761
+          },
+          "full_rel_mae": 0.127,
+          "no_change_rel_mae": 0.1458
+        },
+        "7": {
+          "n": 1340,
+          "player_seasons": 1340,
+          "no_change_mae": 223.4,
+          "median_abs_move": 0.0597,
+          "drift": {
+            "mae": 222.4,
+            "skill": 0.0046
+          },
+          "season_scaled": {
+            "mae": 189.0,
+            "skill": 0.1542
+          },
+          "full": {
+            "mae": 180.6,
+            "skill": 0.1916
+          },
+          "no_window_points": {
+            "mae": 223.1,
+            "skill": 0.0016
+          },
+          "no_momentum": {
+            "mae": 180.5,
+            "skill": 0.1921
+          },
+          "points_only": {
+            "mae": 189.5,
+            "skill": 0.152
+          },
+          "full_rel_mae": 0.1162,
+          "no_change_rel_mae": 0.1352
+        },
+        "8": {
+          "n": 1338,
+          "player_seasons": 1338,
+          "no_change_mae": 218.1,
+          "median_abs_move": 0.0615,
+          "drift": {
+            "mae": 216.5,
+            "skill": 0.0069
+          },
+          "season_scaled": {
+            "mae": 186.5,
+            "skill": 0.1449
+          },
+          "full": {
+            "mae": 174.7,
+            "skill": 0.1989
+          },
+          "no_window_points": {
+            "mae": 218.1,
+            "skill": -0.0002
+          },
+          "no_momentum": {
+            "mae": 173.8,
+            "skill": 0.2028
+          },
+          "points_only": {
+            "mae": 183.6,
+            "skill": 0.158
+          },
+          "full_rel_mae": 0.0919,
+          "no_change_rel_mae": 0.1107
+        },
+        "9": {
+          "n": 1340,
+          "player_seasons": 1340,
+          "no_change_mae": 234.2,
+          "median_abs_move": 0.0658,
+          "drift": {
+            "mae": 232.1,
+            "skill": 0.009
+          },
+          "season_scaled": {
+            "mae": 193.4,
+            "skill": 0.174
+          },
+          "full": {
+            "mae": 176.3,
+            "skill": 0.2473
+          },
+          "no_window_points": {
+            "mae": 231.5,
+            "skill": 0.0114
+          },
+          "no_momentum": {
+            "mae": 175.2,
+            "skill": 0.2518
+          },
+          "points_only": {
+            "mae": 184.6,
+            "skill": 0.212
+          },
+          "full_rel_mae": 0.0897,
+          "no_change_rel_mae": 0.1119
+        },
+        "10": {
+          "n": 1343,
+          "player_seasons": 1343,
+          "no_change_mae": 241.6,
+          "median_abs_move": 0.0686,
+          "drift": {
+            "mae": 238.8,
+            "skill": 0.0117
+          },
+          "season_scaled": {
+            "mae": 201.5,
+            "skill": 0.1661
+          },
+          "full": {
+            "mae": 181.5,
+            "skill": 0.2488
+          },
+          "no_window_points": {
+            "mae": 235.1,
+            "skill": 0.0272
+          },
+          "no_momentum": {
+            "mae": 178.8,
+            "skill": 0.26
+          },
+          "points_only": {
+            "mae": 188.3,
+            "skill": 0.2205
+          },
+          "full_rel_mae": 0.0988,
+          "no_change_rel_mae": 0.1225
+        },
+        "11": {
+          "n": 1345,
+          "player_seasons": 1345,
+          "no_change_mae": 237.7,
+          "median_abs_move": 0.0707,
+          "drift": {
+            "mae": 236.1,
+            "skill": 0.0066
+          },
+          "season_scaled": {
+            "mae": 202.9,
+            "skill": 0.1464
+          },
+          "full": {
+            "mae": 184.2,
+            "skill": 0.2252
+          },
+          "no_window_points": {
+            "mae": 234.5,
+            "skill": 0.0134
+          },
+          "no_momentum": {
+            "mae": 182.9,
+            "skill": 0.2307
+          },
+          "points_only": {
+            "mae": 193.7,
+            "skill": 0.1849
+          },
+          "full_rel_mae": 0.0992,
+          "no_change_rel_mae": 0.1204
+        },
+        "12": {
+          "n": 1345,
+          "player_seasons": 1345,
+          "no_change_mae": 207.5,
+          "median_abs_move": 0.0627,
+          "drift": {
+            "mae": 206.2,
+            "skill": 0.0066
+          },
+          "season_scaled": {
+            "mae": 174.6,
+            "skill": 0.1587
+          },
+          "full": {
+            "mae": 156.1,
+            "skill": 0.248
+          },
+          "no_window_points": {
+            "mae": 207.3,
+            "skill": 0.0012
+          },
+          "no_momentum": {
+            "mae": 157.3,
+            "skill": 0.2421
+          },
+          "points_only": {
+            "mae": 167.6,
+            "skill": 0.1923
+          },
+          "full_rel_mae": 0.0843,
+          "no_change_rel_mae": 0.1063
+        },
+        "13": {
+          "n": 1346,
+          "player_seasons": 1346,
+          "no_change_mae": 182.9,
+          "median_abs_move": 0.0541,
+          "drift": {
+            "mae": 182.5,
+            "skill": 0.0024
+          },
+          "season_scaled": {
+            "mae": 156.3,
+            "skill": 0.1453
+          },
+          "full": {
+            "mae": 140.5,
+            "skill": 0.2319
+          },
+          "no_window_points": {
+            "mae": 185.3,
+            "skill": -0.0127
+          },
+          "no_momentum": {
+            "mae": 142.3,
+            "skill": 0.2219
+          },
+          "points_only": {
+            "mae": 153.1,
+            "skill": 0.1631
+          },
+          "full_rel_mae": 0.081,
+          "no_change_rel_mae": 0.0987
+        },
+        "14": {
+          "n": 1346,
+          "player_seasons": 1346,
+          "no_change_mae": 169.8,
+          "median_abs_move": 0.0523,
+          "drift": {
+            "mae": 169.7,
+            "skill": 0.0007
+          },
+          "season_scaled": {
+            "mae": 148.1,
+            "skill": 0.1274
+          },
+          "full": {
+            "mae": 137.8,
+            "skill": 0.1886
+          },
+          "no_window_points": {
+            "mae": 170.8,
+            "skill": -0.006
+          },
+          "no_momentum": {
+            "mae": 137.8,
+            "skill": 0.1881
+          },
+          "points_only": {
+            "mae": 147.3,
+            "skill": 0.1322
+          },
+          "full_rel_mae": 0.0765,
+          "no_change_rel_mae": 0.0897
+        },
+        "15": {
+          "n": 1346,
+          "player_seasons": 1346,
+          "no_change_mae": 152.0,
+          "median_abs_move": 0.0453,
+          "drift": {
+            "mae": 152.2,
+            "skill": -0.0013
+          },
+          "season_scaled": {
+            "mae": 136.3,
+            "skill": 0.1034
+          },
+          "full": {
+            "mae": 130.0,
+            "skill": 0.1447
+          },
+          "no_window_points": {
+            "mae": 151.8,
+            "skill": 0.0012
+          },
+          "no_momentum": {
+            "mae": 129.1,
+            "skill": 0.1506
+          },
+          "points_only": {
+            "mae": 142.0,
+            "skill": 0.0658
+          },
+          "full_rel_mae": 0.0719,
+          "no_change_rel_mae": 0.0805
+        },
+        "16": {
+          "n": 1346,
+          "player_seasons": 1346,
+          "no_change_mae": 140.0,
+          "median_abs_move": 0.0428,
+          "drift": {
+            "mae": 139.5,
+            "skill": 0.0035
+          },
+          "season_scaled": {
+            "mae": 128.8,
+            "skill": 0.0801
+          },
+          "full": {
+            "mae": 123.3,
+            "skill": 0.1192
+          },
+          "no_window_points": {
+            "mae": 138.7,
+            "skill": 0.0092
+          },
+          "no_momentum": {
+            "mae": 122.2,
+            "skill": 0.1273
+          },
+          "points_only": {
+            "mae": 139.2,
+            "skill": 0.0062
+          },
+          "full_rel_mae": 0.0659,
+          "no_change_rel_mae": 0.0748
+        },
+        "17": {
+          "n": 1350,
+          "player_seasons": 1350,
+          "no_change_mae": 128.1,
+          "median_abs_move": 0.036,
+          "drift": {
+            "mae": 128.3,
+            "skill": -0.0015
+          },
+          "season_scaled": {
+            "mae": 123.9,
+            "skill": 0.0327
+          },
+          "full": {
+            "mae": 123.4,
+            "skill": 0.0371
+          },
+          "no_window_points": {
+            "mae": 130.9,
+            "skill": -0.0219
+          },
+          "no_momentum": {
+            "mae": 122.5,
+            "skill": 0.0436
+          },
+          "points_only": {
+            "mae": 139.0,
+            "skill": -0.0849
+          },
+          "full_rel_mae": 0.0658,
+          "no_change_rel_mae": 0.0695
+        }
+      },
+      "late_season": {
+        "rule": "every game of the window in week 14 or later",
+        "all_folds": {
+          "n": 2696,
+          "player_seasons": 1350,
+          "no_change_mae": 134.1,
+          "median_abs_move": 0.0393,
+          "drift": {
+            "mae": 133.9,
+            "skill": 0.0011
+          },
+          "season_scaled": {
+            "mae": 126.4,
+            "skill": 0.0575
+          },
+          "full": {
+            "mae": 123.4,
+            "skill": 0.0799
+          },
+          "no_window_points": {
+            "mae": 134.8,
+            "skill": -0.0057
+          },
+          "no_momentum": {
+            "mae": 122.4,
+            "skill": 0.0872
+          },
+          "points_only": {
+            "mae": 139.1,
+            "skill": -0.0374
+          },
+          "full_rel_mae": 0.0658,
+          "no_change_rel_mae": 0.0722
+        },
+        "selection": {
+          "n": 1776,
+          "player_seasons": 890,
+          "no_change_mae": 147.8,
+          "median_abs_move": 0.0428,
+          "drift": {
+            "mae": 147.7,
+            "skill": 0.0005
+          },
+          "season_scaled": {
+            "mae": 136.3,
+            "skill": 0.0777
+          },
+          "full": {
+            "mae": 136.8,
+            "skill": 0.0741
+          },
+          "no_window_points": {
+            "mae": 150.8,
+            "skill": -0.0204
+          },
+          "no_momentum": {
+            "mae": 135.8,
+            "skill": 0.081
+          },
+          "points_only": {
+            "mae": 153.0,
+            "skill": -0.035
+          },
+          "full_rel_mae": 0.0704,
+          "no_change_rel_mae": 0.0766
+        },
+        "check": {
+          "n": 920,
+          "player_seasons": 460,
+          "no_change_mae": 107.6,
+          "median_abs_move": 0.0337,
+          "drift": {
+            "mae": 107.3,
+            "skill": 0.0029
+          },
+          "season_scaled": {
+            "mae": 107.2,
+            "skill": 0.0038
+          },
+          "full": {
+            "mae": 97.4,
+            "skill": 0.0952
+          },
+          "no_window_points": {
+            "mae": 104.0,
+            "skill": 0.0332
+          },
+          "no_momentum": {
+            "mae": 96.5,
+            "skill": 0.1037
+          },
+          "points_only": {
+            "mae": 112.3,
+            "skill": -0.0437
+          },
+          "full_rel_mae": 0.057,
+          "no_change_rel_mae": 0.0637
+        },
+        "rest_all_folds": {
+          "n": 17431,
+          "player_seasons": 1349,
+          "no_change_mae": 237.3,
+          "median_abs_move": 0.0665,
+          "drift": {
+            "mae": 235.5,
+            "skill": 0.0073
+          },
+          "season_scaled": {
+            "mae": 201.0,
+            "skill": 0.1528
+          },
+          "full": {
+            "mae": 182.2,
+            "skill": 0.232
+          },
+          "no_window_points": {
+            "mae": 234.5,
+            "skill": 0.0117
+          },
+          "no_momentum": {
+            "mae": 181.3,
+            "skill": 0.2357
+          },
+          "points_only": {
+            "mae": 191.0,
+            "skill": 0.1949
+          },
+          "full_rel_mae": 0.1158,
+          "no_change_rel_mae": 0.1377
+        }
+      },
       "points_swing": {
         "median_log_q75_vs_q25": 0.1445
       },
@@ -896,6 +1509,430 @@
           },
           "full_rel_mae": 0.1222,
           "no_change_rel_mae": 0.1506
+        }
+      },
+      "by_last_game_week_all_folds": {
+        "6": {
+          "n": 1333,
+          "player_seasons": 1333,
+          "no_change_mae": 453.6,
+          "median_abs_move": 0.1461,
+          "drift": {
+            "mae": 449.6,
+            "skill": 0.0089
+          },
+          "season_scaled": {
+            "mae": 348.9,
+            "skill": 0.2308
+          },
+          "full": {
+            "mae": 304.0,
+            "skill": 0.3298
+          },
+          "no_window_points": {
+            "mae": 457.6,
+            "skill": -0.0087
+          },
+          "no_momentum": {
+            "mae": 302.7,
+            "skill": 0.3328
+          },
+          "points_only": {
+            "mae": 310.6,
+            "skill": 0.3153
+          },
+          "full_rel_mae": 0.201,
+          "no_change_rel_mae": 0.265
+        },
+        "7": {
+          "n": 1335,
+          "player_seasons": 1335,
+          "no_change_mae": 433.9,
+          "median_abs_move": 0.1361,
+          "drift": {
+            "mae": 430.2,
+            "skill": 0.0085
+          },
+          "season_scaled": {
+            "mae": 330.2,
+            "skill": 0.239
+          },
+          "full": {
+            "mae": 298.9,
+            "skill": 0.3111
+          },
+          "no_window_points": {
+            "mae": 434.4,
+            "skill": -0.0012
+          },
+          "no_momentum": {
+            "mae": 295.9,
+            "skill": 0.318
+          },
+          "points_only": {
+            "mae": 300.5,
+            "skill": 0.3074
+          },
+          "full_rel_mae": 0.2989,
+          "no_change_rel_mae": 0.3561
+        },
+        "8": {
+          "n": 1336,
+          "player_seasons": 1336,
+          "no_change_mae": 388.3,
+          "median_abs_move": 0.1173,
+          "drift": {
+            "mae": 385.3,
+            "skill": 0.0079
+          },
+          "season_scaled": {
+            "mae": 296.8,
+            "skill": 0.2356
+          },
+          "full": {
+            "mae": 272.3,
+            "skill": 0.2989
+          },
+          "no_window_points": {
+            "mae": 396.6,
+            "skill": -0.0213
+          },
+          "no_momentum": {
+            "mae": 272.2,
+            "skill": 0.2989
+          },
+          "points_only": {
+            "mae": 283.3,
+            "skill": 0.2704
+          },
+          "full_rel_mae": 0.2206,
+          "no_change_rel_mae": 0.2666
+        },
+        "9": {
+          "n": 1336,
+          "player_seasons": 1336,
+          "no_change_mae": 371.6,
+          "median_abs_move": 0.1076,
+          "drift": {
+            "mae": 368.6,
+            "skill": 0.0079
+          },
+          "season_scaled": {
+            "mae": 291.7,
+            "skill": 0.2149
+          },
+          "full": {
+            "mae": 264.8,
+            "skill": 0.2872
+          },
+          "no_window_points": {
+            "mae": 379.8,
+            "skill": -0.0223
+          },
+          "no_momentum": {
+            "mae": 264.5,
+            "skill": 0.2881
+          },
+          "points_only": {
+            "mae": 278.9,
+            "skill": 0.2495
+          },
+          "full_rel_mae": 0.1701,
+          "no_change_rel_mae": 0.2137
+        },
+        "10": {
+          "n": 1338,
+          "player_seasons": 1338,
+          "no_change_mae": 364.7,
+          "median_abs_move": 0.1073,
+          "drift": {
+            "mae": 362.6,
+            "skill": 0.0058
+          },
+          "season_scaled": {
+            "mae": 284.9,
+            "skill": 0.2187
+          },
+          "full": {
+            "mae": 257.7,
+            "skill": 0.2934
+          },
+          "no_window_points": {
+            "mae": 371.1,
+            "skill": -0.0176
+          },
+          "no_momentum": {
+            "mae": 256.5,
+            "skill": 0.2968
+          },
+          "points_only": {
+            "mae": 274.2,
+            "skill": 0.2482
+          },
+          "full_rel_mae": 0.1748,
+          "no_change_rel_mae": 0.2208
+        },
+        "11": {
+          "n": 1337,
+          "player_seasons": 1337,
+          "no_change_mae": 355.7,
+          "median_abs_move": 0.1017,
+          "drift": {
+            "mae": 353.7,
+            "skill": 0.0054
+          },
+          "season_scaled": {
+            "mae": 277.2,
+            "skill": 0.2205
+          },
+          "full": {
+            "mae": 246.0,
+            "skill": 0.3083
+          },
+          "no_window_points": {
+            "mae": 363.0,
+            "skill": -0.0206
+          },
+          "no_momentum": {
+            "mae": 243.1,
+            "skill": 0.3164
+          },
+          "points_only": {
+            "mae": 267.7,
+            "skill": 0.2473
+          },
+          "full_rel_mae": 0.1474,
+          "no_change_rel_mae": 0.1893
+        },
+        "12": {
+          "n": 1339,
+          "player_seasons": 1339,
+          "no_change_mae": 341.2,
+          "median_abs_move": 0.1033,
+          "drift": {
+            "mae": 338.7,
+            "skill": 0.0075
+          },
+          "season_scaled": {
+            "mae": 266.7,
+            "skill": 0.2184
+          },
+          "full": {
+            "mae": 237.7,
+            "skill": 0.3034
+          },
+          "no_window_points": {
+            "mae": 349.6,
+            "skill": -0.0245
+          },
+          "no_momentum": {
+            "mae": 235.1,
+            "skill": 0.3109
+          },
+          "points_only": {
+            "mae": 253.7,
+            "skill": 0.2566
+          },
+          "full_rel_mae": 0.1371,
+          "no_change_rel_mae": 0.1771
+        },
+        "13": {
+          "n": 1342,
+          "player_seasons": 1342,
+          "no_change_mae": 322.5,
+          "median_abs_move": 0.0957,
+          "drift": {
+            "mae": 319.8,
+            "skill": 0.0085
+          },
+          "season_scaled": {
+            "mae": 254.8,
+            "skill": 0.2101
+          },
+          "full": {
+            "mae": 225.2,
+            "skill": 0.3017
+          },
+          "no_window_points": {
+            "mae": 329.4,
+            "skill": -0.0214
+          },
+          "no_momentum": {
+            "mae": 226.6,
+            "skill": 0.2975
+          },
+          "points_only": {
+            "mae": 240.1,
+            "skill": 0.2555
+          },
+          "full_rel_mae": 0.1353,
+          "no_change_rel_mae": 0.1776
+        },
+        "14": {
+          "n": 1344,
+          "player_seasons": 1344,
+          "no_change_mae": 312.1,
+          "median_abs_move": 0.0968,
+          "drift": {
+            "mae": 309.9,
+            "skill": 0.0069
+          },
+          "season_scaled": {
+            "mae": 248.0,
+            "skill": 0.2052
+          },
+          "full": {
+            "mae": 221.2,
+            "skill": 0.2911
+          },
+          "no_window_points": {
+            "mae": 325.2,
+            "skill": -0.0419
+          },
+          "no_momentum": {
+            "mae": 222.3,
+            "skill": 0.2875
+          },
+          "points_only": {
+            "mae": 238.0,
+            "skill": 0.2375
+          },
+          "full_rel_mae": 0.1309,
+          "no_change_rel_mae": 0.1684
+        },
+        "15": {
+          "n": 1345,
+          "player_seasons": 1345,
+          "no_change_mae": 282.8,
+          "median_abs_move": 0.0872,
+          "drift": {
+            "mae": 280.8,
+            "skill": 0.0071
+          },
+          "season_scaled": {
+            "mae": 228.0,
+            "skill": 0.1939
+          },
+          "full": {
+            "mae": 208.8,
+            "skill": 0.2618
+          },
+          "no_window_points": {
+            "mae": 295.0,
+            "skill": -0.0431
+          },
+          "no_momentum": {
+            "mae": 207.9,
+            "skill": 0.2648
+          },
+          "points_only": {
+            "mae": 226.8,
+            "skill": 0.198
+          },
+          "full_rel_mae": 0.1234,
+          "no_change_rel_mae": 0.1546
+        },
+        "16": {
+          "n": 1346,
+          "player_seasons": 1346,
+          "no_change_mae": 257.3,
+          "median_abs_move": 0.0767,
+          "drift": {
+            "mae": 256.8,
+            "skill": 0.0019
+          },
+          "season_scaled": {
+            "mae": 211.7,
+            "skill": 0.1771
+          },
+          "full": {
+            "mae": 195.0,
+            "skill": 0.242
+          },
+          "no_window_points": {
+            "mae": 270.0,
+            "skill": -0.0494
+          },
+          "no_momentum": {
+            "mae": 194.7,
+            "skill": 0.2434
+          },
+          "points_only": {
+            "mae": 215.3,
+            "skill": 0.1632
+          },
+          "full_rel_mae": 0.1178,
+          "no_change_rel_mae": 0.1447
+        },
+        "17": {
+          "n": 1346,
+          "player_seasons": 1346,
+          "no_change_mae": 241.9,
+          "median_abs_move": 0.0697,
+          "drift": {
+            "mae": 241.8,
+            "skill": 0.0004
+          },
+          "season_scaled": {
+            "mae": 207.4,
+            "skill": 0.1425
+          },
+          "full": {
+            "mae": 196.0,
+            "skill": 0.1897
+          },
+          "no_window_points": {
+            "mae": 255.2,
+            "skill": -0.0552
+          },
+          "no_momentum": {
+            "mae": 197.2,
+            "skill": 0.1849
+          },
+          "points_only": {
+            "mae": 211.8,
+            "skill": 0.1243
+          },
+          "full_rel_mae": 0.1165,
+          "no_change_rel_mae": 0.1347
+        }
+      },
+      "late_season": {
+        "rule": "every game of the window in week 14 or later",
+        "all_folds": null,
+        "selection": null,
+        "check": null,
+        "rest_all_folds": {
+          "n": 16077,
+          "player_seasons": 1349,
+          "no_change_mae": 343.6,
+          "median_abs_move": 0.1011,
+          "drift": {
+            "mae": 341.3,
+            "skill": 0.0067
+          },
+          "season_scaled": {
+            "mae": 270.4,
+            "skill": 0.213
+          },
+          "full": {
+            "mae": 243.9,
+            "skill": 0.2903
+          },
+          "no_window_points": {
+            "mae": 352.1,
+            "skill": -0.0246
+          },
+          "no_momentum": {
+            "mae": 243.1,
+            "skill": 0.2924
+          },
+          "points_only": {
+            "mae": 258.3,
+            "skill": 0.2482
+          },
+          "full_rel_mae": 0.1644,
+          "no_change_rel_mae": 0.2056
         }
       },
       "points_swing": {
