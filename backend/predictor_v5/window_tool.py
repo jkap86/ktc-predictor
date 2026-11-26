@@ -171,6 +171,13 @@ class WindowTool:
         if not Path(path).exists():
             raise FileNotFoundError(f"{path} not found. Export it with predictor_v5/sql/window_inputs.sql.")
         df = pd.read_csv(path, dtype={"player_id": str})
+        bc_path = DATA / f"bc_weekly_{self.season}.csv" if self.inputs_path is None else None
+        if bc_path is not None and bc_path.exists():
+            # Backchannel values exported from the full-corpus database
+            # (sql/bc_weekly.sql) replace the local ones outright, so every
+            # week comes from one trade corpus; weeks it lacks have none.
+            bc = pd.read_csv(bc_path, dtype={"player_id": str})[["player_id", "week", "bc_value", "bc_trades"]]
+            df = df.drop(columns=["bc_value", "bc_trades"]).merge(bc, on=["player_id", "week"], how="left")
         return df[df["position"].isin(POSITIONS)]
 
     @cached_property

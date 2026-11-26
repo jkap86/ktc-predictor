@@ -805,8 +805,29 @@ later carry a note that points move value much less then.
 Inputs are exported from the thelab database with `sql/window_inputs.sql`
 into `data/window_inputs_2026.csv` (KTC: the latest value within 7 days on
 or before each Tuesday; Backchannel `baseline-hl28-v1`; Sleeper full-PPR
-points). Local v1 history ends on 2026-10-09, so 2026 windows that start
-after week 5 have no Backchannel value until v1 is extended.
+points). The local database no longer holds the trade corpus (2026-11-25:
+461 trades against 397k behind the 10-09 fit), so 2026 Backchannel values
+come from thelab-development instead: v1 was generated there for the
+Tuesdays 2026-10-13 to 11-24 (708k trades on 10-13; one Basic one-off each,
+about 1m40s) and exported read-only with `sql/bc_weekly.sql` into
+`data/bc_weekly_2026.csv`, which replaces the local Backchannel columns
+outright so every week comes from one corpus. Weeks 1-5 have no v1 values
+there, so 2026 Backchannel windows start in week 6.
+
+2026 so far (models never saw it; KTC weeks 1-11, Backchannel weeks 6-11):
+
+| | windows | skill | with the true league drift | drift alone | 80% band holds |
+| --- | --- | --- | --- | --- | --- |
+| KTC, 3 games | 4,339 | 0.276 | 0.279 | 0.017 | 78% |
+| KTC, 6 games | 2,827 | 0.348 | 0.352 | 0.024 | 78% |
+| Backchannel, 3 games | 1,633 | 0.024 | 0.186 | 0.201 | 81% |
+| Backchannel, 6 games | 403 | 0.050 | 0.371 | 0.284 | 73% |
+
+Backchannel's whole board slid about 1.5% a week through October and
+November (median -4.6% over 3 games, -10% over 6) and the model expected
+about half of that, so it barely beats no change. Given the slide, the
+6-game player signal is real (+9 points over drift alone); the 3-game one
+adds nothing, as in the study.
 
 ```bash
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v season=2026 -v week1=2026-09-08 \
